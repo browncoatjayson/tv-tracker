@@ -4,6 +4,8 @@ import { db } from '../data/db'
 import { imageUrl } from '../api/tmdb'
 import { removeItem, setRating, setStatus } from '../data/library'
 import type { WatchStatus } from '../data/types'
+import ShowEpisodes from '../components/ShowEpisodes'
+import MovieWatch from '../components/MovieWatch'
 
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
 
@@ -83,6 +85,13 @@ export default function ItemDetail() {
           ))}
         </select>
       </label>
+
+      {/* Media-specific tracking: episodes for shows, watch log for movies. */}
+      {item.mediaType === 'show' ? (
+        <ShowEpisodes item={item} />
+      ) : (
+        <MovieWatch item={item} />
+      )}
 
       <button
         className="btn btn--danger"

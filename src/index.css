@@ -348,3 +348,116 @@ input[type='file'] {
   display: inline-block;
   margin-top: 8px;
 }
+
+/* ---- Episodes / seasons -------------------------------------------------- */
+.episodes {
+  margin: 20px 0;
+}
+.episodes__progress {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 12px;
+}
+.episodes__progress strong {
+  color: var(--accent);
+}
+
+.season {
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  overflow: hidden;
+  /* Keep the season clear of the sticky header when scrolled into view. */
+  scroll-margin-top: 64px;
+}
+.season__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: none;
+  padding: 12px 14px;
+  font-size: 0.95rem;
+  cursor: pointer;
+  text-align: left;
+}
+.season__header:hover {
+  background: var(--surface-2);
+}
+.season__chevron {
+  color: var(--muted);
+  width: 12px;
+}
+.season__name {
+  flex: 1;
+}
+.season__meta {
+  font-size: 0.82rem;
+}
+.season__body {
+  padding: 10px 14px 14px;
+}
+
+.btn--ghost {
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--surface-2);
+  margin-bottom: 10px;
+}
+
+.episode-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+}
+.episode {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 0;
+  border-top: 1px solid var(--surface);
+}
+.episode__label {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  cursor: pointer;
+}
+.episode__label input {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.episode__num {
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  font-size: 0.8rem;
+  flex-shrink: 0;
+}
+.episode__title {
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.episode__date {
+  font-size: 0.78rem;
+  flex-shrink: 0;
+}
+.episode__upcoming {
+  font-size: 0.75rem;
+  color: var(--warn);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.movie-watch {
+  margin: 20px 0;
+}
