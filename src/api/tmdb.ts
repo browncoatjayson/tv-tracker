@@ -54,13 +54,28 @@ interface TmdbSearchResponse {
   results: TmdbSearchResult[]
 }
 
+/** A movie/TV search result (people are filtered out upstream). */
+export type TmdbMediaResult = TmdbSearchResult & { media_type: 'movie' | 'tv' }
+
 /** Search movies + TV in one call. Filters out people client-side. */
-export async function searchMulti(query: string): Promise<TmdbSearchResult[]> {
+export async function searchMulti(query: string): Promise<TmdbMediaResult[]> {
   const trimmed = query.trim()
   if (!trimmed) return []
   const data = await tmdbGet<TmdbSearchResponse>('/search/multi', {
     query: trimmed,
     include_adult: 'false',
   })
-  return data.results.filter((r) => r.media_type === 'movie' || r.media_type === 'tv')
+  return data.results.filter(
+    (r): r is TmdbMediaResult => r.media_type === 'movie' || r.media_type === 'tv',
+  )
+}
+
+/** Fetch a title's IMDb id (e.g. "tt0944947") for outbound links, if TMDB has it. */
+export async function getImdbId(
+  mediaType: 'movie' | 'tv',
+  tmdbId: number,
+): Promise<string | undefined> {
+  const path = `/${mediaType}/${tmdbId}/external_ids`
+  const data = await tmdbGet<{ imdb_id?: string | null }>(path)
+  return data.imdb_id ?? undefined
 }
