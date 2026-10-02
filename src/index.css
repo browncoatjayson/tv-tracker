@@ -277,6 +277,41 @@ input[type='file'] {
   border-radius: var(--radius);
   padding: 8px;
 }
+.result-row__link {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+  color: var(--text);
+}
+.result-row__link:hover {
+  text-decoration: none;
+}
+.upcoming__detail {
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.upcoming__date {
+  font-size: 0.82rem;
+  color: var(--accent);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+/* "Recently aired" is dimmed; brightens on hover for interaction. */
+.upcoming-aired {
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+.upcoming-aired:hover {
+  opacity: 1;
+}
+/* Keep the first upcoming group clear of the sticky header when auto-scrolled. */
+.upcoming-section {
+  scroll-margin-top: 64px;
+}
 .result-row__poster {
   width: 46px;
   height: 69px;

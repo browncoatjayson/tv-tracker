@@ -68,8 +68,8 @@ The workflow sets the Vite `base` path to `/<repo-name>/` automatically.
 ## Roadmap
 
 - **Phase 1 — Skeleton** ✅ app shell, routing, PWA, data layer, backup/restore
-- **Phase 2 — Search & add** TMDB search, add titles, IMDb links, posters
-- **Phase 3 — Tracking** per-episode watched/rewatch, status, ratings
-- **Phase 4 — Upcoming** calendar of upcoming episodes & releases
+- **Phase 2 — Search & add** ✅ TMDB search, add titles, IMDb links, posters
+- **Phase 3 — Tracking** ✅ per-episode watched/rewatch, resume-aware season expand, ratings
+- **Phase 4 — Upcoming** ✅ grouped feed of upcoming + "Recently aired" (dimmed, mark-off), excludes "dropped"
 - **Phase 5 — Sync** Google Drive `appDataFolder` sync
-- **Phase 6 — Polish** offline hardening, PNG/iOS icons, install prompts
+- **Phase 6 — Polish** offline hardening, PNG/iOS icons, "update available" prompt; **discuss: calendar view** for Upcoming (vs. the current list), and richer "recently aired" (multiple missed episodes per show)

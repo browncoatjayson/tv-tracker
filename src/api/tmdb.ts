@@ -114,6 +114,17 @@ export async function getTvDetails(tmdbId: number): Promise<TmdbTvDetails> {
   return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`)
 }
 
+export interface TmdbMovieDetails {
+  id: number
+  title: string
+  release_date: string | null
+  status: string
+}
+
+export async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails> {
+  return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`)
+}
+
 export interface TmdbEpisode {
   episode_number: number
   season_number: number
