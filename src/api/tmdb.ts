@@ -175,6 +175,16 @@ export interface TmdbEpisodePointer {
   name?: string
 }
 
+export interface TmdbWatchProviders {
+  results?: Record<string, { flatrate?: { provider_name: string }[] }>
+}
+
+/** The minimal shape {@link whereToWatch} needs (satisfied by TV and movie details). */
+export interface WatchInfo {
+  networks?: { name: string }[]
+  'watch/providers'?: TmdbWatchProviders
+}
+
 export interface TmdbTvDetails {
   id: number
   name: string
@@ -182,13 +192,17 @@ export interface TmdbTvDetails {
   number_of_seasons: number
   status: string
   seasons: TmdbSeasonSummary[]
+  /** Broadcast networks (e.g. CBS). */
+  networks?: { name: string }[]
+  /** Region -> streaming providers (from append_to_response). */
+  'watch/providers'?: TmdbWatchProviders
   /** The next episode scheduled to air, or null if none is scheduled. */
   next_episode_to_air: TmdbEpisodePointer | null
   last_episode_to_air: TmdbEpisodePointer | null
 }
 
 export async function getTvDetails(tmdbId: number): Promise<TmdbTvDetails> {
-  return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`)
+  return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, { append_to_response: 'watch/providers' })
 }
 
 export interface TmdbMovieDetails {
@@ -196,10 +210,37 @@ export interface TmdbMovieDetails {
   title: string
   release_date: string | null
   status: string
+  'watch/providers'?: TmdbWatchProviders
 }
 
 export async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails> {
-  return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`)
+  return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`, { append_to_response: 'watch/providers' })
+}
+
+/**
+ * A short "where to watch" string: broadcast networks + streaming services for
+ * the given region (default US). Both come free with the details call.
+ */
+// TMDB lists many provider variants ("Paramount Plus Premium", "... Amazon
+// Channel", etc.). Collapse them to the base brand so the label stays short.
+function normalizeProvider(name: string): string {
+  return name
+    .replace(/\s+(Premium|Essential|Standard|Basic|with Ads|Ad-Free)$/i, '')
+    .replace(/\s+(Apple TV|Amazon|Roku Premium)\s+Channel$/i, '')
+    .replace(/\bPlus\b/g, '+')
+    .replace(/\s+\+/g, '+')
+    .trim()
+}
+
+export function whereToWatch(details: WatchInfo, region = 'US'): string | undefined {
+  const names: string[] = []
+  for (const n of details.networks ?? []) names.push(n.name)
+  for (const p of details['watch/providers']?.results?.[region]?.flatrate ?? []) {
+    names.push(normalizeProvider(p.provider_name))
+  }
+  const unique = [...new Set(names)]
+  // Keep it concise: networks come first, then up to a couple of streamers.
+  return unique.length ? unique.slice(0, 3).join(' / ') : undefined
 }
 
 export interface TmdbEpisode {
@@ -217,6 +258,18 @@ export async function getSeasonEpisodes(
 ): Promise<TmdbEpisode[]> {
   const data = await tmdbGet<{ episodes: TmdbEpisode[] }>(`/tv/${tmdbId}/season/${seasonNumber}`)
   return data.episodes
+}
+
+/** Fetch a single episode's IMDb id (for a direct IMDb link), if TMDB has it. */
+export async function getEpisodeImdbId(
+  tmdbId: number,
+  season: number,
+  episode: number,
+): Promise<string | undefined> {
+  const data = await tmdbGet<{ imdb_id?: string | null }>(
+    `/tv/${tmdbId}/season/${season}/episode/${episode}/external_ids`,
+  )
+  return data.imdb_id ?? undefined
 }
 
 /** True if an air date is today or in the past (i.e. the episode has aired). */

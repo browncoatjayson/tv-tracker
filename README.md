@@ -2,14 +2,44 @@
 
 A personal, offline-first replacement for TV Time. Track the shows and movies
 you watch, keep your own ratings, and see what's coming up — with no server and
-no account required. Your data stays on your device (and, from Phase 5, in your
+no account required. Your data stays on your device (and, optionally, in your
 own Google Drive).
 
-- **Metadata:** [TMDB](https://www.themoviedb.org/) (movies, shows, episodes, air dates)
+- **Metadata:** [TMDB](https://www.themoviedb.org/) (movies, shows, episodes) + [TVmaze](https://www.tvmaze.com/) (air times)
 - **Detail pages:** link out to [IMDb](https://www.imdb.com/)
-- **Storage:** IndexedDB on-device + JSON export/import (Google Drive sync later)
+- **Storage:** IndexedDB on-device + JSON export/import + optional Google Drive sync
 - **Hosting:** static build on GitHub Pages
 - **Stack:** Vite · React · TypeScript · React Router · TanStack Query · Dexie
+
+## Using the app
+
+**Open it:** [browncoatjayson.github.io/tv-tracker](https://browncoatjayson.github.io/tv-tracker)
+
+**1. Install it (recommended).** It works in any browser, but installing gives you
+a home-screen icon, a full-screen app window, and offline access.
+
+- **Chrome / Edge (desktop):** click the install icon at the right of the address
+  bar, or the **⋮** menu → **Install TV Tracker**.
+- **Chrome (Android):** **⋮** menu → **Install app** (or **Add to Home screen**).
+- **iPhone / iPad:** open the site in **Safari**, tap the **Share** button, then
+  **Add to Home Screen**. (iOS only installs web apps from Safari.)
+
+**2. Build your library.** Use the **Search** tab to add shows and movies. Open a
+title to track episodes, set your rating, and jump to IMDb. The **Upcoming** tab
+shows what's airing next (with local air times) and what you recently missed.
+
+**3. Import your TV Time history (optional).** Request your data export from TV
+Time (you'll get a `.zip`), then go to **Settings → Import from another tracker →
+TV Time**, choose **Merge** or **Replace**, and pick the `.zip`. A large library
+takes a minute or two to match everything to TMDB.
+
+**4. Sync across devices (optional).** **Settings → Connect Google Drive** stores
+your data in a private, app-only folder in your own Drive. Connect and sync on
+each device to merge them. After importing a big library, use **Settings → Build
+index** once so episode-name search covers your whole back catalog.
+
+**5. Updating.** When a new version is deployed, a small "A new version is
+available" prompt appears — tap **Reload** to get it.
 
 ## Getting started
 
@@ -64,14 +94,3 @@ publishes to Pages. Two one-time setup steps in the repo:
    `VITE_TMDB_TOKEN` with your token (used at build time).
 
 The workflow sets the Vite `base` path to `/<repo-name>/` automatically.
-
-## Roadmap
-
-- **Phase 1 — Skeleton** ✅ app shell, routing, PWA, data layer, backup/restore
-- **Phase 2 — Search & add** ✅ TMDB search, add titles, IMDb links, posters
-- **Phase 3 — Tracking** ✅ per-episode watched/rewatch, resume-aware season expand, ratings
-- **Phase 4 — Upcoming** ✅ grouped feed of upcoming + "Recently aired" (dimmed, mark-off), excludes "dropped"
-- **Phase 5 — Sync** ✅ Google Drive `appDataFolder` sync (connect, merge, last-synced)
-- **Import** ✅ bring in history from other trackers (TV Time `.zip`; TMDB-matched, merge/replace)
-- **Reset account** ✅ wipe local + Drive (confirm modal); the "deletion" path instead of tombstones
-- **Phase 6 — Polish** offline hardening, PNG/iOS icons, "update available" prompt; **discuss: calendar view** for Upcoming (vs. the current list), and richer "recently aired" (multiple missed episodes per show)

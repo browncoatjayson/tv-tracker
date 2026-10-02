@@ -39,17 +39,26 @@ export default function ResetAccount() {
               : ''
       }
 
-      await db.transaction('rw', db.trackedItems, db.watchEvents, db.episodeStates, async () => {
-        await Promise.all([
-          db.trackedItems.clear(),
-          db.watchEvents.clear(),
-          db.episodeStates.clear(),
-        ])
-      })
+      await db.transaction(
+        'rw',
+        db.trackedItems,
+        db.watchEvents,
+        db.episodeStates,
+        db.episodeCache,
+        async () => {
+          await Promise.all([
+            db.trackedItems.clear(),
+            db.watchEvents.clear(),
+            db.episodeStates.clear(),
+            db.episodeCache.clear(),
+          ])
+        },
+      )
 
       disconnect()
       try {
         localStorage.removeItem(LAST_SYNCED_KEY)
+        localStorage.removeItem('tvtracker.indexedShows')
       } catch {
         // ignore storage errors
       }

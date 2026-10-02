@@ -1,27 +1,48 @@
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persister'
+import { del, get, set } from 'idb-keyval'
 import { HashRouter } from 'react-router-dom'
 import App from './App.tsx'
 import './index.css'
 
-// TanStack Query caches all TMDB responses. staleTime of 1h means we won't
-// refetch the same metadata repeatedly within a session.
+const HOUR = 1000 * 60 * 60
+const DAY = HOUR * 24
+
+// TanStack Query caches all TMDB/TVmaze responses. gcTime must be >= the persist
+// maxAge so cached queries aren't dropped before they're restored after a reload.
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 1000 * 60 * 60, retry: 1, refetchOnWindowFocus: false },
+    queries: {
+      staleTime: HOUR,
+      gcTime: DAY,
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
   },
 })
 
-// HashRouter keeps routing entirely client-side (URLs look like /#/library).
-// This is bulletproof on GitHub Pages — no 404 fallback or server config needed.
-// If we later want clean URLs we can switch to BrowserRouter + a 404.html trick.
+// Persist the cache to IndexedDB so refreshing / reopening the app doesn't
+// re-fetch show details, air times, etc. — it reloads from the saved cache.
+const persister = createAsyncStoragePersister({
+  storage: { getItem: get, setItem: set, removeItem: del },
+  key: 'tvtracker.queryCache',
+  throttleTime: 1000,
+})
+
+// HashRouter keeps routing entirely client-side (URLs look like /#/library) —
+// bulletproof on GitHub Pages with no server config.
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister, maxAge: DAY, buster: 'v1' }}
+    >
       <HashRouter>
         <App />
       </HashRouter>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   </StrictMode>,
 )

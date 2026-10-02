@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { downloadBackup, importBackup, type ImportMode } from '../data/exportImport'
 import DriveSync from '../components/DriveSync'
 import ImportTracker from '../components/ImportTracker'
+import EpisodeIndex from '../components/EpisodeIndex'
 import ResetAccount from '../components/ResetAccount'
 
 export default function Settings() {
@@ -28,7 +29,17 @@ export default function Settings() {
 
   return (
     <div className="settings">
+      <section className="card">
+        <h2>About</h2>
+        <p className="muted">
+          TV Tracker — a personal, offline-first replacement for TV Time. Metadata from TMDB and
+          TVmaze (air times), detail pages link to IMDb.
+        </p>
+      </section>
+
       <DriveSync />
+
+      <EpisodeIndex />
 
       <section className="card">
         <h2>Backup &amp; restore</h2>
@@ -80,14 +91,6 @@ export default function Settings() {
       </section>
 
       <ImportTracker />
-
-      <section className="card">
-        <h2>About</h2>
-        <p className="muted">
-          TV Tracker — a personal, offline-first replacement for TV Time. Metadata from TMDB,
-          detail pages link to IMDb.
-        </p>
-      </section>
 
       <ResetAccount />
     </div>

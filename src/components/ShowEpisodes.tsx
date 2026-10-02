@@ -1,15 +1,12 @@
+import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
-import {
-  getSeasonEpisodes,
-  getTvDetails,
-  hasAired,
-  type TmdbSeasonSummary,
-} from '../api/tmdb'
+import { getEpisodeImdbId, hasAired, type TmdbSeasonSummary } from '../api/tmdb'
 import { db } from '../data/db'
-import { markEpisode } from '../data/library'
-import type { TrackedItem } from '../data/types'
+import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
+import { markEpisode, setEpisodeWatchedDate } from '../data/library'
+import type { EpisodeState, TrackedItem } from '../data/types'
 
 // Order seasons ascending, but push "Specials" (season 0) to the end.
 function sortSeasons(seasons: TmdbSeasonSummary[]): TmdbSeasonSummary[] {
@@ -61,7 +58,7 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
     isLoading,
     isError,
     error,
-  } = useQuery({ queryKey: ['tv', item.tmdbId], queryFn: () => getTvDetails(item.tmdbId) })
+  } = useQuery({ queryKey: ['tv', item.tmdbId], queryFn: () => getTvDetailsCached(item.id, item.tmdbId) })
 
   // Watched state for every episode of this show, keyed "season:episode".
   // `states` is undefined until the first read resolves.
@@ -69,11 +66,11 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
     () => db.episodeStates.where('itemId').equals(item.id).toArray(),
     [item.id],
   )
-  const watchedMap = new Map<string, boolean>()
+  const stateMap = new Map<string, EpisodeState>()
   const watchedPerSeason = new Map<number, number>()
   let watchedCount = 0
   for (const s of states ?? []) {
-    watchedMap.set(`${s.season}:${s.episode}`, s.watched)
+    stateMap.set(`${s.season}:${s.episode}`, s)
     if (s.watched) {
       watchedCount += 1
       watchedPerSeason.set(s.season, (watchedPerSeason.get(s.season) ?? 0) + 1)
@@ -100,6 +97,14 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
     // watchedPerSeason is derived from `states`; depending on `states` is enough.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [details, states])
+
+  // Backfill the item's last-aired date (used by Library's "Last episode" sort).
+  useEffect(() => {
+    const last = details?.last_episode_to_air?.air_date
+    if (last && last !== item.lastAirDate) {
+      void db.trackedItems.update(item.id, { lastAirDate: last })
+    }
+  }, [details, item.id, item.lastAirDate])
 
   if (isLoading) return <p className="muted">Loading episodes…</p>
   if (isError) {
@@ -135,7 +140,7 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
           season={season}
           isOpen={expanded.has(season.season_number)}
           onToggle={() => toggle(season.season_number)}
-          watchedMap={watchedMap}
+          stateMap={stateMap}
           scrollIntoViewOnLoad={season.season_number === scrollTarget}
         />
       ))}
@@ -148,22 +153,23 @@ function SeasonSection({
   season,
   isOpen,
   onToggle,
-  watchedMap,
+  stateMap,
   scrollIntoViewOnLoad,
 }: {
   item: TrackedItem
   season: TmdbSeasonSummary
   isOpen: boolean
   onToggle: () => void
-  watchedMap: Map<string, boolean>
+  stateMap: Map<string, EpisodeState>
   scrollIntoViewOnLoad: boolean
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
 
-  // Episodes are fetched lazily — only once the season is first opened.
+  // Episodes are fetched lazily — only once the season is first opened. The
+  // cached variant also records episode names/dates for search + the calendar.
   const { data: episodes, isLoading } = useQuery({
     queryKey: ['season', item.tmdbId, season.season_number],
-    queryFn: () => getSeasonEpisodes(item.tmdbId, season.season_number),
+    queryFn: () => getSeasonEpisodesCached(item.id, item.tmdbId, season.season_number),
     enabled: isOpen,
   })
 
@@ -178,7 +184,7 @@ function SeasonSection({
   }, [scrollIntoViewOnLoad, isOpen, episodes])
 
   const watchedInSeason = (episodes ?? []).filter(
-    (ep) => watchedMap.get(`${ep.season_number}:${ep.episode_number}`),
+    (ep) => stateMap.get(`${ep.season_number}:${ep.episode_number}`)?.watched,
   ).length
 
   async function markSeasonWatched() {
@@ -213,35 +219,57 @@ function SeasonSection({
               <ul className="episode-list">
                 {episodes.map((ep) => {
                   const aired = hasAired(ep.air_date)
-                  const watched = watchedMap.get(`${ep.season_number}:${ep.episode_number}`) ?? false
+                  const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
+                  const watched = st?.watched ?? false
                   return (
                     <li key={ep.episode_number} className="episode">
-                      <label className="episode__label">
-                        <input
-                          type="checkbox"
-                          checked={watched}
-                          disabled={!aired}
-                          onChange={(e) =>
-                            void markEpisode(
-                              item.id,
-                              ep.season_number,
-                              ep.episode_number,
-                              e.target.checked,
-                            )
-                          }
-                        />
-                        <span className="episode__num">
-                          S{ep.season_number}E{ep.episode_number}
-                        </span>
-                        <span className="episode__title">{ep.name}</span>
-                      </label>
-                      {aired ? (
-                        <span className="episode__date muted">{ep.air_date}</span>
-                      ) : (
-                        <span className="episode__upcoming">
-                          {ep.air_date ? `Upcoming · ${ep.air_date}` : 'TBA'}
-                        </span>
-                      )}
+                      <input
+                        type="checkbox"
+                        className="episode__check"
+                        checked={watched}
+                        disabled={!aired}
+                        aria-label={`Mark S${ep.season_number}E${ep.episode_number} watched`}
+                        onChange={(e) =>
+                          void markEpisode(
+                            item.id,
+                            ep.season_number,
+                            ep.episode_number,
+                            e.target.checked,
+                          )
+                        }
+                      />
+                      <div className="episode__main">
+                        <div className="episode__top">
+                          <span className="episode__num">
+                            S{ep.season_number}E{ep.episode_number}
+                          </span>
+                          <span className="episode__title">{ep.name}</span>
+                          <EpisodeImdbLink
+                            tmdbId={item.tmdbId}
+                            season={ep.season_number}
+                            episode={ep.episode_number}
+                          />
+                        </div>
+                        <div className="episode__meta">
+                          {aired ? (
+                            <span className="episode__date muted">
+                              Aired{ep.air_date ? ` · ${ep.air_date}` : ''}
+                            </span>
+                          ) : (
+                            <span className="episode__upcoming">
+                              {ep.air_date ? `Upcoming · ${ep.air_date}` : 'TBA'}
+                            </span>
+                          )}
+                          {watched && (
+                            <WatchedDate
+                              itemId={item.id}
+                              season={ep.season_number}
+                              episode={ep.episode_number}
+                              watchedAt={st?.watchedAt}
+                            />
+                          )}
+                        </div>
+                      </div>
                     </li>
                   )
                 })}
@@ -251,5 +279,85 @@ function SeasonSection({
         </div>
       )}
     </div>
+  )
+}
+
+/** A ↗ that opens the specific episode on IMDb (its IMDb id is fetched on click). */
+function EpisodeImdbLink({
+  tmdbId,
+  season,
+  episode,
+}: {
+  tmdbId: number
+  season: number
+  episode: number
+}) {
+  const [busy, setBusy] = useState(false)
+
+  async function open(e: React.MouseEvent) {
+    e.preventDefault()
+    if (busy) return
+    setBusy(true)
+    // Open the tab synchronously (preserves the click gesture), then navigate it.
+    const tab = window.open('about:blank', '_blank')
+    try {
+      const imdb = await getEpisodeImdbId(tmdbId, season, episode)
+      if (imdb && tab) tab.location.href = `https://www.imdb.com/title/${imdb}/`
+      else {
+        tab?.close()
+        if (!imdb) alert('No IMDb entry found for this episode.')
+      }
+    } catch {
+      tab?.close()
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <a
+      href="#"
+      className="episode__imdb"
+      title="Open episode on IMDb"
+      aria-label="Open episode on IMDb"
+      onClick={(e) => void open(e)}
+    >
+      ↗
+    </a>
+  )
+}
+
+/** Editable watched date for an episode (defaults to when it was checked off). */
+function WatchedDate({
+  itemId,
+  season,
+  episode,
+  watchedAt,
+}: {
+  itemId: string
+  season: number
+  episode: number
+  watchedAt?: number
+}) {
+  // Local date parts (avoid UTC day-shift from toISOString).
+  const value = (() => {
+    if (!watchedAt) return ''
+    const d = new Date(watchedAt)
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+  })()
+
+  return (
+    <label className="episode__watched">
+      <span className="muted">Watched</span>
+      <input
+        type="date"
+        value={value}
+        onChange={(e) => {
+          if (!e.target.value) return
+          const ms = new Date(`${e.target.value}T12:00:00`).getTime()
+          void setEpisodeWatchedDate(itemId, season, episode, ms)
+        }}
+      />
+    </label>
   )
 }

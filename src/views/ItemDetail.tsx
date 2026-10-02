@@ -1,8 +1,10 @@
 import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useParams } from 'react-router-dom'
 import { db } from '../data/db'
-import { getImdbId, imageUrl } from '../api/tmdb'
+import { getImdbId, getMovieDetails, imageUrl, whereToWatch, type WatchInfo } from '../api/tmdb'
+import { getTvDetailsCached } from '../data/episodeCache'
 import { removeItem, setRating, setStatus } from '../data/library'
 import type { WatchStatus } from '../data/types'
 import ShowEpisodes from '../components/ShowEpisodes'
@@ -28,6 +30,18 @@ export default function ItemDetail() {
       })
       .catch(() => {})
   }, [item?.id, item?.imdbId])
+
+  // "Where to watch" (networks + streaming) — shares the cached details query.
+  const detailsQuery = useQuery<WatchInfo>({
+    queryKey: [item?.mediaType === 'movie' ? 'movie' : 'tv', item?.tmdbId],
+    queryFn: () =>
+      item!.mediaType === 'movie'
+        ? getMovieDetails(item!.tmdbId)
+        : getTvDetailsCached(item!.id, item!.tmdbId),
+    enabled: !!item,
+    staleTime: 1000 * 60 * 60,
+  })
+  const where = detailsQuery.data ? whereToWatch(detailsQuery.data) : undefined
 
   if (item === undefined) return <p className="muted">Loading…</p>
   if (item === null) {
@@ -56,13 +70,12 @@ export default function ItemDetail() {
             {item.title} {item.year && <span className="muted">({item.year})</span>}
           </h2>
           <p className="muted">{item.mediaType === 'movie' ? 'Movie' : 'TV Show'}</p>
-          {imdbUrl ? (
+          {imdbUrl && (
             <a href={imdbUrl} target="_blank" rel="noopener noreferrer" className="link-out">
               View on IMDb ↗
             </a>
-          ) : (
-            <span className="muted">IMDb link added in Phase 2</span>
           )}
+          {where && <p className="muted detail__where">{where}</p>}
         </div>
       </div>
 

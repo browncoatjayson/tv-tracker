@@ -1,5 +1,6 @@
 /// <reference types="vite/client" />
 /// <reference types="vite-plugin-pwa/client" />
+/// <reference types="vite-plugin-pwa/react" />
 
 // Strongly-typed environment variables.
 // Add new VITE_* vars here so TypeScript knows about them.

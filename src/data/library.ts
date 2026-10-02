@@ -53,6 +53,31 @@ export async function setStatus(id: string, status: WatchStatus): Promise<void> 
   await updateItem(id, { status })
 }
 
+/** Toggle a title's Favorite flag. */
+export async function toggleFavorite(id: string, favorite: boolean): Promise<void> {
+  await updateItem(id, { favorite })
+}
+
+/**
+ * Change the recorded watched date of an already-watched episode (the user can
+ * correct the auto-filled date). No-op if the episode isn't marked watched.
+ */
+export async function setEpisodeWatchedDate(
+  itemId: string,
+  season: number,
+  episode: number,
+  watchedAt: number,
+): Promise<void> {
+  const id = episodeKey(itemId, season, episode)
+  const now = Date.now()
+  await db.transaction('rw', db.episodeStates, db.trackedItems, async () => {
+    const prev = await db.episodeStates.get(id)
+    if (!prev?.watched) return
+    await db.episodeStates.update(id, { watchedAt, updatedAt: now })
+    await db.trackedItems.update(itemId, { updatedAt: now })
+  })
+}
+
 /** Set (1–10) or clear (undefined) the user's personal rating. */
 export async function setRating(id: string, rating: number | undefined): Promise<void> {
   await updateItem(id, { userRating: rating })

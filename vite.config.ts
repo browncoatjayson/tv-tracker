@@ -13,9 +13,9 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
-      // Auto-update the service worker when a new build is deployed.
-      registerType: 'autoUpdate',
-      includeAssets: ['favicon.svg', 'app-icon.svg'],
+      // Prompt the user to reload when a new build is available (see UpdatePrompt).
+      registerType: 'prompt',
+      includeAssets: ['favicon.svg', 'app-icon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'TV Tracker',
         short_name: 'TV Tracker',
@@ -24,14 +24,12 @@ export default defineConfig({
         theme_color: '#0f172a',
         background_color: '#0f172a',
         display: 'standalone',
-        // Icons are referenced relative to the configured base path.
+        // PNG icons for Android/installability; SVG kept as a scalable extra.
         icons: [
-          {
-            src: 'app-icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any maskable',
-          },
+          { src: 'pwa-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
+          { src: 'pwa-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+          { src: 'app-icon.svg', sizes: 'any', type: 'image/svg+xml', purpose: 'any' },
         ],
       },
     }),

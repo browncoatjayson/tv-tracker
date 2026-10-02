@@ -34,6 +34,12 @@ export interface TrackedItem {
   status: WatchStatus
   /** Personal rating, 1–10. Undefined if unrated. */
   userRating?: number
+  /** Pinned to the Favorites section at the top of the Library. */
+  favorite?: boolean
+  /** Most recent episode air date (shows) or release date (movies), YYYY-MM-DD.
+   *  Backfilled from TMDB when a title is viewed or appears in Upcoming; used for
+   *  the "Last episode date" sort. */
+  lastAirDate?: string
   /** Epoch milliseconds. */
   addedAt: number
   updatedAt: number
@@ -53,6 +59,22 @@ export interface WatchEvent {
   watchedAt: number
   /** True if this was a rewatch (the episode/movie was already marked watched). */
   isRewatch: boolean
+}
+
+/**
+ * Cached episode metadata (name + air date) for a tracked show. This is a
+ * disposable cache fetched from TMDB — it powers episode-name search in the
+ * Library and the Upcoming calendar. Never part of a backup.
+ */
+export interface CachedEpisode {
+  /** `"<itemId>:<season>:<episode>"`. */
+  id: string
+  itemId: string
+  season: number
+  episode: number
+  name: string
+  /** YYYY-MM-DD, or null if unknown. */
+  airDate: string | null
 }
 
 /**
