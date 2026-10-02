@@ -67,4 +67,6 @@ export interface EpisodeState {
   episode: number
   watched: boolean
   watchedAt?: number
+  /** When this flag last changed (watch OR unwatch). Drives last-write-wins on sync. */
+  updatedAt?: number
 }

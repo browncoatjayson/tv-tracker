@@ -67,6 +67,27 @@ export type ImportMode =
   /** Keep existing data; add/overwrite items from the backup by id. */
   | 'merge'
 
+/** Write a (already-parsed) backup into the local DB. */
+export async function applyBackup(data: BackupData, mode: ImportMode): Promise<void> {
+  await db.transaction('rw', db.trackedItems, db.watchEvents, db.episodeStates, async () => {
+    if (mode === 'replace') {
+      await Promise.all([
+        db.trackedItems.clear(),
+        db.watchEvents.clear(),
+        db.episodeStates.clear(),
+      ])
+    }
+    // `bulkPut` upserts by primary key — safe for both modes.
+    await db.trackedItems.bulkPut(data.trackedItems)
+    await db.episodeStates.bulkPut(data.episodeStates)
+    // Watch events use auto-increment ids; drop them so the local log assigns
+    // fresh ones (the append-only log only ever grows).
+    const events =
+      mode === 'merge' ? data.watchEvents.map(({ id: _id, ...rest }) => rest) : data.watchEvents
+    await db.watchEvents.bulkPut(events)
+  })
+}
+
 /** Parse and import a backup file's text. Returns counts for a confirmation message. */
 export async function importBackup(
   json: string,
@@ -80,28 +101,58 @@ export async function importBackup(
     throw new Error('This backup was made by a newer version of the app.')
   }
 
-  await db.transaction('rw', db.trackedItems, db.watchEvents, db.episodeStates, async () => {
-    if (mode === 'replace') {
-      await Promise.all([
-        db.trackedItems.clear(),
-        db.watchEvents.clear(),
-        db.episodeStates.clear(),
-      ])
-    }
-    // `bulkPut` upserts by primary key — safe for both modes.
-    await db.trackedItems.bulkPut(parsed.trackedItems)
-    await db.episodeStates.bulkPut(parsed.episodeStates)
-    // Watch events use auto-increment ids; on merge we drop the ids so the log
-    // only ever grows (append-only) and we never clobber local history.
-    const events = mode === 'merge'
-      ? parsed.watchEvents.map(({ id: _id, ...rest }) => rest)
-      : parsed.watchEvents
-    await db.watchEvents.bulkPut(events)
-  })
+  await applyBackup(parsed, mode)
 
   return {
     items: parsed.trackedItems.length,
     events: parsed.watchEvents.length,
     episodes: parsed.episodeStates.length,
+  }
+}
+
+// --- Merge (for cross-device sync, Phase 5) ----------------------------------
+
+/** Stable, content-based signature so re-syncing the same watch event is idempotent. */
+function eventSignature(e: WatchEvent): string {
+  return `${e.itemId}|${e.episodeId}|${e.watchedAt}|${e.isRewatch}`
+}
+
+/**
+ * Merge two backups into one, with no data loss:
+ *  - trackedItems & episodeStates: last-write-wins by `updatedAt` (keyed by id).
+ *  - watchEvents: union by content signature (append-only; duplicates collapsed).
+ * The result is deterministic regardless of argument order, so both devices
+ * converge on the same dataset.
+ *
+ * Note: this has no delete tombstones, so an item removed on one device can be
+ * resurrected by the other. Acceptable for v1; revisit if it becomes annoying.
+ */
+export function mergeBackups(a: BackupData, b: BackupData): BackupData {
+  const items = new Map<string, TrackedItem>()
+  for (const it of [...a.trackedItems, ...b.trackedItems]) {
+    const prev = items.get(it.id)
+    if (!prev || (it.updatedAt ?? 0) >= (prev.updatedAt ?? 0)) items.set(it.id, it)
+  }
+
+  const episodes = new Map<string, EpisodeState>()
+  for (const ep of [...a.episodeStates, ...b.episodeStates]) {
+    const prev = episodes.get(ep.id)
+    const ts = (e: EpisodeState) => e.updatedAt ?? e.watchedAt ?? 0
+    if (!prev || ts(ep) >= ts(prev)) episodes.set(ep.id, ep)
+  }
+
+  const events = new Map<string, WatchEvent>()
+  for (const ev of [...a.watchEvents, ...b.watchEvents]) {
+    const { id: _id, ...rest } = ev
+    events.set(eventSignature(ev), rest)
+  }
+
+  return {
+    app: 'tv-tracker',
+    version: BACKUP_VERSION,
+    exportedAt: Date.now(),
+    trackedItems: [...items.values()],
+    episodeStates: [...episodes.values()],
+    watchEvents: [...events.values()],
   }
 }

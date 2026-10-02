@@ -22,20 +22,54 @@ export function imageUrl(path: string | undefined, size = 'w342'): string | unde
   return path ? `${IMAGE_BASE}/${size}${path}` : undefined
 }
 
-async function tmdbGet<T>(path: string, params: Record<string, string> = {}): Promise<T> {
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+// Exponential backoff with jitter, capped — used between retries.
+function backoffMs(attempt: number): number {
+  return Math.min(4000, 300 * 2 ** attempt) + Math.random() * 300
+}
+
+/**
+ * Fetch JSON from TMDB with retries. Bulk operations (e.g. importing a large
+ * library) can trip TMDB's abuse protection with 429s and dropped connections;
+ * we retry those (and 5xx and network errors) with backoff, honoring Retry-After.
+ * A genuine 4xx (bad token, not-found) is NOT retried.
+ */
+async function tmdbGet<T>(
+  path: string,
+  params: Record<string, string> = {},
+  retries = 5,
+): Promise<T> {
   if (!hasTmdbToken()) {
     throw new Error('Missing TMDB token. Add VITE_TMDB_TOKEN to your .env file.')
   }
   const url = new URL(`${BASE_URL}${path}`)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
 
-  const res = await fetch(url, {
-    headers: { Authorization: `Bearer ${token}`, accept: 'application/json' },
-  })
-  if (!res.ok) {
+  for (let attempt = 0; ; attempt++) {
+    let res: Response
+    try {
+      res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}`, accept: 'application/json' },
+      })
+    } catch (err) {
+      // Network error (connection reset under load, offline, etc.) — retry.
+      if (attempt >= retries) throw err
+      await sleep(backoffMs(attempt))
+      continue
+    }
+
+    if (res.ok) return res.json() as Promise<T>
+
+    // Throttling / transient server errors are retryable.
+    if ((res.status === 429 || res.status >= 500) && attempt < retries) {
+      const retryAfter = Number(res.headers.get('Retry-After'))
+      await sleep(retryAfter > 0 ? retryAfter * 1000 : backoffMs(attempt))
+      continue
+    }
+
     throw new Error(`TMDB request failed (${res.status}): ${path}`)
   }
-  return res.json() as Promise<T>
 }
 
 // --- Minimal types for the multi-search endpoint (expanded in Phase 2) --------
@@ -78,6 +112,49 @@ export async function getImdbId(
   const path = `/${mediaType}/${tmdbId}/external_ids`
   const data = await tmdbGet<{ imdb_id?: string | null }>(path)
   return data.imdb_id ?? undefined
+}
+
+// --- External-id lookup (for importing from other trackers) ------------------
+
+export interface TmdbFindResult {
+  tmdbId: number
+  title: string
+  posterPath?: string
+  year?: number
+}
+
+interface TmdbFindHit {
+  id: number
+  title?: string
+  name?: string
+  poster_path?: string | null
+  release_date?: string
+  first_air_date?: string
+}
+
+/**
+ * Resolve an external id (IMDb or TheTVDB) to a TMDB title. Returns null if TMDB
+ * has no match. Used by the importer to translate other trackers' ids to ours.
+ */
+export async function findByExternalId(
+  source: 'imdb_id' | 'tvdb_id',
+  externalId: string | number,
+  mediaType: 'movie' | 'tv',
+): Promise<TmdbFindResult | null> {
+  const data = await tmdbGet<{ movie_results: TmdbFindHit[]; tv_results: TmdbFindHit[] }>(
+    `/find/${externalId}`,
+    { external_source: source },
+  )
+  const hit = (mediaType === 'movie' ? data.movie_results : data.tv_results)?.[0]
+  if (!hit) return null
+  const date = hit.release_date || hit.first_air_date
+  const year = date ? Number(date.slice(0, 4)) : NaN
+  return {
+    tmdbId: hit.id,
+    title: hit.title || hit.name || 'Untitled',
+    posterPath: hit.poster_path ?? undefined,
+    year: Number.isFinite(year) ? year : undefined,
+  }
 }
 
 // --- TV details & episodes (Phase 3) -----------------------------------------

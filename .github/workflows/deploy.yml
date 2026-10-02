@@ -36,6 +36,9 @@ jobs:
           # TMDB token — add this in repo Settings -> Secrets and variables ->
           # Actions -> New repository secret (name: VITE_TMDB_TOKEN).
           VITE_TMDB_TOKEN: ${{ secrets.VITE_TMDB_TOKEN }}
+          # Google OAuth client ID for Drive sync (public value; stored as a
+          # secret only for consistency). Add as repo secret VITE_GOOGLE_CLIENT_ID.
+          VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
         run: npm run build
 
       - uses: actions/upload-pages-artifact@v5

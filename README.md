@@ -71,5 +71,7 @@ The workflow sets the Vite `base` path to `/<repo-name>/` automatically.
 - **Phase 2 — Search & add** ✅ TMDB search, add titles, IMDb links, posters
 - **Phase 3 — Tracking** ✅ per-episode watched/rewatch, resume-aware season expand, ratings
 - **Phase 4 — Upcoming** ✅ grouped feed of upcoming + "Recently aired" (dimmed, mark-off), excludes "dropped"
-- **Phase 5 — Sync** Google Drive `appDataFolder` sync
+- **Phase 5 — Sync** ✅ Google Drive `appDataFolder` sync (connect, merge, last-synced)
+- **Import** ✅ bring in history from other trackers (TV Time `.zip`; TMDB-matched, merge/replace)
+- **Reset account** ✅ wipe local + Drive (confirm modal); the "deletion" path instead of tombstones
 - **Phase 6 — Polish** offline hardening, PNG/iOS icons, "update available" prompt; **discuss: calendar view** for Upcoming (vs. the current list), and richer "recently aired" (multiple missed episodes per show)

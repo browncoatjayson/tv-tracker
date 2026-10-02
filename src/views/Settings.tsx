@@ -1,5 +1,8 @@
 import { useRef, useState } from 'react'
 import { downloadBackup, importBackup, type ImportMode } from '../data/exportImport'
+import DriveSync from '../components/DriveSync'
+import ImportTracker from '../components/ImportTracker'
+import ResetAccount from '../components/ResetAccount'
 
 export default function Settings() {
   const fileInput = useRef<HTMLInputElement>(null)
@@ -25,11 +28,13 @@ export default function Settings() {
 
   return (
     <div className="settings">
+      <DriveSync />
+
       <section className="card">
         <h2>Backup &amp; restore</h2>
         <p className="muted">
-          Your data lives only on this device (in the browser). Export a backup file to keep it
-          safe or move it to another device. Google Drive sync arrives in Phase 5.
+          Export a backup file to keep it safe or move it to another device. This works even
+          without Google Drive sync.
         </p>
 
         <button className="btn" onClick={() => void downloadBackup()}>
@@ -74,13 +79,17 @@ export default function Settings() {
         {error && <p className="badge badge--warn">{error}</p>}
       </section>
 
+      <ImportTracker />
+
       <section className="card">
         <h2>About</h2>
         <p className="muted">
           TV Tracker — a personal, offline-first replacement for TV Time. Metadata from TMDB,
-          detail pages link to IMDb. Phase 1 scaffold.
+          detail pages link to IMDb.
         </p>
       </section>
+
+      <ResetAccount />
     </div>
   )
 }

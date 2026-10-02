@@ -1,7 +1,8 @@
+import { useEffect } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useParams } from 'react-router-dom'
 import { db } from '../data/db'
-import { imageUrl } from '../api/tmdb'
+import { getImdbId, imageUrl } from '../api/tmdb'
 import { removeItem, setRating, setStatus } from '../data/library'
 import type { WatchStatus } from '../data/types'
 import ShowEpisodes from '../components/ShowEpisodes'
@@ -9,14 +10,24 @@ import MovieWatch from '../components/MovieWatch'
 
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
 
-// Phase 1: shows the stored item, lets you change status/rating/remove, and
-// links out to IMDb. Phase 3 adds per-episode tracking; Phase 2 fills imdbId.
 export default function ItemDetail() {
   const { id = '' } = useParams()
   const itemId = decodeURIComponent(id)
   // Normalize "not found" to null so we can tell it apart from useLiveQuery's
   // own "still loading" undefined.
   const item = useLiveQuery(() => db.trackedItems.get(itemId).then((r) => r ?? null), [itemId])
+
+  // Backfill a missing IMDb id (e.g. shows imported from TV Time, which only had
+  // a TVDB id). Written without bumping updatedAt so it doesn't churn sync.
+  useEffect(() => {
+    if (!item || item.imdbId) return
+    const source = item.mediaType === 'show' ? 'tv' : 'movie'
+    getImdbId(source, item.tmdbId)
+      .then((imdb) => {
+        if (imdb) void db.trackedItems.update(item.id, { imdbId: imdb })
+      })
+      .catch(() => {})
+  }, [item?.id, item?.imdbId])
 
   if (item === undefined) return <p className="muted">Loading…</p>
   if (item === null) {

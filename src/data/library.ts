@@ -89,6 +89,7 @@ export async function markEpisode(
       episode,
       watched,
       watchedAt: watched ? now : undefined,
+      updatedAt: now,
     })
 
     if (watched) {
