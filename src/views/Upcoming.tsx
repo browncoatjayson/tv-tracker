@@ -3,9 +3,10 @@ import { useQueries } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
-import { getMovieDetails, imageUrl, whereToWatch } from '../api/tmdb'
+import { genreNames, getMovieDetails, imageUrl, watchNames, whereToWatch } from '../api/tmdb'
 import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
 import { getTvDetailsCached } from '../data/episodeCache'
+import { matchesFilter, parseQuery } from '../utils/filter'
 import { markEpisode, markMovieWatched } from '../data/library'
 import type { MediaType } from '../data/types'
 import UpcomingCalendar from '../components/UpcomingCalendar'
@@ -21,6 +22,9 @@ interface FeedEntry {
   where?: string
   /** Local air time (from TVmaze), e.g. "9:00 PM". */
   time?: string
+  /** For genre/service filtering. */
+  genres?: string[]
+  providers?: string[]
   // Present on aired entries, so the inline "mark watched" control knows what to log.
   season?: number
   episode?: number
@@ -132,6 +136,8 @@ export default function Upcoming() {
     const details = showResults[i]?.data
     if (!details) return
     const where = whereToWatch(details)
+    const genres = genreNames(details)
+    const providers = watchNames(details)
     const next = details.next_episode_to_air
     if (next?.air_date && next.air_date >= today) {
       upcoming.push({
@@ -142,6 +148,8 @@ export default function Upcoming() {
         detail: `S${next.season_number}E${next.episode_number}${next.name ? ` · ${next.name}` : ''}`,
         posterPath: s.posterPath,
         where,
+        genres,
+        providers,
         time: airTime(s.imdbId, next.season_number, next.episode_number),
       })
     }
@@ -159,6 +167,8 @@ export default function Upcoming() {
         detail: `S${last.season_number}E${last.episode_number}${last.name ? ` · ${last.name}` : ''}`,
         posterPath: s.posterPath,
         where,
+        genres,
+        providers,
         time: airTime(s.imdbId, last.season_number, last.episode_number),
         season: last.season_number,
         episode: last.episode_number,
@@ -169,8 +179,10 @@ export default function Upcoming() {
   movies.forEach((m, i) => {
     const md = movieResults[i]?.data
     const release = md?.release_date
-    if (!release) return
+    if (!release || !md) return
     const where = whereToWatch(md)
+    const genres = genreNames(md)
+    const providers = watchNames(md)
     if (release >= today) {
       upcoming.push({
         itemId: m.id,
@@ -180,6 +192,8 @@ export default function Upcoming() {
         detail: 'Release',
         posterPath: m.posterPath,
         where,
+        genres,
+        providers,
       })
     } else if (inAiredWindow(release) && !watchedMovies.has(m.id)) {
       aired.push({
@@ -190,6 +204,8 @@ export default function Upcoming() {
         detail: 'Released',
         posterPath: m.posterPath,
         where,
+        genres,
+        providers,
       })
     }
   })
@@ -197,11 +213,14 @@ export default function Upcoming() {
   upcoming.sort((a, b) => a.date.localeCompare(b.date))
   aired.sort((a, b) => a.date.localeCompare(b.date)) // oldest first, newest nearest "This week"
 
-  // Title filter, scoped to this list. Our list isn't date-capped, so a match
-  // shows however far out it is — no horizon extension needed.
-  const ql = query.trim().toLowerCase()
+  // Filter, scoped to this list. Supports name / episode name plus genre:/service:.
+  // Our list isn't date-capped, so a match shows however far out it is.
+  const parsed = parseQuery(query)
   const matches = (e: FeedEntry) =>
-    !ql || e.title.toLowerCase().includes(ql) || e.detail.toLowerCase().includes(ql)
+    matchesFilter(
+      { title: e.title, extraText: e.detail, genres: e.genres, providers: e.providers },
+      parsed,
+    )
   const airedF = aired.filter(matches)
   const upcomingF = upcoming.filter(matches)
 
@@ -256,7 +275,7 @@ export default function Upcoming() {
         <input
           className="search__input"
           type="search"
-          placeholder="Filter upcoming…"
+          placeholder="Filter… name, genre:comedy, service:apple"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />

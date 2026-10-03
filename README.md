@@ -24,9 +24,16 @@ a home-screen icon, a full-screen app window, and offline access.
 - **iPhone / iPad:** open the site in **Safari**, tap the **Share** button, then
   **Add to Home Screen**. (iOS only installs web apps from Safari.)
 
-**2. Build your library.** Use the **Search** tab to add shows and movies. Open a
-title to track episodes, set your rating, and jump to IMDb. The **Upcoming** tab
-shows what's airing next (with local air times) and what you recently missed.
+**2. Build your library.** Use the **Search** tab to add shows and movies (results
+show a description; once added, tap the tile to open its details). Open a title to
+track episodes, rate it on a 10-star scale (shown next to the average), and jump
+to IMDb. Marking episodes advances the status automatically (watching → completed),
+and you can log rewatches. The **Upcoming** tab shows what's airing next (with
+local air times) and what you recently missed.
+
+The Library filter box also takes `genre:` and `service:` tokens, e.g.
+`genre:comedy` or `genre:crime, service:hbo`. (Genre/service data fills in as you
+browse, or all at once via **Settings → Build index**.)
 
 **3. Import your TV Time history (optional).** Request your data export from TV
 Time (you'll get a `.zip`), then go to **Settings → Import from another tracker →

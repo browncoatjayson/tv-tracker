@@ -40,6 +40,10 @@ export interface TrackedItem {
    *  Backfilled from TMDB when a title is viewed or appears in Upcoming; used for
    *  the "Last episode date" sort. */
   lastAirDate?: string
+  /** Broad genres (e.g. ["Drama","Crime"]) — backfilled for filtering. */
+  genres?: string[]
+  /** Where to watch (networks + streaming names) — backfilled for filtering. */
+  providers?: string[]
   /** Epoch milliseconds. */
   addedAt: number
   updatedAt: number
@@ -88,6 +92,8 @@ export interface EpisodeState {
   season: number
   episode: number
   watched: boolean
+  /** How many times watched (0 = unwatched, 2 = watched twice). Enables rewatches. */
+  watchCount?: number
   watchedAt?: number
   /** When this flag last changed (watch OR unwatch). Drives last-write-wins on sync. */
   updatedAt?: number

@@ -5,6 +5,7 @@ import { db } from '../data/db'
 import { hasAired, imageUrl } from '../api/tmdb'
 import { toggleFavorite } from '../data/library'
 import type { CachedEpisode, TrackedItem, WatchStatus } from '../data/types'
+import { matchesFilter, parseQuery } from '../utils/filter'
 
 const STATUS_ORDER: WatchStatus[] = ['watching', 'watchlist', 'completed', 'dropped']
 const STATUS_LABEL: Record<WatchStatus, string> = {
@@ -59,7 +60,7 @@ export default function Library() {
   // Episode-name matches from the local cache (populated as shows are viewed /
   // the calendar loads). Coverage grows with use; shows never opened won't match.
   const episodeMatches = useLiveQuery<CachedEpisode[]>(() => {
-    const qq = query.trim().toLowerCase()
+    const qq = parseQuery(query).text
     if (qq.length < 2) return Promise.resolve([] as CachedEpisode[])
     return db.episodeCache.filter((e) => e.name.toLowerCase().includes(qq)).toArray()
   }, [query])
@@ -79,8 +80,8 @@ export default function Library() {
   }
 
   const sorted = [...items].sort(comparator(sort))
-  const q = query.trim().toLowerCase()
-  const searching = q.length > 0
+  const parsed = parseQuery(query)
+  const searching = query.trim().length > 0
 
   return (
     <div className="library">
@@ -88,7 +89,7 @@ export default function Library() {
         <input
           className="search__input"
           type="search"
-          placeholder="Filter your library…"
+          placeholder="Filter… name, genre:comedy, service:apple"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
         />
@@ -108,14 +109,24 @@ export default function Library() {
 
       {searching ? (
         (() => {
-          const titleResults = sorted.filter((i) => i.title.toLowerCase().includes(q))
+          const titleResults = sorted.filter((i) =>
+            matchesFilter({ title: i.title, genres: i.genres, providers: i.providers }, parsed),
+          )
 
           // Episode-name matches, one row per episode (excluding shows already
-          // matched by title). Sorted by show, then season/episode.
+          // matched by title, or excluded by an active genre/service filter).
           const titleIds = new Set(titleResults.map((i) => i.id))
           const itemsById = new Map(items.map((i) => [i.id, i]))
           const episodeHits = (episodeMatches ?? [])
-            .filter((e) => itemsById.has(e.itemId) && !titleIds.has(e.itemId))
+            .filter((e) => {
+              const it = itemsById.get(e.itemId)
+              if (!it || titleIds.has(e.itemId)) return false
+              // Respect genre/service filters on the episode's show too.
+              return matchesFilter(
+                { genres: it.genres, providers: it.providers },
+                { ...parsed, text: '' },
+              )
+            })
             .sort(
               (a, b) =>
                 a.itemId.localeCompare(b.itemId) || a.season - b.season || a.episode - b.episode,

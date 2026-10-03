@@ -53,6 +53,14 @@ export async function setStatus(id: string, status: WatchStatus): Promise<void> 
   await updateItem(id, { status })
 }
 
+/** Backfill filterable metadata (genres, providers) without bumping updatedAt. */
+export async function setItemMeta(
+  id: string,
+  meta: { genres?: string[]; providers?: string[] },
+): Promise<void> {
+  await db.trackedItems.update(id, meta)
+}
+
 /** Toggle a title's Favorite flag. */
 export async function toggleFavorite(id: string, favorite: boolean): Promise<void> {
   await updateItem(id, { favorite })
@@ -93,18 +101,20 @@ export async function removeItem(id: string): Promise<void> {
 }
 
 /**
- * Toggle an episode's watched flag and append a watch event when marking watched.
- * If the episode was already watched, marking it again is recorded as a rewatch.
+ * Set an episode's absolute watch count (0 = unwatched, 2 = watched twice). Logs
+ * one watch event per increment (rewatch flagged for counts beyond the first),
+ * which is what enables per-episode rewatch passes.
  */
-export async function markEpisode(
+export async function setEpisodeWatchCount(
   itemId: string,
   season: number,
   episode: number,
-  watched: boolean,
+  count: number,
 ): Promise<void> {
   const id = episodeKey(itemId, season, episode)
   await db.transaction('rw', db.episodeStates, db.watchEvents, db.trackedItems, async () => {
     const prev = await db.episodeStates.get(id)
+    const prevCount = prev?.watchCount ?? (prev?.watched ? 1 : 0)
     const now = Date.now()
 
     await db.episodeStates.put({
@@ -112,21 +122,38 @@ export async function markEpisode(
       itemId,
       season,
       episode,
-      watched,
-      watchedAt: watched ? now : undefined,
+      watched: count > 0,
+      watchCount: count,
+      watchedAt: count > 0 ? now : undefined,
       updatedAt: now,
     })
 
-    if (watched) {
+    // Append a watch event for each new watch (the 2nd+ are rewatches).
+    for (let k = prevCount; k < count; k++) {
       await db.watchEvents.add({
         itemId,
         episodeId: `${season}x${episode}`,
         watchedAt: now,
-        isRewatch: prev?.watched === true,
+        isRewatch: k >= 1,
       })
     }
     await db.trackedItems.update(itemId, { updatedAt: now })
   })
+}
+
+/**
+ * Simple watched toggle (first-pass). Marking watched keeps any existing higher
+ * rewatch count; unmarking sets it to 0.
+ */
+export async function markEpisode(
+  itemId: string,
+  season: number,
+  episode: number,
+  watched: boolean,
+): Promise<void> {
+  const prev = await db.episodeStates.get(episodeKey(itemId, season, episode))
+  const prevCount = prev?.watchCount ?? (prev?.watched ? 1 : 0)
+  await setEpisodeWatchCount(itemId, season, episode, watched ? Math.max(1, prevCount) : 0)
 }
 
 /** Log a (re)watch of a movie. */

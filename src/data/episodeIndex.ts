@@ -1,6 +1,9 @@
 import { useSyncExternalStore } from 'react'
+import { genreNames, getMovieDetails, watchNames } from '../api/tmdb'
 import { db } from './db'
 import { getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
+import { setItemMeta } from './library'
+import type { TrackedItem } from './types'
 
 // ---------------------------------------------------------------------------
 // Background episode indexer. Walks every tracked show and caches its episode
@@ -49,17 +52,23 @@ export function useIndexProgress(): IndexState {
   return useSyncExternalStore(subscribe, () => state, () => state)
 }
 
-/** Cache all of one show's seasons that aren't already fully cached. */
-async function indexShow(itemId: string, tmdbId: number): Promise<void> {
-  const details = await getTvDetailsCached(itemId, tmdbId)
+/** Index one title: backfill genres/providers, and (for shows) cache episodes. */
+async function indexItem(item: TrackedItem): Promise<void> {
+  if (item.mediaType === 'movie') {
+    const details = await getMovieDetails(item.tmdbId)
+    await setItemMeta(item.id, { genres: genreNames(details), providers: watchNames(details) })
+    return
+  }
+  const details = await getTvDetailsCached(item.id, item.tmdbId)
+  await setItemMeta(item.id, { genres: genreNames(details), providers: watchNames(details) })
   for (const season of details.seasons) {
     if (season.episode_count <= 0) continue
     const have = await db.episodeCache
       .where('[itemId+season]')
-      .equals([itemId, season.season_number])
+      .equals([item.id, season.season_number])
       .count()
     if (have >= season.episode_count) continue // already cached
-    await getSeasonEpisodesCached(itemId, tmdbId, season.season_number)
+    await getSeasonEpisodesCached(item.id, item.tmdbId, season.season_number)
   }
 }
 
@@ -71,37 +80,35 @@ export async function startIndexing(concurrency = 3): Promise<void> {
   running = true
   try {
     const done = loadDone()
-    const shows = (await db.trackedItems.toArray()).filter(
-      (i) => i.mediaType === 'show' && i.status !== 'dropped',
-    )
-    const todo = shows.filter((s) => !done.has(s.id))
+    const all = (await db.trackedItems.toArray()).filter((i) => i.status !== 'dropped')
+    const todo = all.filter((i) => !done.has(i.id))
 
     if (todo.length === 0) {
-      setState({ status: 'done', done: shows.length, total: shows.length })
+      setState({ status: 'done', done: all.length, total: all.length })
       return
     }
 
-    let doneCount = shows.length - todo.length
-    setState({ status: 'running', done: doneCount, total: shows.length })
+    let doneCount = all.length - todo.length
+    setState({ status: 'running', done: doneCount, total: all.length })
 
     let cursor = 0
     const worker = async () => {
       while (cursor < todo.length) {
-        const s = todo[cursor++]
+        const item = todo[cursor++]
         try {
-          await indexShow(s.id, s.tmdbId)
-          done.add(s.id)
+          await indexItem(item)
+          done.add(item.id)
           saveDone(done)
         } catch {
-          // Leave failed shows out of `done` so a later run retries them.
+          // Leave failed titles out of `done` so a later run retries them.
         }
         doneCount += 1
-        setState({ status: 'running', done: doneCount, total: shows.length })
+        setState({ status: 'running', done: doneCount, total: all.length })
       }
     }
 
     await Promise.all(Array.from({ length: Math.min(concurrency, todo.length) }, worker))
-    setState({ status: 'done', done: shows.length, total: shows.length })
+    setState({ status: 'done', done: all.length, total: all.length })
   } finally {
     running = false
   }

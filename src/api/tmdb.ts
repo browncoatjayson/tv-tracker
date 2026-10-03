@@ -82,6 +82,23 @@ export interface TmdbSearchResult {
   first_air_date?: string // tv
   poster_path?: string | null
   overview?: string
+  genre_ids?: number[]
+}
+
+/** TMDB genre id -> name maps (separate for movies and TV). Cached indefinitely. */
+export interface GenreMaps {
+  movie: Record<number, string>
+  tv: Record<number, string>
+}
+
+export async function getGenreMap(): Promise<GenreMaps> {
+  const [movie, tv] = await Promise.all([
+    tmdbGet<{ genres: { id: number; name: string }[] }>('/genre/movie/list'),
+    tmdbGet<{ genres: { id: number; name: string }[] }>('/genre/tv/list'),
+  ])
+  const toMap = (list: { id: number; name: string }[]) =>
+    Object.fromEntries(list.map((g) => [g.id, g.name]))
+  return { movie: toMap(movie.genres), tv: toMap(tv.genres) }
 }
 
 interface TmdbSearchResponse {
@@ -183,6 +200,11 @@ export interface TmdbWatchProviders {
 export interface WatchInfo {
   networks?: { name: string }[]
   'watch/providers'?: TmdbWatchProviders
+  genres?: { name: string }[]
+  /** Average rating 0–10 (TMDB's own). */
+  vote_average?: number
+  /** Synopsis. */
+  overview?: string
 }
 
 export interface TmdbTvDetails {
@@ -232,15 +254,25 @@ function normalizeProvider(name: string): string {
     .trim()
 }
 
-export function whereToWatch(details: WatchInfo, region = 'US'): string | undefined {
+/** All networks + streaming service names (deduped) for the given region. */
+export function watchNames(details: WatchInfo, region = 'US'): string[] {
   const names: string[] = []
   for (const n of details.networks ?? []) names.push(n.name)
   for (const p of details['watch/providers']?.results?.[region]?.flatrate ?? []) {
     names.push(normalizeProvider(p.provider_name))
   }
-  const unique = [...new Set(names)]
+  return [...new Set(names)]
+}
+
+/** Broad genre names (e.g. ["Drama","Crime"]). */
+export function genreNames(details: WatchInfo): string[] {
+  return (details.genres ?? []).map((g) => g.name)
+}
+
+export function whereToWatch(details: WatchInfo, region = 'US'): string | undefined {
+  const names = watchNames(details, region)
   // Keep it concise: networks come first, then up to a couple of streamers.
-  return unique.length ? unique.slice(0, 3).join(' / ') : undefined
+  return names.length ? names.slice(0, 3).join(' / ') : undefined
 }
 
 export interface TmdbEpisode {

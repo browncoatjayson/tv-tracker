@@ -1,17 +1,25 @@
 import { useState } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQueries, useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { Link } from 'react-router-dom'
 import {
+  getGenreMap,
   getImdbId,
+  getMovieDetails,
+  getTvDetails,
   hasTmdbToken,
   imageUrl,
   searchMulti,
+  watchNames,
   type TmdbMediaResult,
 } from '../api/tmdb'
 import { db, itemKey } from '../data/db'
 import { addItem } from '../data/library'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import { matchesFilter, parseQuery } from '../utils/filter'
 import type { MediaType } from '../data/types'
+
+const HOUR = 1000 * 60 * 60
 
 /** TMDB uses 'tv'; our domain uses 'show'. */
 function toMediaType(r: TmdbMediaResult): MediaType {
@@ -37,15 +45,56 @@ export default function Search() {
   const trackedIds = useLiveQuery(() => db.trackedItems.toCollection().primaryKeys(), [])
   const trackedSet = new Set(trackedIds ?? [])
 
+  // The free-text part drives the TMDB search; genre:/service: tokens filter it.
+  const parsed = parseQuery(query)
+  const searchText = parsed.text
+
   const {
-    data: results,
+    data: allResults,
     isFetching,
     isError,
     error,
   } = useQuery({
-    queryKey: ['search', query],
-    queryFn: () => searchMulti(query),
-    enabled: hasTmdbToken() && query.trim().length > 0,
+    queryKey: ['search', searchText],
+    queryFn: () => searchMulti(searchText),
+    enabled: hasTmdbToken() && searchText.length > 0,
+  })
+
+  // Genre id -> name maps (so genre: tokens can match search results).
+  const { data: genreMap } = useQuery({
+    queryKey: ['genres'],
+    queryFn: getGenreMap,
+    staleTime: Infinity,
+    enabled: hasTmdbToken(),
+  })
+  const resultGenres = (r: TmdbMediaResult): string[] => {
+    const map = r.media_type === 'tv' ? genreMap?.tv : genreMap?.movie
+    return (r.genre_ids ?? []).map((id) => map?.[id]).filter((n): n is string => Boolean(n))
+  }
+
+  // Service filtering needs per-result providers, so fetch details for the shown
+  // results — but only when a service: token is actually in use.
+  const servicesActive = parsed.services.length > 0
+  const providerQueries = useQueries({
+    queries: (allResults ?? []).map((r) => ({
+      queryKey: [r.media_type === 'tv' ? 'tv' : 'movie', r.id],
+      queryFn: () => (r.media_type === 'tv' ? getTvDetails(r.id) : getMovieDetails(r.id)),
+      enabled: servicesActive,
+      staleTime: HOUR,
+    })),
+  })
+
+  const results = (allResults ?? []).filter((r, i) => {
+    const providers = servicesActive
+      ? providerQueries[i]?.data
+        ? watchNames(providerQueries[i].data)
+        : []
+      : []
+    // Text already handled by the TMDB query; only apply genre/service here.
+    return matchesFilter(
+      { genres: resultGenres(r), providers },
+      { text: '', genres: parsed.genres, services: parsed.services },
+    )
   })
 
   async function handleAdd(r: TmdbMediaResult) {
@@ -84,7 +133,7 @@ export default function Search() {
       <input
         className="search__input"
         type="search"
-        placeholder="Search movies & shows…"
+        placeholder="Search… name, genre:comedy, service:apple"
         value={input}
         onChange={(e) => setInput(e.target.value)}
         autoFocus
@@ -96,16 +145,17 @@ export default function Search() {
           {error instanceof Error ? error.message : 'Search failed.'}
         </p>
       )}
-      {results && results.length === 0 && query.trim() && !isFetching && (
-        <p className="muted">No results for “{query}”.</p>
+      {results.length === 0 && searchText && !isFetching && (
+        <p className="muted">No results for “{searchText}”.</p>
       )}
 
       <ul className="result-list">
-        {results?.map((r) => {
-          const added = trackedSet.has(itemKey(toMediaType(r), r.id))
+        {results.map((r) => {
+          const id = itemKey(toMediaType(r), r.id)
+          const added = trackedSet.has(id)
           const poster = imageUrl(r.poster_path ?? undefined, 'w92')
-          return (
-            <li key={`${r.media_type}:${r.id}`} className="result-row">
+          const inner = (
+            <>
               {poster ? (
                 <img className="result-row__poster" src={poster} alt="" loading="lazy" />
               ) : (
@@ -119,7 +169,20 @@ export default function Search() {
                   {resultYear(r) && <span className="muted"> ({resultYear(r)})</span>}
                 </span>
                 <span className="type-badge">{r.media_type === 'tv' ? 'TV' : 'Movie'}</span>
+                {r.overview && <span className="muted result-row__overview">{r.overview}</span>}
               </div>
+            </>
+          )
+          return (
+            <li key={`${r.media_type}:${r.id}`} className="result-row">
+              {/* Once added, the tile links to the show's detail page. */}
+              {added ? (
+                <Link to={`/item/${encodeURIComponent(id)}`} className="result-row__link">
+                  {inner}
+                </Link>
+              ) : (
+                <div className="result-row__link">{inner}</div>
+              )}
               <button
                 className="btn btn--small"
                 disabled={added || addingId === r.id}

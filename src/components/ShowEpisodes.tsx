@@ -5,7 +5,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { getEpisodeImdbId, hasAired, type TmdbSeasonSummary } from '../api/tmdb'
 import { db } from '../data/db'
 import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
-import { markEpisode, setEpisodeWatchedDate } from '../data/library'
+import { setEpisodeWatchCount, setEpisodeWatchedDate, setStatus } from '../data/library'
 import type { EpisodeState, TrackedItem } from '../data/types'
 
 // Order seasons ascending, but push "Specials" (season 0) to the end.
@@ -69,13 +69,26 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
   const stateMap = new Map<string, EpisodeState>()
   const watchedPerSeason = new Map<number, number>()
   let watchedCount = 0
+  let minWatchCount = Infinity
+  let lastWatchedAt = 0
   for (const s of states ?? []) {
     stateMap.set(`${s.season}:${s.episode}`, s)
     if (s.watched) {
       watchedCount += 1
       watchedPerSeason.set(s.season, (watchedPerSeason.get(s.season) ?? 0) + 1)
+      const c = s.watchCount ?? 1
+      if (c < minWatchCount) minWatchCount = c
+      if (s.watchedAt && s.watchedAt > lastWatchedAt) lastWatchedAt = s.watchedAt
     }
   }
+
+  // "Completed passes" = how many times the whole show has been watched through.
+  // Only meaningful once every episode is watched at least once.
+  const totalEpisodes = details?.number_of_episodes ?? 0
+  const completedPasses =
+    totalEpisodes > 0 && watchedCount >= totalEpisodes && minWatchCount !== Infinity
+      ? minWatchCount
+      : 0
 
   // Auto-expand + scroll-to happen once, after BOTH the show details and the
   // initial watched state have loaded (so the resume calculation is correct).
@@ -106,6 +119,18 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
     }
   }, [details, item.id, item.lastAirDate])
 
+  // Auto-advance status as you watch: watchlist -> watching on the first episode,
+  // and -> completed once every episode is watched (never overrides "dropped").
+  useEffect(() => {
+    if (!details || item.status === 'dropped') return
+    const total = details.number_of_episodes
+    if (total > 0 && watchedCount >= total) {
+      if (item.status !== 'completed') void setStatus(item.id, 'completed')
+    } else if (watchedCount > 0 && item.status === 'watchlist') {
+      void setStatus(item.id, 'watching')
+    }
+  }, [watchedCount, details, item.status, item.id])
+
   if (isLoading) return <p className="muted">Loading episodes…</p>
   if (isError) {
     return (
@@ -132,6 +157,12 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
       <div className="episodes__progress">
         <strong>{watchedCount}</strong> / {details.number_of_episodes} episodes watched
       </div>
+      {completedPasses >= 1 && (
+        <div className="episodes__rewatch muted">
+          Watched {completedPasses} {completedPasses === 1 ? 'time' : 'times'}
+          {lastWatchedAt > 0 && <> · last on {new Date(lastWatchedAt).toLocaleDateString()}</>}
+        </div>
+      )}
 
       {seasons.map((season) => (
         <SeasonSection
@@ -141,6 +172,7 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
           isOpen={expanded.has(season.season_number)}
           onToggle={() => toggle(season.season_number)}
           stateMap={stateMap}
+          completedPasses={completedPasses}
           scrollIntoViewOnLoad={season.season_number === scrollTarget}
         />
       ))}
@@ -154,6 +186,7 @@ function SeasonSection({
   isOpen,
   onToggle,
   stateMap,
+  completedPasses,
   scrollIntoViewOnLoad,
 }: {
   item: TrackedItem
@@ -161,6 +194,7 @@ function SeasonSection({
   isOpen: boolean
   onToggle: () => void
   stateMap: Map<string, EpisodeState>
+  completedPasses: number
   scrollIntoViewOnLoad: boolean
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
@@ -187,12 +221,20 @@ function SeasonSection({
     (ep) => stateMap.get(`${ep.season_number}:${ep.episode_number}`)?.watched,
   ).length
 
+  // Mark every aired episode as watched for the current pass (handles first
+  // watch and rewatch passes alike; never lowers an episode already ahead).
   async function markSeasonWatched() {
     if (!episodes) return
     for (const ep of episodes) {
-      if (hasAired(ep.air_date)) {
-        await markEpisode(item.id, ep.season_number, ep.episode_number, true)
-      }
+      if (!hasAired(ep.air_date)) continue
+      const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
+      const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
+      await setEpisodeWatchCount(
+        item.id,
+        ep.season_number,
+        ep.episode_number,
+        Math.max(wc, completedPasses + 1),
+      )
     }
   }
 
@@ -220,24 +262,35 @@ function SeasonSection({
                 {episodes.map((ep) => {
                   const aired = hasAired(ep.air_date)
                   const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
-                  const watched = st?.watched ?? false
+                  const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
+                  const inCurrentPass = wc > completedPasses // watched in the in-progress pass
+                  const everWatched = wc > 0
                   return (
                     <li key={ep.episode_number} className="episode">
-                      <input
-                        type="checkbox"
-                        className="episode__check"
-                        checked={watched}
+                      <button
+                        type="button"
+                        className={`epi-check${
+                          inCurrentPass ? ' epi-check--on' : everWatched ? ' epi-check--dim' : ''
+                        }`}
                         disabled={!aired}
+                        aria-pressed={inCurrentPass}
                         aria-label={`Mark S${ep.season_number}E${ep.episode_number} watched`}
-                        onChange={(e) =>
-                          void markEpisode(
+                        title={
+                          everWatched && !inCurrentPass
+                            ? 'Watched a previous time — click to mark this rewatch'
+                            : undefined
+                        }
+                        onClick={() =>
+                          void setEpisodeWatchCount(
                             item.id,
                             ep.season_number,
                             ep.episode_number,
-                            e.target.checked,
+                            inCurrentPass ? completedPasses : completedPasses + 1,
                           )
                         }
-                      />
+                      >
+                        {everWatched ? '✓' : ''}
+                      </button>
                       <div className="episode__main">
                         <div className="episode__top">
                           <span className="episode__num">
@@ -260,7 +313,7 @@ function SeasonSection({
                               {ep.air_date ? `Upcoming · ${ep.air_date}` : 'TBA'}
                             </span>
                           )}
-                          {watched && (
+                          {everWatched && (
                             <WatchedDate
                               itemId={item.id}
                               season={ep.season_number}

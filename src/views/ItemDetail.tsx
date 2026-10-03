@@ -1,11 +1,19 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useParams } from 'react-router-dom'
 import { db } from '../data/db'
-import { getImdbId, getMovieDetails, imageUrl, whereToWatch, type WatchInfo } from '../api/tmdb'
+import {
+  genreNames,
+  getImdbId,
+  getMovieDetails,
+  imageUrl,
+  watchNames,
+  whereToWatch,
+  type WatchInfo,
+} from '../api/tmdb'
 import { getTvDetailsCached } from '../data/episodeCache'
-import { removeItem, setRating, setStatus } from '../data/library'
+import { removeItem, setItemMeta, setRating, setStatus } from '../data/library'
 import type { WatchStatus } from '../data/types'
 import ShowEpisodes from '../components/ShowEpisodes'
 import MovieWatch from '../components/MovieWatch'
@@ -42,6 +50,15 @@ export default function ItemDetail() {
     staleTime: 1000 * 60 * 60,
   })
   const where = detailsQuery.data ? whereToWatch(detailsQuery.data) : undefined
+  const [editingRating, setEditingRating] = useState(false)
+
+  // Backfill filterable metadata (genres, providers) for the Library filter.
+  useEffect(() => {
+    const d = detailsQuery.data
+    if (item && d) {
+      void setItemMeta(item.id, { genres: genreNames(d), providers: watchNames(d) })
+    }
+  }, [item?.id, detailsQuery.data])
 
   if (item === undefined) return <p className="muted">Loading…</p>
   if (item === null) {
@@ -76,8 +93,21 @@ export default function ItemDetail() {
             </a>
           )}
           {where && <p className="muted detail__where">{where}</p>}
+          {detailsQuery.data?.genres && detailsQuery.data.genres.length > 0 && (
+            <div className="genre-badges">
+              {detailsQuery.data.genres.map((g) => (
+                <span key={g.name} className="genre-badge">
+                  {g.name}
+                </span>
+              ))}
+            </div>
+          )}
         </div>
       </div>
+
+      {detailsQuery.data?.overview && (
+        <p className="detail__overview muted">{detailsQuery.data.overview}</p>
+      )}
 
       <label className="field">
         <span>Status</span>
@@ -93,22 +123,44 @@ export default function ItemDetail() {
         </select>
       </label>
 
-      <label className="field">
-        <span>Your rating</span>
-        <select
-          value={item.userRating ?? ''}
-          onChange={(e) =>
-            setRating(item.id, e.target.value ? Number(e.target.value) : undefined)
-          }
-        >
-          <option value="">—</option>
-          {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="ratings-row">
+        <div className="rating-col">
+          <span className="rating-col__label">Your rating</span>
+          {item.userRating !== undefined && !editingRating ? (
+            <span className="rating-value">
+              ★ {item.userRating}/10{' '}
+              <button className="link-btn" onClick={() => setEditingRating(true)}>
+                revise
+              </button>
+            </span>
+          ) : (
+            <RatingStars
+              value={item.userRating}
+              onPick={(n) => {
+                void setRating(item.id, n)
+                setEditingRating(false)
+              }}
+              onClear={
+                item.userRating !== undefined
+                  ? () => {
+                      void setRating(item.id, undefined)
+                      setEditingRating(false)
+                    }
+                  : undefined
+              }
+            />
+          )}
+        </div>
+        <div className="rating-col">
+          <span className="rating-col__label">Average</span>
+          <span className="rating-value">
+            {typeof detailsQuery.data?.vote_average === 'number' &&
+            detailsQuery.data.vote_average > 0
+              ? `★ ${detailsQuery.data.vote_average.toFixed(1)}/10`
+              : '—'}
+          </span>
+        </div>
+      </div>
 
       {/* Media-specific tracking: episodes for shows, watch log for movies. */}
       {item.mediaType === 'show' ? (
@@ -127,6 +179,43 @@ export default function ItemDetail() {
       >
         Remove from library
       </button>
+    </div>
+  )
+}
+
+/** A clickable 1–10 star row (IMDb-style), with hover preview and optional clear. */
+function RatingStars({
+  value,
+  onPick,
+  onClear,
+}: {
+  value?: number
+  onPick: (n: number) => void
+  onClear?: () => void
+}) {
+  const [hover, setHover] = useState<number | null>(null)
+  const shown = hover ?? value ?? 0
+  return (
+    <div className="stars-wrap">
+      <div className="stars" onMouseLeave={() => setHover(null)}>
+        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+          <button
+            key={n}
+            type="button"
+            className="star-btn"
+            aria-label={`Rate ${n} of 10`}
+            onMouseEnter={() => setHover(n)}
+            onClick={() => onPick(n)}
+          >
+            {n <= shown ? '★' : '☆'}
+          </button>
+        ))}
+      </div>
+      {onClear && (
+        <button type="button" className="link-btn" onClick={onClear}>
+          clear
+        </button>
+      )}
     </div>
   )
 }
