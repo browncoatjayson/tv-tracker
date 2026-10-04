@@ -110,7 +110,16 @@ export default function Library() {
       {searching ? (
         (() => {
           const titleResults = sorted.filter((i) =>
-            matchesFilter({ title: i.title, genres: i.genres, providers: i.providers }, parsed),
+            matchesFilter(
+              {
+                title: i.title,
+                genres: i.genres,
+                providers: i.providers,
+                cast: i.cast,
+                mediaType: i.mediaType,
+              },
+              parsed,
+            ),
           )
 
           // Episode-name matches, one row per episode (excluding shows already
@@ -121,9 +130,9 @@ export default function Library() {
             .filter((e) => {
               const it = itemsById.get(e.itemId)
               if (!it || titleIds.has(e.itemId)) return false
-              // Respect genre/service filters on the episode's show too.
+              // Respect genre/service/actor/type filters on the episode's show too.
               return matchesFilter(
-                { genres: it.genres, providers: it.providers },
+                { genres: it.genres, providers: it.providers, cast: it.cast, mediaType: 'show' },
                 { ...parsed, text: '' },
               )
             })

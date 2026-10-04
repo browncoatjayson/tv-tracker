@@ -1,15 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import {
   getGenreMap,
   getImdbId,
   getMovieDetails,
+  getPersonCredits,
   getTvDetails,
   hasTmdbToken,
   imageUrl,
   searchMulti,
+  searchPerson,
   watchNames,
   type TmdbMediaResult,
 } from '../api/tmdb'
@@ -41,24 +43,40 @@ export default function Search() {
   const query = useDebouncedValue(input, 350)
   const [addingId, setAddingId] = useState<number | null>(null)
 
+  // Prefill from a ?q= link (e.g. the cast links on the detail page).
+  const [searchParams] = useSearchParams()
+  useEffect(() => {
+    const q = searchParams.get('q')
+    if (q !== null) setInput(q)
+  }, [searchParams])
+
   // Live set of ids already in the library, so results can show "in library".
   const trackedIds = useLiveQuery(() => db.trackedItems.toCollection().primaryKeys(), [])
   const trackedSet = new Set(trackedIds ?? [])
 
-  // The free-text part drives the TMDB search; genre:/service: tokens filter it.
+  // The free-text part drives the TMDB search; the tokens filter / redirect it.
   const parsed = parseQuery(query)
   const searchText = parsed.text
+  const actorName = parsed.actors[0] // actor: switches to person-credit search
 
-  const {
-    data: allResults,
-    isFetching,
-    isError,
-    error,
-  } = useQuery({
+  const textQuery = useQuery({
     queryKey: ['search', searchText],
     queryFn: () => searchMulti(searchText),
-    enabled: hasTmdbToken() && searchText.length > 0,
+    enabled: hasTmdbToken() && !actorName && searchText.length > 0,
   })
+  const actorQuery = useQuery({
+    queryKey: ['actor', actorName],
+    queryFn: async () => {
+      const personId = await searchPerson(actorName)
+      return personId ? getPersonCredits(personId) : []
+    },
+    enabled: hasTmdbToken() && !!actorName,
+  })
+
+  const allResults = actorName ? actorQuery.data : textQuery.data
+  const isFetching = actorName ? actorQuery.isFetching : textQuery.isFetching
+  const isError = actorName ? actorQuery.isError : textQuery.isError
+  const error = actorName ? actorQuery.error : textQuery.error
 
   // Genre id -> name maps (so genre: tokens can match search results).
   const { data: genreMap } = useQuery({
@@ -90,10 +108,16 @@ export default function Search() {
         ? watchNames(providerQueries[i].data)
         : []
       : []
-    // Text already handled by the TMDB query; only apply genre/service here.
+    // In actor mode, the free text filters the actor's credits by title; in text
+    // mode TMDB already handled the text, and the actor filter doesn't apply here.
     return matchesFilter(
-      { genres: resultGenres(r), providers },
-      { text: '', genres: parsed.genres, services: parsed.services },
+      {
+        title: resultTitle(r),
+        genres: resultGenres(r),
+        providers,
+        mediaType: toMediaType(r),
+      },
+      { ...parsed, actors: [], text: actorName ? parsed.text : '' },
     )
   })
 

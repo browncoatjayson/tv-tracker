@@ -245,6 +245,9 @@ function SeasonSection({
           {isOpen ? '▾' : '▸'}
         </span>
         <span className="season__name">{seasonLabel(season)}</span>
+        {season.vote_average ? (
+          <span className="season__rating">★ {Math.round(season.vote_average * 10)}%</span>
+        ) : null}
         <span className="season__meta muted">
           {episodes ? `${watchedInSeason}/${episodes.length}` : `${season.episode_count} eps`}
         </span>

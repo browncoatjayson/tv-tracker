@@ -3,7 +3,7 @@ import { useQueries } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
-import { genreNames, getMovieDetails, imageUrl, watchNames, whereToWatch } from '../api/tmdb'
+import { castNames, genreNames, getMovieDetails, imageUrl, watchNames, whereToWatch } from '../api/tmdb'
 import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
 import { getTvDetailsCached } from '../data/episodeCache'
 import { matchesFilter, parseQuery } from '../utils/filter'
@@ -22,9 +22,10 @@ interface FeedEntry {
   where?: string
   /** Local air time (from TVmaze), e.g. "9:00 PM". */
   time?: string
-  /** For genre/service filtering. */
+  /** For genre/service/actor filtering. */
   genres?: string[]
   providers?: string[]
+  cast?: string[]
   // Present on aired entries, so the inline "mark watched" control knows what to log.
   season?: number
   episode?: number
@@ -138,6 +139,7 @@ export default function Upcoming() {
     const where = whereToWatch(details)
     const genres = genreNames(details)
     const providers = watchNames(details)
+    const cast = castNames(details)
     const next = details.next_episode_to_air
     if (next?.air_date && next.air_date >= today) {
       upcoming.push({
@@ -150,6 +152,7 @@ export default function Upcoming() {
         where,
         genres,
         providers,
+        cast,
         time: airTime(s.imdbId, next.season_number, next.episode_number),
       })
     }
@@ -169,6 +172,7 @@ export default function Upcoming() {
         where,
         genres,
         providers,
+        cast,
         time: airTime(s.imdbId, last.season_number, last.episode_number),
         season: last.season_number,
         episode: last.episode_number,
@@ -183,6 +187,7 @@ export default function Upcoming() {
     const where = whereToWatch(md)
     const genres = genreNames(md)
     const providers = watchNames(md)
+    const cast = castNames(md)
     if (release >= today) {
       upcoming.push({
         itemId: m.id,
@@ -194,6 +199,7 @@ export default function Upcoming() {
         where,
         genres,
         providers,
+        cast,
       })
     } else if (inAiredWindow(release) && !watchedMovies.has(m.id)) {
       aired.push({
@@ -206,6 +212,7 @@ export default function Upcoming() {
         where,
         genres,
         providers,
+        cast,
       })
     }
   })
@@ -218,7 +225,14 @@ export default function Upcoming() {
   const parsed = parseQuery(query)
   const matches = (e: FeedEntry) =>
     matchesFilter(
-      { title: e.title, extraText: e.detail, genres: e.genres, providers: e.providers },
+      {
+        title: e.title,
+        extraText: e.detail,
+        genres: e.genres,
+        providers: e.providers,
+        cast: e.cast,
+        mediaType: e.mediaType,
+      },
       parsed,
     )
   const airedF = aired.filter(matches)

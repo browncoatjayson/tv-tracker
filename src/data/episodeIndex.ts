@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from 'react'
-import { genreNames, getMovieDetails, watchNames } from '../api/tmdb'
+import { castNames, genreNames, getMovieDetails, watchNames } from '../api/tmdb'
 import { db } from './db'
 import { getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
 import { setItemMeta } from './library'
@@ -56,11 +56,19 @@ export function useIndexProgress(): IndexState {
 async function indexItem(item: TrackedItem): Promise<void> {
   if (item.mediaType === 'movie') {
     const details = await getMovieDetails(item.tmdbId)
-    await setItemMeta(item.id, { genres: genreNames(details), providers: watchNames(details) })
+    await setItemMeta(item.id, {
+      genres: genreNames(details),
+      providers: watchNames(details),
+      cast: castNames(details),
+    })
     return
   }
   const details = await getTvDetailsCached(item.id, item.tmdbId)
-  await setItemMeta(item.id, { genres: genreNames(details), providers: watchNames(details) })
+  await setItemMeta(item.id, {
+    genres: genreNames(details),
+    providers: watchNames(details),
+    cast: castNames(details),
+  })
   for (const season of details.seasons) {
     if (season.episode_count <= 0) continue
     const have = await db.episodeCache

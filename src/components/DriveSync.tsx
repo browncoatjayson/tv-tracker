@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useState } from 'react'
 import {
   disconnect,
   hasGoogleClientId,
@@ -46,13 +46,6 @@ export default function DriveSync() {
     } finally {
       setSyncing(false)
     }
-  }, [])
-
-  // If previously connected, try a silent sync on load (no popup).
-  useEffect(() => {
-    if (connected && hasGoogleClientId()) void doSync(false)
-    // Run once on mount.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   function handleDisconnect() {

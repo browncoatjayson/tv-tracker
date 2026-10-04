@@ -53,10 +53,10 @@ export async function setStatus(id: string, status: WatchStatus): Promise<void> 
   await updateItem(id, { status })
 }
 
-/** Backfill filterable metadata (genres, providers) without bumping updatedAt. */
+/** Backfill filterable metadata (genres, providers, cast) without bumping updatedAt. */
 export async function setItemMeta(
   id: string,
-  meta: { genres?: string[]; providers?: string[] },
+  meta: { genres?: string[]; providers?: string[]; cast?: string[] },
 ): Promise<void> {
   await db.trackedItems.update(id, meta)
 }

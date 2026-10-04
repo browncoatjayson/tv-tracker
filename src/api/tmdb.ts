@@ -121,6 +121,29 @@ export async function searchMulti(query: string): Promise<TmdbMediaResult[]> {
   )
 }
 
+/** Find a person by name; returns the best-match TMDB person id, or null. */
+export async function searchPerson(name: string): Promise<number | null> {
+  const data = await tmdbGet<{ results: { id: number }[] }>('/search/person', {
+    query: name.trim(),
+    include_adult: 'false',
+  })
+  return data.results?.[0]?.id ?? null
+}
+
+/** A person's movie + TV credits as search results, deduped and popularity-sorted. */
+export async function getPersonCredits(personId: number): Promise<TmdbMediaResult[]> {
+  const data = await tmdbGet<{
+    cast: (TmdbSearchResult & { popularity?: number })[]
+  }>(`/person/${personId}/combined_credits`)
+  const seen = new Set<number>()
+  return (data.cast ?? [])
+    .filter((r): r is TmdbMediaResult & { popularity?: number } =>
+      (r.media_type === 'movie' || r.media_type === 'tv') &&
+      (seen.has(r.id) ? false : (seen.add(r.id), true)),
+    )
+    .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+}
+
 /** Fetch a title's IMDb id (e.g. "tt0944947") for outbound links, if TMDB has it. */
 export async function getImdbId(
   mediaType: 'movie' | 'tv',
@@ -182,6 +205,8 @@ export interface TmdbSeasonSummary {
   episode_count: number
   air_date: string | null
   poster_path: string | null
+  /** Average rating 0–10 for the season. */
+  vote_average?: number
 }
 
 /** A pointer to a single episode (used by next/last_episode_to_air). */
@@ -197,6 +222,10 @@ export interface TmdbWatchProviders {
 }
 
 /** The minimal shape {@link whereToWatch} needs (satisfied by TV and movie details). */
+export interface TmdbCredits {
+  cast?: { name: string; character?: string; order?: number }[]
+}
+
 export interface WatchInfo {
   networks?: { name: string }[]
   'watch/providers'?: TmdbWatchProviders
@@ -205,6 +234,16 @@ export interface WatchInfo {
   vote_average?: number
   /** Synopsis. */
   overview?: string
+  credits?: TmdbCredits
+}
+
+/** Top-billed cast names (ordered), limited to `limit`. */
+export function castNames(details: WatchInfo, limit = 12): string[] {
+  const cast = details.credits?.cast ?? []
+  return [...cast]
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+    .slice(0, limit)
+    .map((c) => c.name)
 }
 
 export interface TmdbTvDetails {
@@ -224,7 +263,7 @@ export interface TmdbTvDetails {
 }
 
 export async function getTvDetails(tmdbId: number): Promise<TmdbTvDetails> {
-  return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, { append_to_response: 'watch/providers' })
+  return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, { append_to_response: 'watch/providers,credits' })
 }
 
 export interface TmdbMovieDetails {
@@ -236,7 +275,7 @@ export interface TmdbMovieDetails {
 }
 
 export async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails> {
-  return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`, { append_to_response: 'watch/providers' })
+  return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`, { append_to_response: 'watch/providers,credits' })
 }
 
 /**

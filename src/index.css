@@ -169,7 +169,8 @@ a:hover {
 .btn {
   background: var(--accent);
   color: #06283a;
-  border: none;
+  /* Transparent border so bordered variants (ghost) keep the same box height. */
+  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: 10px 16px;
   font-size: 0.95rem;
@@ -546,6 +547,11 @@ input[type='file'] {
   line-height: 1.45;
   margin: 12px 0;
 }
+.detail__cast {
+  font-size: 0.85rem;
+  line-height: 1.5;
+  margin: 10px 0;
+}
 
 /* ---- Episodes / seasons -------------------------------------------------- */
 .episodes {
@@ -590,6 +596,11 @@ input[type='file'] {
 }
 .season__name {
   flex: 1;
+}
+.season__rating {
+  font-size: 0.8rem;
+  color: var(--warn);
+  margin-right: 10px;
 }
 .season__meta {
   font-size: 0.82rem;
@@ -866,7 +877,7 @@ input[type='file'] {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(var(--nav-h) + 12px);
+  top: 64px; /* just below the sticky header */
   z-index: 50;
   display: flex;
   align-items: center;

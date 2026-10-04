@@ -44,6 +44,8 @@ export interface TrackedItem {
   genres?: string[]
   /** Where to watch (networks + streaming names) — backfilled for filtering. */
   providers?: string[]
+  /** Top-billed cast names — backfilled for the actor filter. */
+  cast?: string[]
   /** Epoch milliseconds. */
   addedAt: number
   updatedAt: number

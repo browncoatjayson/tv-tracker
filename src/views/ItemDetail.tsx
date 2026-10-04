@@ -4,6 +4,7 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useParams } from 'react-router-dom'
 import { db } from '../data/db'
 import {
+  castNames,
   genreNames,
   getImdbId,
   getMovieDetails,
@@ -56,7 +57,11 @@ export default function ItemDetail() {
   useEffect(() => {
     const d = detailsQuery.data
     if (item && d) {
-      void setItemMeta(item.id, { genres: genreNames(d), providers: watchNames(d) })
+      void setItemMeta(item.id, {
+        genres: genreNames(d),
+        providers: watchNames(d),
+        cast: castNames(d),
+      })
     }
   }, [item?.id, detailsQuery.data])
 
@@ -107,6 +112,18 @@ export default function ItemDetail() {
 
       {detailsQuery.data?.overview && (
         <p className="detail__overview muted">{detailsQuery.data.overview}</p>
+      )}
+
+      {detailsQuery.data && castNames(detailsQuery.data, 8).length > 0 && (
+        <p className="detail__cast muted">
+          Cast:{' '}
+          {castNames(detailsQuery.data, 8).map((name, i) => (
+            <span key={name}>
+              {i > 0 && ', '}
+              <Link to={`/search?q=${encodeURIComponent(`actor:${name}`)}`}>{name}</Link>
+            </span>
+          ))}
+        </p>
       )}
 
       <label className="field">
