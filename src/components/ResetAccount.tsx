@@ -45,12 +45,14 @@ export default function ResetAccount() {
         db.watchEvents,
         db.episodeStates,
         db.episodeCache,
+        db.tombstones,
         async () => {
           await Promise.all([
             db.trackedItems.clear(),
             db.watchEvents.clear(),
             db.episodeStates.clear(),
             db.episodeCache.clear(),
+            db.tombstones.clear(),
           ])
         },
       )

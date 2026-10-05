@@ -20,6 +20,8 @@ import { addItem, removeItem, setItemMeta, setRating, setStatus } from '../data/
 import type { MediaType, TrackedItem, WatchStatus } from '../data/types'
 import ShowEpisodes from '../components/ShowEpisodes'
 import MovieWatch from '../components/MovieWatch'
+import RatingStars from '../components/RatingStars'
+import ReviewsPlaceholder from '../components/ReviewsPlaceholder'
 
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
 
@@ -55,7 +57,7 @@ export default function ItemDetail() {
       .catch(() => {})
   }, [item?.id, item?.imdbId])
 
-  // Backfill filterable metadata for library items once details arrive.
+  // Backfill filterable metadata + stats fields for library items once details arrive.
   useEffect(() => {
     if (item && d) {
       void setItemMeta(item.id, {
@@ -64,6 +66,8 @@ export default function ItemDetail() {
         cast: castNames(d),
         runtime: runtimeOf(d),
         ended: item.mediaType === 'show' ? isEndedStatus(d.status) : undefined,
+        episodeCount: item.mediaType === 'show' ? d.number_of_episodes : undefined,
+        tmdbRating: d.vote_average,
       })
     }
   }, [item?.id, d])
@@ -203,6 +207,8 @@ export default function ItemDetail() {
 
           {item.mediaType === 'show' ? <ShowEpisodes item={item} /> : <MovieWatch item={item} />}
 
+          <ReviewsPlaceholder />
+
           <button
             className="btn btn--danger"
             onClick={() => {
@@ -226,44 +232,9 @@ export default function ItemDetail() {
             + Add to library
           </button>
           {mediaType === 'show' && <ShowEpisodes item={stubItem} readOnly />}
-        </>
-      )}
-    </div>
-  )
-}
 
-/** A clickable 1–10 star row (IMDb-style), with hover preview and optional clear. */
-function RatingStars({
-  value,
-  onPick,
-  onClear,
-}: {
-  value?: number
-  onPick: (n: number) => void
-  onClear?: () => void
-}) {
-  const [hover, setHover] = useState<number | null>(null)
-  const shown = hover ?? value ?? 0
-  return (
-    <div className="stars-wrap">
-      <div className="stars" onMouseLeave={() => setHover(null)}>
-        {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-          <button
-            key={n}
-            type="button"
-            className="star-btn"
-            aria-label={`Rate ${n} of 10`}
-            onMouseEnter={() => setHover(n)}
-            onClick={() => onPick(n)}
-          >
-            {n <= shown ? '★' : '☆'}
-          </button>
-        ))}
-      </div>
-      {onClear && (
-        <button type="button" className="link-btn" onClick={onClear}>
-          clear
-        </button>
+          <ReviewsPlaceholder />
+        </>
       )}
     </div>
   )

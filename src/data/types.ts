@@ -50,6 +50,10 @@ export interface TrackedItem {
   ended?: boolean
   /** Typical runtime in minutes (movie length, or a show's episode length). */
   runtime?: number
+  /** Total episodes (shows only) — backfilled for the stats completion ratio. */
+  episodeCount?: number
+  /** TMDB's average score 0–10 — backfilled for the stats "critic profile". */
+  tmdbRating?: number
   /** When a movie was watched (editable; supports partial precision). */
   movieWatchedAt?: number
   /** Precision of movieWatchedAt for display. */
@@ -105,6 +109,19 @@ export interface EpisodeState {
   /** How many times watched (0 = unwatched, 2 = watched twice). Enables rewatches. */
   watchCount?: number
   watchedAt?: number
+  /** Personal rating of this episode, 1–10. Undefined if unrated. */
+  userRating?: number
   /** When this flag last changed (watch OR unwatch). Drives last-write-wins on sync. */
   updatedAt?: number
+}
+
+/**
+ * A marker that a tracked item was deleted. Carried in backups so a sync removes
+ * the title from Drive (and other devices) instead of resurrecting it. Kept until
+ * a later re-add (with a newer `updatedAt`) supersedes it.
+ */
+export interface Tombstone {
+  /** The deleted {@link TrackedItem.id}. */
+  id: string
+  deletedAt: number
 }

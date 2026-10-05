@@ -221,25 +221,38 @@ a:hover {
   min-width: 0;
   margin-bottom: 0;
 }
-.filter-btn {
+/* Icon-only square controls that sit beside the search box and match its height.
+   A fixed height keeps the List/Calendar toggle identical across both views. */
+.filter-btn,
+.sort-btn {
+  position: relative;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 8px 12px;
+  justify-content: center;
+  width: 46px;
+  height: 44px;
+  padding: 0;
   border: 1px solid var(--surface-2);
   border-radius: var(--radius);
   background: var(--surface);
   color: var(--text);
-  font-size: 0.85rem;
   cursor: pointer;
-  white-space: nowrap;
+}
+.sort {
+  position: relative;
+  flex-shrink: 0;
+  align-self: stretch;
+  display: flex;
 }
 .filter-btn--active {
   border-color: var(--accent);
   color: var(--accent);
 }
 .filter-btn__badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
@@ -250,6 +263,41 @@ a:hover {
   font-weight: 700;
   line-height: 18px;
   text-align: center;
+}
+.sort-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 30;
+  min-width: 200px;
+  padding: 6px;
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sort-menu__item {
+  text-align: left;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+.sort-menu__item:hover {
+  background: var(--surface-2);
+}
+.sort-menu__item--on {
+  color: var(--accent);
+  font-weight: 600;
+}
+.sort-menu__item--on::before {
+  content: '✓ ';
 }
 .filter-pop {
   position: absolute;
@@ -852,8 +900,9 @@ input[type='file'] {
 }
 .episode__chevron {
   color: var(--muted);
-  font-size: 0.7rem;
+  font-size: 1rem;
   flex-shrink: 0;
+  margin-left: auto;
 }
 .episode__top {
   display: flex;
@@ -868,6 +917,8 @@ input[type='file'] {
   flex-shrink: 0;
 }
 .episode__title {
+  flex: 1;
+  min-width: 0;
   font-size: 0.9rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -909,55 +960,352 @@ input[type='file'] {
   color-scheme: dark;
 }
 
-/* Expanded episode details panel (still image + overview + guest stars). */
-.ep-details {
-  display: flex;
+/* ---- Episode detail page ------------------------------------------------- */
+.back-link {
+  display: inline-block;
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+.episode-page__title {
+  margin-bottom: 2px;
+}
+.episode-page__num {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.9rem;
+}
+.episode-page__still {
+  width: 100%;
+  max-width: 500px;
+  border-radius: 10px;
+  margin: 12px 0;
+  display: block;
+}
+.credits {
+  margin-top: 18px;
+}
+.credits__grid {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
   gap: 12px;
-  margin: 8px 0 2px 30px;
-  padding: 10px;
-  background: var(--surface);
-  border-radius: 8px;
 }
-.ep-details__still {
-  width: 150px;
-  flex-shrink: 0;
-  border-radius: 6px;
-  align-self: flex-start;
-  object-fit: cover;
-}
-.ep-details__body {
-  flex: 1;
-  min-width: 0;
+.credit__link {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  color: var(--text);
+  text-decoration: none;
 }
-.ep-details__rating {
-  font-size: 0.8rem;
+.credit__link:hover .credit__name {
   color: var(--accent);
+}
+.credit__photo {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.credit__photo--placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+}
+.credit__name {
+  font-size: 0.8rem;
+  line-height: 1.25;
+}
+.credit__char {
+  font-size: 0.72rem;
+  line-height: 1.2;
+}
+
+/* ---- Reviews placeholder (expands; real reviews come later) --------------- */
+.reviews {
+  margin: 20px 0;
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.reviews__summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
   font-weight: 600;
+  cursor: pointer;
+  list-style: none;
 }
-.ep-details__overview {
-  margin: 0;
-  font-size: 0.85rem;
-  line-height: 1.45;
+.reviews__summary::-webkit-details-marker {
+  display: none;
 }
-.ep-details__guests {
-  margin: 0;
+.reviews__summary::before {
+  content: '▸';
+  color: var(--muted);
   font-size: 0.8rem;
 }
-@media (max-width: 480px) {
-  .ep-details {
-    flex-direction: column;
-  }
-  .ep-details__still {
-    width: 100%;
-    max-width: 240px;
-  }
+.reviews[open] .reviews__summary::before {
+  content: '▾';
+}
+.reviews__soon {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #06283a;
+  background: var(--accent);
+  border-radius: 999px;
+  padding: 2px 8px;
+}
+.reviews__body {
+  padding: 0 14px 14px;
 }
 
 .movie-watch {
   margin: 20px 0;
+}
+
+/* ---- Header user button -------------------------------------------------- */
+.app-header__right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.user-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--surface-2);
+  color: var(--muted);
+  flex-shrink: 0;
+  overflow: hidden;
+  text-decoration: none;
+}
+.user-btn:hover {
+  color: var(--accent);
+}
+.user-btn__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* ---- Stats page ---------------------------------------------------------- */
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.stats__head {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+.stats__indexing {
+  margin: 0;
+  text-align: center;
+}
+.stats__avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+.stats__avatar--placeholder {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+.stats__avatar--placeholder svg {
+  width: 30px;
+  height: 30px;
+}
+.stats__name {
+  margin: 0;
+  font-size: 1.3rem;
+}
+
+.stat-hero {
+  background: linear-gradient(135deg, var(--surface-2), var(--surface));
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius);
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.stat-hero__label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.stat-hero__value {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1.2;
+}
+.stat-hero__split {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 18px;
+  margin-top: 6px;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+.stat-hero__split strong {
+  color: var(--text);
+}
+
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+}
+.stat-tile {
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.stat-tile__value {
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.stat-tile__label {
+  font-size: 0.78rem;
+  color: var(--muted);
+}
+
+.progress {
+  position: relative;
+  height: 24px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress__fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--ok));
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.progress__label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.bars {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.bar-row {
+  display: grid;
+  grid-template-columns: 7.5em 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.bar-row__label {
+  font-size: 0.85rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bar-row__track {
+  height: 10px;
+  background: var(--surface-2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.bar-row__fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+.bar-row__fill--alt {
+  background: #c084fc;
+}
+.bar-row__val {
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.critic {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 6px 0;
+}
+.critic__col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  font-size: 0.78rem;
+}
+.critic__num {
+  font-size: 2rem;
+  font-weight: 700;
+  color: var(--accent);
+  line-height: 1;
+}
+.critic__vs {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.meta-list {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.meta-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 0.9rem;
+}
+.meta-list dt {
+  color: var(--muted);
+}
+.meta-list dd {
+  margin: 0;
+  text-align: right;
+}
+.stat-note {
+  font-size: 0.82rem;
+  margin: 8px 0 0;
+}
+.stat-note--foot {
+  text-align: center;
 }
 
 /* ---- Upcoming controls + segmented toggle -------------------------------- */
@@ -966,6 +1314,14 @@ input[type='file'] {
   gap: 10px;
   align-items: center;
   margin-bottom: 12px;
+}
+/* Calendar view: month nav takes the search box's place, toggle stays at right. */
+.upcoming__controls--cal {
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.upcoming__controls--cal .calendar__nav {
+  margin-bottom: 0;
 }
 .upcoming__controls .search__input {
   flex: 1;
@@ -977,34 +1333,60 @@ input[type='file'] {
   border-radius: var(--radius);
   overflow: hidden;
   flex-shrink: 0;
+  height: 44px;
 }
 .seg__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 46px;
   background: var(--surface);
   color: var(--muted);
   border: none;
-  padding: 8px 14px;
-  font-size: 0.85rem;
+  padding: 0;
   cursor: pointer;
 }
 .seg__btn--on {
   background: var(--accent);
   color: #06283a;
-  font-weight: 600;
 }
 
 /* ---- Calendar ------------------------------------------------------------ */
 .calendar__nav {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   margin-bottom: 10px;
+  min-width: 0;
 }
 .calendar__month {
   font-weight: 600;
-  min-width: 9.5em;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* In the controls row the nav shares space with the view toggle. It sizes to its
+   content (so the month label isn't truncated) but may shrink on tiny screens. */
+.upcoming__controls--cal .calendar__nav {
+  flex: 0 1 auto;
+  gap: 4px;
+}
+.upcoming__controls--cal .calendar__nav .btn {
+  flex-shrink: 0;
+}
+.upcoming__controls--cal .calendar__nav .btn--small {
+  padding: 6px 9px;
+}
+.upcoming__controls--cal .calendar__month {
+  padding: 0 2px;
+}
+.upcoming__controls--cal .seg {
+  flex-shrink: 0;
 }
 .calendar__loading {
   font-size: 0.78rem;
+  margin-bottom: 8px;
 }
 .calendar__weekdays {
   display: grid;

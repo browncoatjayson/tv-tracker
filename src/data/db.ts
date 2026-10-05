@@ -1,5 +1,5 @@
 import Dexie, { type Table } from 'dexie'
-import type { CachedEpisode, EpisodeState, TrackedItem, WatchEvent } from './types'
+import type { CachedEpisode, EpisodeState, TrackedItem, Tombstone, WatchEvent } from './types'
 
 // ---------------------------------------------------------------------------
 // IndexedDB (via Dexie) is our source of truth on each device.
@@ -17,6 +17,7 @@ export class TvTrackerDB extends Dexie {
   watchEvents!: Table<WatchEvent, number>
   episodeStates!: Table<EpisodeState, string>
   episodeCache!: Table<CachedEpisode, string>
+  tombstones!: Table<Tombstone, string>
 
   constructor() {
     super('tvtracker')
@@ -28,6 +29,10 @@ export class TvTrackerDB extends Dexie {
     // v2: add a disposable episode-metadata cache (names + air dates).
     this.version(2).stores({
       episodeCache: 'id, itemId, [itemId+season], airDate',
+    })
+    // v3: delete tombstones so removals propagate through sync (no resurrection).
+    this.version(3).stores({
+      tombstones: 'id, deletedAt',
     })
   }
 }

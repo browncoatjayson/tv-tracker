@@ -12,7 +12,10 @@ import { applyBackup, buildBackup, mergeBackups, type BackupData } from './expor
 // merged result back to both local DB and Drive so devices converge.
 // ---------------------------------------------------------------------------
 
-const SCOPE = 'https://www.googleapis.com/auth/drive.appdata'
+// drive.appdata to store the backup; userinfo.profile so we can show the user's
+// Google name + avatar on the stats page / header.
+const SCOPE =
+  'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.profile'
 const FILE_NAME = 'tvtracker-backup.json'
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
@@ -20,6 +23,51 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
 // Remembers across reloads that the user has connected before, so we can try a
 // silent (no-popup) token refresh on load.
 const CONNECTED_KEY = 'tvtracker.driveConnected'
+const PROFILE_KEY = 'tvtracker.googleProfile'
+
+export interface GoogleProfile {
+  name?: string
+  picture?: string
+}
+
+/** The signed-in Google user's name + avatar, if we've fetched them. */
+export function getGoogleProfile(): GoogleProfile | null {
+  try {
+    const v = localStorage.getItem(PROFILE_KEY)
+    return v ? (JSON.parse(v) as GoogleProfile) : null
+  } catch {
+    return null
+  }
+}
+
+function setGoogleProfile(profile: GoogleProfile | null): void {
+  try {
+    if (profile) localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
+    else localStorage.removeItem(PROFILE_KEY)
+  } catch {
+    // ignore storage errors
+  }
+  // Let the header / stats page update immediately.
+  try {
+    window.dispatchEvent(new CustomEvent('tvtracker:profile'))
+  } catch {
+    // ignore (non-browser env)
+  }
+}
+
+/** Best-effort: fetch the signed-in user's name + avatar. Never throws. */
+async function fetchProfile(token: string): Promise<void> {
+  try {
+    const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    if (!res.ok) return
+    const data = (await res.json()) as { name?: string; picture?: string }
+    if (data.name || data.picture) setGoogleProfile({ name: data.name, picture: data.picture })
+  } catch {
+    // Profile is a nicety; ignore failures (e.g. scope not yet granted).
+  }
+}
 
 export function hasGoogleClientId(): boolean {
   return typeof CLIENT_ID === 'string' && CLIENT_ID.length > 0
@@ -184,6 +232,7 @@ export interface SyncResult {
 export async function syncNow(interactive: boolean): Promise<SyncResult> {
   const token = await getAccessToken(interactive)
   rememberConnected(true)
+  void fetchProfile(token)
 
   const fileId = await findBackupFileId(token)
   const local = await buildBackup()
@@ -206,6 +255,7 @@ export async function syncNow(interactive: boolean): Promise<SyncResult> {
 /** Forget the connection (next sync will prompt again). Does not revoke on Google. */
 export function disconnect(): void {
   rememberConnected(false)
+  setGoogleProfile(null)
 }
 
 export type DeleteRemoteResult = 'deleted' | 'none' | 'skipped'

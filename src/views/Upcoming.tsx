@@ -89,6 +89,11 @@ export default function Upcoming() {
     }
   }, [view])
   const [query, setQuery] = usePersistentFilter('tvtracker.filter.upcoming')
+  // Calendar month anchor, lifted here so the month nav can share the controls row.
+  const [calAnchor, setCalAnchor] = useState(() => {
+    const t = new Date()
+    return new Date(t.getFullYear(), t.getMonth(), 1)
+  })
 
   const tracked = (items ?? []).filter((i) => i.status !== 'dropped')
   const shows = tracked.filter((i) => i.mediaType === 'show')
@@ -312,28 +317,95 @@ export default function Upcoming() {
       <button
         className={`seg__btn${view === 'list' ? ' seg__btn--on' : ''}`}
         onClick={() => setView('list')}
+        aria-label="List view"
+        aria-pressed={view === 'list'}
+        title="List"
       >
-        List
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <path d="M3 5l1.5 1.5L7 4" />
+          <path d="M3 12l1.5 1.5L7 11" />
+          <path d="M3 19l1.5 1.5L7 18" />
+          <path d="M11 5h10" />
+          <path d="M11 12h10" />
+          <path d="M11 19h10" />
+        </svg>
       </button>
       <button
         className={`seg__btn${view === 'calendar' ? ' seg__btn--on' : ''}`}
         onClick={() => setView('calendar')}
+        aria-label="Calendar view"
+        aria-pressed={view === 'calendar'}
+        title="Calendar"
       >
-        Calendar
+        <svg
+          width="18"
+          height="18"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <path d="M16 2v4" />
+          <path d="M8 2v4" />
+          <path d="M3 10h18" />
+        </svg>
+      </button>
+    </div>
+  )
+  const calYear = calAnchor.getFullYear()
+  const calMonth = calAnchor.getMonth()
+  const calMonthLabel = calAnchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
+  const calShift = (delta: number) => setCalAnchor(new Date(calYear, calMonth + delta, 1))
+  const calToday = () => {
+    const t = new Date()
+    setCalAnchor(new Date(t.getFullYear(), t.getMonth(), 1))
+  }
+  const calendarNav = (
+    <div className="calendar__nav">
+      <button
+        className="btn btn--small btn--ghost"
+        onClick={() => calShift(-1)}
+        aria-label="Previous month"
+      >
+        ‹
+      </button>
+      <span className="calendar__month">{calMonthLabel}</span>
+      <button className="btn btn--small btn--ghost" onClick={calToday}>
+        Today
+      </button>
+      <button
+        className="btn btn--small btn--ghost"
+        onClick={() => calShift(1)}
+        aria-label="Next month"
+      >
+        ›
       </button>
     </div>
   )
   const controls =
     view === 'list' ? (
-      <FilterBar
-        value={query}
-        onChange={setQuery}
-        placeholder="Filter… name, genre:comedy, service:apple"
-      >
+      <FilterBar value={query} onChange={setQuery} placeholder="Search for a title">
         {seg}
       </FilterBar>
     ) : (
-      <div className="upcoming__controls">{seg}</div>
+      <div className="upcoming__controls upcoming__controls--cal">
+        {calendarNav}
+        {seg}
+      </div>
     )
 
   return (
@@ -341,7 +413,7 @@ export default function Upcoming() {
       {controls}
 
       {view === 'calendar' ? (
-        <UpcomingCalendar />
+        <UpcomingCalendar anchor={calAnchor} />
       ) : !dataReady && upcoming.length === 0 && aired.length === 0 ? (
         <p className="muted">Checking for upcoming releases…</p>
       ) : upcoming.length === 0 && aired.length === 0 ? (

@@ -259,6 +259,8 @@ export interface WatchInfo {
   runtime?: number
   /** Show's typical episode runtime(s) in minutes. */
   episode_run_time?: number[]
+  /** Total episodes across all seasons (shows only). */
+  number_of_episodes?: number
   /** Show airing status: "Ended", "Returning Series", "Canceled", etc. */
   status?: string
   /** Title + poster + dates (for the preview Details screen). */
@@ -296,6 +298,8 @@ export interface TmdbTvDetails {
   number_of_episodes: number
   number_of_seasons: number
   status: string
+  /** TMDB average score 0–10. */
+  vote_average?: number
   episode_run_time?: number[]
   seasons: TmdbSeasonSummary[]
   /** Broadcast networks (e.g. CBS). */
@@ -317,6 +321,8 @@ export interface TmdbMovieDetails {
   release_date: string | null
   status: string
   runtime?: number
+  /** TMDB average score 0–10. */
+  vote_average?: number
   'watch/providers'?: TmdbWatchProviders
 }
 
@@ -378,6 +384,32 @@ export async function getSeasonEpisodes(
 ): Promise<TmdbEpisode[]> {
   const data = await tmdbGet<{ episodes: TmdbEpisode[] }>(`/tv/${tmdbId}/season/${seasonNumber}`)
   return data.episodes
+}
+
+export interface TmdbCredit {
+  name: string
+  character?: string
+  profile_path?: string | null
+}
+
+/** A single episode with its full credits (regular cast + guest stars + crew). */
+export interface TmdbEpisodeDetails extends TmdbEpisode {
+  crew?: { name: string; job?: string; department?: string; profile_path?: string | null }[]
+  credits?: {
+    cast?: TmdbCredit[]
+    guest_stars?: TmdbCredit[]
+  }
+}
+
+/** Full details for one episode (overview, still, rating, cast + guest stars). */
+export async function getEpisodeDetails(
+  tmdbId: number,
+  season: number,
+  episode: number,
+): Promise<TmdbEpisodeDetails> {
+  return tmdbGet<TmdbEpisodeDetails>(`/tv/${tmdbId}/season/${season}/episode/${episode}`, {
+    append_to_response: 'credits',
+  })
 }
 
 /** Fetch a single episode's IMDb id (for a direct IMDb link), if TMDB has it. */

@@ -1,5 +1,5 @@
 import { db } from './db'
-import type { EpisodeState, TrackedItem, WatchEvent } from './types'
+import type { EpisodeState, TrackedItem, Tombstone, WatchEvent } from './types'
 
 // ---------------------------------------------------------------------------
 // JSON backup / restore. This is the always-available safety net (and the same
@@ -7,23 +7,28 @@ import type { EpisodeState, TrackedItem, WatchEvent } from './types'
 // the shape changes so future imports can migrate old files.
 // ---------------------------------------------------------------------------
 
-export const BACKUP_VERSION = 1 as const
+// v2 adds `tombstones` (delete markers). v1 files still import — tombstones
+// default to [] — so this bump is backward compatible.
+export const BACKUP_VERSION = 2 as const
 
 export interface BackupData {
   app: 'tv-tracker'
-  version: typeof BACKUP_VERSION
+  version: number
   exportedAt: number
   trackedItems: TrackedItem[]
   watchEvents: WatchEvent[]
   episodeStates: EpisodeState[]
+  /** Delete markers so removals propagate on sync (absent in v1 backups). */
+  tombstones?: Tombstone[]
 }
 
 /** Read the entire user dataset out of IndexedDB. */
 export async function buildBackup(): Promise<BackupData> {
-  const [trackedItems, watchEvents, episodeStates] = await Promise.all([
+  const [trackedItems, watchEvents, episodeStates, tombstones] = await Promise.all([
     db.trackedItems.toArray(),
     db.watchEvents.toArray(),
     db.episodeStates.toArray(),
+    db.tombstones.toArray(),
   ])
   return {
     app: 'tv-tracker',
@@ -32,8 +37,12 @@ export async function buildBackup(): Promise<BackupData> {
     trackedItems,
     watchEvents,
     episodeStates,
+    tombstones,
   }
 }
+
+/** localStorage key recording when the user last exported a backup (for stats). */
+export const LAST_EXPORT_KEY = 'tvtracker.lastExport'
 
 /** Trigger a browser download of the current backup as a .json file. */
 export async function downloadBackup(): Promise<void> {
@@ -46,6 +55,11 @@ export async function downloadBackup(): Promise<void> {
   a.download = `tv-tracker-backup-${date}.json`
   a.click()
   URL.revokeObjectURL(url)
+  try {
+    localStorage.setItem(LAST_EXPORT_KEY, String(Date.now()))
+  } catch {
+    // ignore storage errors
+  }
 }
 
 /** Validate that an unknown parsed object looks like a backup we can import. */
@@ -69,23 +83,45 @@ export type ImportMode =
 
 /** Write a (already-parsed) backup into the local DB. */
 export async function applyBackup(data: BackupData, mode: ImportMode): Promise<void> {
-  await db.transaction('rw', db.trackedItems, db.watchEvents, db.episodeStates, async () => {
-    if (mode === 'replace') {
-      await Promise.all([
-        db.trackedItems.clear(),
-        db.watchEvents.clear(),
-        db.episodeStates.clear(),
-      ])
-    }
-    // `bulkPut` upserts by primary key — safe for both modes.
-    await db.trackedItems.bulkPut(data.trackedItems)
-    await db.episodeStates.bulkPut(data.episodeStates)
-    // Watch events use auto-increment ids; drop them so the local log assigns
-    // fresh ones (the append-only log only ever grows).
-    const events =
-      mode === 'merge' ? data.watchEvents.map(({ id: _id, ...rest }) => rest) : data.watchEvents
-    await db.watchEvents.bulkPut(events)
-  })
+  const tombstones = data.tombstones ?? []
+  await db.transaction(
+    'rw',
+    db.trackedItems,
+    db.watchEvents,
+    db.episodeStates,
+    db.tombstones,
+    async () => {
+      if (mode === 'replace') {
+        await Promise.all([
+          db.trackedItems.clear(),
+          db.watchEvents.clear(),
+          db.episodeStates.clear(),
+          db.tombstones.clear(),
+        ])
+      }
+      // `bulkPut` upserts by primary key — safe for both modes.
+      await db.trackedItems.bulkPut(data.trackedItems)
+      await db.episodeStates.bulkPut(data.episodeStates)
+      // Watch events use auto-increment ids; drop them so the local log assigns
+      // fresh ones (the append-only log only ever grows).
+      const events =
+        mode === 'merge' ? data.watchEvents.map(({ id: _id, ...rest }) => rest) : data.watchEvents
+      await db.watchEvents.bulkPut(events)
+      await db.tombstones.bulkPut(tombstones)
+
+      // Apply deletions: a tombstone at/after an item's last update removes it and
+      // its history. (On a sync-replace the merged data already excludes these, so
+      // this just makes file-merge imports honor deletions too.)
+      for (const t of tombstones) {
+        const it = await db.trackedItems.get(t.id)
+        if (it && (it.updatedAt ?? 0) <= t.deletedAt) {
+          await db.trackedItems.delete(t.id)
+          await db.watchEvents.where('itemId').equals(t.id).delete()
+          await db.episodeStates.where('itemId').equals(t.id).delete()
+        }
+      }
+    },
+  )
 }
 
 /** Parse and import a backup file's text. Returns counts for a confirmation message. */
@@ -121,21 +157,40 @@ function eventSignature(e: WatchEvent): string {
  * Merge two backups into one, with no data loss:
  *  - trackedItems & episodeStates: last-write-wins by `updatedAt` (keyed by id).
  *  - watchEvents: union by content signature (append-only; duplicates collapsed).
+ *  - tombstones: an item deleted at/after its last update is dropped (and its
+ *    episodes/events pruned); a later re-add (newer updatedAt) wins and clears
+ *    the tombstone. This stops a removed title being resurrected from the other
+ *    device's stale copy.
  * The result is deterministic regardless of argument order, so both devices
  * converge on the same dataset.
- *
- * Note: this has no delete tombstones, so an item removed on one device can be
- * resurrected by the other. Acceptable for v1; revisit if it becomes annoying.
  */
 export function mergeBackups(a: BackupData, b: BackupData): BackupData {
+  // Latest deletion time per id across both sides.
+  const tombstones = new Map<string, number>()
+  for (const t of [...(a.tombstones ?? []), ...(b.tombstones ?? [])]) {
+    const prev = tombstones.get(t.id)
+    if (prev === undefined || t.deletedAt > prev) tombstones.set(t.id, t.deletedAt)
+  }
+
   const items = new Map<string, TrackedItem>()
   for (const it of [...a.trackedItems, ...b.trackedItems]) {
     const prev = items.get(it.id)
     if (!prev || (it.updatedAt ?? 0) >= (prev.updatedAt ?? 0)) items.set(it.id, it)
   }
 
+  // Drop items whose newest state predates (or equals) a deletion; keep an item
+  // that was re-added after the delete, and clear that now-stale tombstone.
+  for (const [id, it] of [...items]) {
+    const del = tombstones.get(id)
+    if (del === undefined) continue
+    if ((it.updatedAt ?? 0) > del) tombstones.delete(id)
+    else items.delete(id)
+  }
+  const isDeleted = (id: string) => !items.has(id) && tombstones.has(id)
+
   const episodes = new Map<string, EpisodeState>()
   for (const ep of [...a.episodeStates, ...b.episodeStates]) {
+    if (isDeleted(ep.itemId)) continue
     const prev = episodes.get(ep.id)
     const ts = (e: EpisodeState) => e.updatedAt ?? e.watchedAt ?? 0
     if (!prev || ts(ep) >= ts(prev)) episodes.set(ep.id, ep)
@@ -143,6 +198,7 @@ export function mergeBackups(a: BackupData, b: BackupData): BackupData {
 
   const events = new Map<string, WatchEvent>()
   for (const ev of [...a.watchEvents, ...b.watchEvents]) {
+    if (isDeleted(ev.itemId)) continue
     const { id: _id, ...rest } = ev
     events.set(eventSignature(ev), rest)
   }
@@ -154,5 +210,6 @@ export function mergeBackups(a: BackupData, b: BackupData): BackupData {
     trackedItems: [...items.values()],
     episodeStates: [...episodes.values()],
     watchEvents: [...events.values()],
+    tombstones: [...tombstones.entries()].map(([id, deletedAt]) => ({ id, deletedAt })),
   }
 }

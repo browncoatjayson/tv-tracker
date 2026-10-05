@@ -42,6 +42,17 @@ export interface IndexState {
   total: number
 }
 
+/**
+ * Whether a title still needs indexing to have complete stats metadata. Catches
+ * titles never indexed AND ones indexed by an older app version (before we added
+ * `tmdbRating`/`episodeCount`), so "Build index" repopulates them instead of
+ * skipping anything already in the done-set.
+ */
+export function itemNeedsIndex(i: TrackedItem): boolean {
+  if (i.tmdbRating === undefined) return true
+  return i.mediaType === 'show' ? i.episodeCount == null : false
+}
+
 let state: IndexState = { status: 'idle', done: 0, total: 0 }
 const subscribers = new Set<() => void>()
 
@@ -68,6 +79,7 @@ async function indexItem(item: TrackedItem): Promise<void> {
       providers: watchNames(details),
       cast: castNames(details),
       runtime: runtimeOf(details),
+      tmdbRating: details.vote_average,
     })
     return
   }
@@ -79,6 +91,8 @@ async function indexItem(item: TrackedItem): Promise<void> {
     cast: castNames(details),
     ended: isEndedStatus(details.status),
     runtime,
+    episodeCount: details.number_of_episodes,
+    tmdbRating: details.vote_average,
   })
   for (const season of details.seasons) {
     if (season.episode_count <= 0) continue
@@ -109,7 +123,9 @@ export async function startIndexing(concurrency = 3): Promise<void> {
   try {
     const done = loadDone()
     const all = (await db.trackedItems.toArray()).filter((i) => i.status !== 'dropped')
-    const todo = all.filter((i) => !done.has(i.id))
+    // Reprocess titles missing the stats fields even if they're in the done-set
+    // (e.g. indexed before those fields existed) so re-indexing actually fixes them.
+    const todo = all.filter((i) => !done.has(i.id) || itemNeedsIndex(i))
 
     if (todo.length === 0) {
       setState({ status: 'done', done: all.length, total: all.length })

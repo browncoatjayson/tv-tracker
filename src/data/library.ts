@@ -37,7 +37,11 @@ export async function addItem(input: NewTrackedItem): Promise<TrackedItem> {
     addedAt: now,
     updatedAt: now,
   }
-  await db.trackedItems.add(item)
+  await db.transaction('rw', db.trackedItems, db.tombstones, async () => {
+    await db.trackedItems.add(item)
+    // Re-adding supersedes any prior deletion so sync won't fight over it.
+    await db.tombstones.delete(id)
+  })
   return item
 }
 
@@ -62,6 +66,8 @@ export async function setItemMeta(
     cast?: string[]
     ended?: boolean
     runtime?: number
+    episodeCount?: number
+    tmdbRating?: number
   },
 ): Promise<void> {
   await db.trackedItems.update(id, meta)
@@ -97,13 +103,55 @@ export async function setRating(id: string, rating: number | undefined): Promise
   await updateItem(id, { userRating: rating })
 }
 
-/** Remove a title and all of its watch history. */
-export async function removeItem(id: string): Promise<void> {
-  await db.transaction('rw', db.trackedItems, db.watchEvents, db.episodeStates, async () => {
-    await db.trackedItems.delete(id)
-    await db.watchEvents.where('itemId').equals(id).delete()
-    await db.episodeStates.where('itemId').equals(id).delete()
+/**
+ * Set (1–10) or clear (undefined) the user's rating for a single episode. Rating
+ * an episode does not mark it watched; it just records the score. Creates the
+ * episode-state row if needed and bumps the show's updatedAt for sync.
+ */
+export async function setEpisodeRating(
+  itemId: string,
+  season: number,
+  episode: number,
+  rating: number | undefined,
+): Promise<void> {
+  const id = episodeKey(itemId, season, episode)
+  const now = Date.now()
+  await db.transaction('rw', db.episodeStates, db.trackedItems, async () => {
+    const prev = await db.episodeStates.get(id)
+    await db.episodeStates.put({
+      id,
+      itemId,
+      season,
+      episode,
+      watched: prev?.watched ?? false,
+      watchCount: prev?.watchCount,
+      watchedAt: prev?.watchedAt,
+      userRating: rating,
+      updatedAt: now,
+    })
+    await db.trackedItems.update(itemId, { updatedAt: now })
   })
+}
+
+/**
+ * Remove a title and all of its watch history, and record a tombstone so the
+ * deletion propagates on the next Google Drive sync (removing it from Drive and
+ * other devices) instead of being resurrected from a stale copy.
+ */
+export async function removeItem(id: string): Promise<void> {
+  await db.transaction(
+    'rw',
+    db.trackedItems,
+    db.watchEvents,
+    db.episodeStates,
+    db.tombstones,
+    async () => {
+      await db.trackedItems.delete(id)
+      await db.watchEvents.where('itemId').equals(id).delete()
+      await db.episodeStates.where('itemId').equals(id).delete()
+      await db.tombstones.put({ id, deletedAt: Date.now() })
+    },
+  )
 }
 
 /**

@@ -168,7 +168,7 @@ export default function Search() {
       <FilterBar
         value={input}
         onChange={setInput}
-        placeholder="Search… name, genre:comedy, service:apple"
+        placeholder="Search for a title"
         autoFocus
       />
 

@@ -2,11 +2,11 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
+import { useNavigate } from 'react-router-dom'
 import { getEpisodeImdbId, hasAired, isEndedStatus, type TmdbSeasonSummary } from '../api/tmdb'
 import { db } from '../data/db'
 import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
 import { setEpisodeWatchCount, setEpisodeWatchedDate, setStatus } from '../data/library'
-import EpisodeDetails from './EpisodeDetails'
 import type { EpisodeState, TrackedItem } from '../data/types'
 
 // Order seasons ascending, but push "Specials" (season 0) to the end.
@@ -210,14 +210,9 @@ function SeasonSection({
   scrollIntoViewOnLoad: boolean
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
-  const [openEps, setOpenEps] = useState<Set<number>>(new Set())
-  const toggleEp = (n: number) =>
-    setOpenEps((prev) => {
-      const next = new Set(prev)
-      if (next.has(n)) next.delete(n)
-      else next.add(n)
-      return next
-    })
+  const navigate = useNavigate()
+  const openEpisode = (n: number) =>
+    navigate(`/item/${encodeURIComponent(item.id)}/episode/${season.season_number}/${n}`)
 
   // Episodes are fetched lazily — only once the season is first opened. The
   // cached variant also records episode names/dates for search + the calendar.
@@ -237,8 +232,10 @@ function SeasonSection({
     }
   }, [scrollIntoViewOnLoad, isOpen, episodes])
 
-  const watchedInSeason = (episodes ?? []).filter(
-    (ep) => stateMap.get(`${ep.season_number}:${ep.episode_number}`)?.watched,
+  // Count watched from the episode-state map (available immediately), so a
+  // collapsed season still shows "watched/total" instead of only a count.
+  const watchedInSeason = [...stateMap.values()].filter(
+    (s) => s.season === season.season_number && s.watched,
   ).length
 
   // Mark every aired episode as watched for the current pass (handles first
@@ -269,7 +266,7 @@ function SeasonSection({
           <span className="season__rating">★ {Math.round(season.vote_average * 10)}%</span>
         ) : null}
         <span className="season__meta muted">
-          {episodes ? `${watchedInSeason}/${episodes.length}` : `${season.episode_count} eps`}
+          {watchedInSeason}/{episodes ? episodes.length : season.episode_count}
         </span>
       </button>
 
@@ -290,7 +287,6 @@ function SeasonSection({
                   const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
                   const inCurrentPass = wc > completedPasses // watched in the in-progress pass
                   const everWatched = wc > 0
-                  const expanded = openEps.has(ep.episode_number)
                   return (
                     <li key={ep.episode_number} className="episode">
                       <div className="episode__row">
@@ -320,24 +316,20 @@ function SeasonSection({
                             {everWatched ? '✓' : ''}
                           </button>
                         )}
-                        {/* Clicking the episode body expands its details. */}
+                        {/* Clicking the episode body opens its full details page. */}
                         <div
                           className="episode__main episode__main--clickable"
                           role="button"
                           tabIndex={0}
-                          aria-expanded={expanded}
-                          onClick={() => toggleEp(ep.episode_number)}
+                          onClick={() => openEpisode(ep.episode_number)}
                           onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
                               e.preventDefault()
-                              toggleEp(ep.episode_number)
+                              openEpisode(ep.episode_number)
                             }
                           }}
                         >
                           <div className="episode__top">
-                            <span className="episode__chevron" aria-hidden="true">
-                              {expanded ? '▾' : '▸'}
-                            </span>
                             <span className="episode__num">
                               S{ep.season_number}E{ep.episode_number}
                             </span>
@@ -347,6 +339,9 @@ function SeasonSection({
                               season={ep.season_number}
                               episode={ep.episode_number}
                             />
+                            <span className="episode__chevron" aria-hidden="true">
+                              ›
+                            </span>
                           </div>
                           <div className="episode__meta">
                             {aired ? (
@@ -369,7 +364,6 @@ function SeasonSection({
                           </div>
                         </div>
                       </div>
-                      {expanded && <EpisodeDetails ep={ep} />}
                     </li>
                   )
                 })}

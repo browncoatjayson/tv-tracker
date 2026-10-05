@@ -1,6 +1,9 @@
-import { NavLink, Outlet } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useIndexProgress } from '../data/episodeIndex'
+import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
 import UpdatePrompt from './UpdatePrompt'
+import { UserGlyph } from '../views/Stats'
 
 // Tabs shown in the nav bar. A single source of truth keeps the markup tidy.
 const TABS = [
@@ -15,7 +18,10 @@ export default function Layout() {
     <div className="app-shell">
       <header className="app-header">
         <h1 className="app-title">TV Tracker</h1>
-        <IndexIndicator />
+        <div className="app-header__right">
+          <IndexIndicator />
+          <UserButton />
+        </div>
       </header>
 
       <main className="app-main">
@@ -41,6 +47,25 @@ export default function Layout() {
         ))}
       </nav>
     </div>
+  )
+}
+
+/** Header avatar button → personal stats. Shows the Google photo when synced. */
+function UserButton() {
+  const [profile, setProfile] = useState<GoogleProfile | null>(getGoogleProfile())
+  useEffect(() => {
+    const onProfile = () => setProfile(getGoogleProfile())
+    window.addEventListener('tvtracker:profile', onProfile)
+    return () => window.removeEventListener('tvtracker:profile', onProfile)
+  }, [])
+  return (
+    <Link to="/stats" className="user-btn" aria-label="Your stats" title="Your stats">
+      {profile?.picture ? (
+        <img className="user-btn__img" src={profile.picture} alt="" referrerPolicy="no-referrer" />
+      ) : (
+        <UserGlyph />
+      )}
+    </Link>
   )
 }
 

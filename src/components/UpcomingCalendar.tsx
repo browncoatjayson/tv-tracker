@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { useNavigate } from 'react-router-dom'
@@ -22,10 +21,11 @@ interface DayEntry {
 const pad = (n: number) => String(n).padStart(2, '0')
 const dateStr = (d: Date) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
 
-export default function UpcomingCalendar() {
+/** The month grid. The month nav lives in the Upcoming controls row (lifted up),
+    so the List/Calendar toggle keeps its place; `anchor` is the 1st of that month. */
+export default function UpcomingCalendar({ anchor }: { anchor: Date }) {
   const navigate = useNavigate()
   const today = new Date()
-  const [anchor, setAnchor] = useState(() => new Date(today.getFullYear(), today.getMonth(), 1))
 
   const year = anchor.getFullYear()
   const month = anchor.getMonth()
@@ -123,27 +123,9 @@ export default function UpcomingCalendar() {
   })
   const todayStr = dateStr(today)
 
-  const monthLabel = anchor.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })
-  const shift = (delta: number) => setAnchor(new Date(year, month + delta, 1))
-
   return (
     <div className="calendar">
-      <div className="calendar__nav">
-        <button className="btn btn--small btn--ghost" onClick={() => shift(-1)} aria-label="Previous month">
-          ‹
-        </button>
-        <span className="calendar__month">{monthLabel}</span>
-        <button
-          className="btn btn--small btn--ghost"
-          onClick={() => setAnchor(new Date(today.getFullYear(), today.getMonth(), 1))}
-        >
-          Today
-        </button>
-        <button className="btn btn--small btn--ghost" onClick={() => shift(1)} aria-label="Next month">
-          ›
-        </button>
-        {loading && <span className="muted calendar__loading">loading…</span>}
-      </div>
+      {loading && <div className="muted calendar__loading">Loading…</div>}
 
       <div className="calendar__weekdays">
         {WEEKDAYS.map((w) => (
