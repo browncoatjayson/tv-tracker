@@ -23,6 +23,11 @@ export function buildBackupFromImport(resolved: ResolvedImportItem[]): BackupDat
     if (seen.has(id)) continue // same TMDB title listed twice — keep the first
     seen.add(id)
 
+    // Movie watch timestamps (array form, falling back to the single field).
+    const movieAts = (it.movieWatchedAts ?? (it.movieWatchedAt != null ? [it.movieWatchedAt] : []))
+      .slice()
+      .sort((a, b) => a - b)
+
     trackedItems.push({
       id,
       tmdbId: it.tmdbId,
@@ -32,31 +37,42 @@ export function buildBackupFromImport(resolved: ResolvedImportItem[]): BackupDat
       posterPath: it.posterPath,
       year: it.year,
       status: it.status,
+      ...(it.mediaType === 'movie' && movieAts.length
+        ? { movieWatchedAt: movieAts[movieAts.length - 1], movieWatchedPrecision: 'day' as const }
+        : {}),
       addedAt: now,
       updatedAt: now,
     })
 
-    if (it.mediaType === 'movie' && it.movieWatchedAt) {
-      watchEvents.push({ itemId: id, episodeId: null, watchedAt: it.movieWatchedAt, isRewatch: false })
+    if (it.mediaType === 'movie') {
+      movieAts.forEach((at, i) => {
+        watchEvents.push({ itemId: id, episodeId: null, watchedAt: at, isRewatch: i > 0 })
+      })
     }
 
     if (it.mediaType === 'show') {
       for (const ep of it.watchedEpisodes ?? []) {
-        const at = ep.watchedAt ?? now
+        const ats = (ep.watchedAts ?? (ep.watchedAt != null ? [ep.watchedAt] : [now]))
+          .slice()
+          .sort((a, b) => a - b)
+        const last = ats[ats.length - 1] ?? now
         episodeStates.push({
           id: episodeKey(id, ep.season, ep.episode),
           itemId: id,
           season: ep.season,
           episode: ep.episode,
           watched: true,
-          watchedAt: at,
-          updatedAt: at,
+          watchCount: ats.length,
+          watchedAt: last,
+          updatedAt: last,
         })
-        watchEvents.push({
-          itemId: id,
-          episodeId: `${ep.season}x${ep.episode}`,
-          watchedAt: at,
-          isRewatch: false,
+        ats.forEach((at, i) => {
+          watchEvents.push({
+            itemId: id,
+            episodeId: `${ep.season}x${ep.episode}`,
+            watchedAt: at,
+            isRewatch: i > 0,
+          })
         })
       }
     }

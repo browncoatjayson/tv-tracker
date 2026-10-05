@@ -1,5 +1,12 @@
 import { useSyncExternalStore } from 'react'
-import { castNames, genreNames, getMovieDetails, watchNames } from '../api/tmdb'
+import {
+  castNames,
+  genreNames,
+  getMovieDetails,
+  isEndedStatus,
+  runtimeOf,
+  watchNames,
+} from '../api/tmdb'
 import { db } from './db'
 import { getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
 import { setItemMeta } from './library'
@@ -60,14 +67,18 @@ async function indexItem(item: TrackedItem): Promise<void> {
       genres: genreNames(details),
       providers: watchNames(details),
       cast: castNames(details),
+      runtime: runtimeOf(details),
     })
     return
   }
   const details = await getTvDetailsCached(item.id, item.tmdbId)
+  let runtime = runtimeOf(details)
   await setItemMeta(item.id, {
     genres: genreNames(details),
     providers: watchNames(details),
     cast: castNames(details),
+    ended: isEndedStatus(details.status),
+    runtime,
   })
   for (const season of details.seasons) {
     if (season.episode_count <= 0) continue
@@ -76,7 +87,16 @@ async function indexItem(item: TrackedItem): Promise<void> {
       .equals([item.id, season.season_number])
       .count()
     if (have >= season.episode_count) continue // already cached
-    await getSeasonEpisodesCached(item.id, item.tmdbId, season.season_number)
+    const episodes = await getSeasonEpisodesCached(item.id, item.tmdbId, season.season_number)
+    // Shows often lack episode_run_time; fall back to a real episode's runtime —
+    // but only from a regular season (specials can be minisodes/recaps).
+    if (runtime === undefined && season.season_number > 0) {
+      const r = episodes.find((e) => e.runtime && e.runtime > 0)?.runtime
+      if (r) {
+        runtime = r
+        await setItemMeta(item.id, { runtime })
+      }
+    }
   }
 }
 

@@ -3,9 +3,11 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
 import { hasAired, imageUrl } from '../api/tmdb'
-import { toggleFavorite } from '../data/library'
-import type { CachedEpisode, TrackedItem, WatchStatus } from '../data/types'
+import { markEpisode, toggleFavorite } from '../data/library'
+import type { CachedEpisode, EpisodeState, TrackedItem, WatchStatus } from '../data/types'
 import { matchesFilter, parseQuery } from '../utils/filter'
+import { usePersistentFilter } from '../hooks/usePersistentFilter'
+import FilterBar from '../components/FilterBar'
 
 const STATUS_ORDER: WatchStatus[] = ['watching', 'watchlist', 'completed', 'dropped']
 const STATUS_LABEL: Record<WatchStatus, string> = {
@@ -39,7 +41,7 @@ function comparator(sort: SortKey): (a: TrackedItem, b: TrackedItem) => number {
 
 export default function Library() {
   const items = useLiveQuery(() => db.trackedItems.toArray())
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = usePersistentFilter('tvtracker.filter.library')
   const [sort, setSort] = useState<SortKey>(() => {
     try {
       const v = localStorage.getItem('tvtracker.librarySort')
@@ -65,6 +67,43 @@ export default function Library() {
     return db.episodeCache.filter((e) => e.name.toLowerCase().includes(qq)).toArray()
   }, [query])
 
+  // For the Watching section's "next episode" card: cached episodes + watched
+  // state for the shows currently being watched (scoped, so it stays light).
+  const watchingIds = (items ?? [])
+    .filter((i) => i.status === 'watching' && i.mediaType === 'show')
+    .map((i) => i.id)
+  const watchingKey = watchingIds.join('|')
+  const watchingEpisodes = useLiveQuery<CachedEpisode[]>(
+    () =>
+      watchingIds.length
+        ? db.episodeCache.where('itemId').anyOf(watchingIds).toArray()
+        : Promise.resolve([] as CachedEpisode[]),
+    [watchingKey],
+  )
+  const watchingStates = useLiveQuery<EpisodeState[]>(
+    () =>
+      watchingIds.length
+        ? db.episodeStates.where('itemId').anyOf(watchingIds).toArray()
+        : Promise.resolve([] as EpisodeState[]),
+    [watchingKey],
+  )
+  const watchedEpKeys = new Set(
+    (watchingStates ?? []).filter((s) => s.watched).map((s) => `${s.itemId}:${s.season}:${s.episode}`),
+  )
+  const epByItem = new Map<string, CachedEpisode[]>()
+  for (const e of watchingEpisodes ?? []) {
+    if (e.season === 0) continue // skip specials
+    const arr = epByItem.get(e.itemId) ?? []
+    arr.push(e)
+    epByItem.set(e.itemId, arr)
+  }
+  const nextUnwatched = (itemId: string): CachedEpisode | null => {
+    const eps = (epByItem.get(itemId) ?? [])
+      .slice()
+      .sort((a, b) => a.season - b.season || a.episode - b.episode)
+    return eps.find((e) => !watchedEpKeys.has(`${e.itemId}:${e.season}:${e.episode}`)) ?? null
+  }
+
   if (items === undefined) return <p className="muted">Loading…</p>
 
   if (items.length === 0) {
@@ -85,14 +124,11 @@ export default function Library() {
 
   return (
     <div className="library">
-      <div className="library__controls">
-        <input
-          className="search__input"
-          type="search"
-          placeholder="Filter… name, genre:comedy, service:apple"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
+      <FilterBar
+        value={query}
+        onChange={setQuery}
+        placeholder="Filter… name, genre:comedy, service:apple"
+      >
         <select
           className="sort-select"
           value={sort}
@@ -105,7 +141,7 @@ export default function Library() {
             </option>
           ))}
         </select>
-      </div>
+      </FilterBar>
 
       {searching ? (
         (() => {
@@ -117,6 +153,8 @@ export default function Library() {
                 providers: i.providers,
                 cast: i.cast,
                 mediaType: i.mediaType,
+                ended: i.ended,
+                runtime: i.runtime,
               },
               parsed,
             ),
@@ -132,7 +170,14 @@ export default function Library() {
               if (!it || titleIds.has(e.itemId)) return false
               // Respect genre/service/actor/type filters on the episode's show too.
               return matchesFilter(
-                { genres: it.genres, providers: it.providers, cast: it.cast, mediaType: 'show' },
+                {
+                  genres: it.genres,
+                  providers: it.providers,
+                  cast: it.cast,
+                  mediaType: 'show',
+                  ended: it.ended,
+                  runtime: it.runtime,
+                },
                 { ...parsed, text: '' },
               )
             })
@@ -230,7 +275,11 @@ export default function Library() {
                 <h2 className="section-title">
                   {STATUS_LABEL[status]} <span className="count">{group.length}</span>
                 </h2>
-                <PosterGrid items={group} />
+                {status === 'watching' ? (
+                  <WatchingGrid items={group} nextUnwatched={nextUnwatched} />
+                ) : (
+                  <PosterGrid items={group} />
+                )}
               </section>
             )
           })}
@@ -269,5 +318,69 @@ function PosterGrid({ items }: { items: TrackedItem[] }) {
         </li>
       ))}
     </ul>
+  )
+}
+
+/** Watching section: each show card gets a "next unwatched episode" strip. */
+function WatchingGrid({
+  items,
+  nextUnwatched,
+}: {
+  items: TrackedItem[]
+  nextUnwatched: (id: string) => CachedEpisode | null
+}) {
+  return (
+    <ul className="poster-grid">
+      {items.map((item) => {
+        const next = item.mediaType === 'show' ? nextUnwatched(item.id) : null
+        return (
+          <li key={item.id} className="poster-cell">
+            <Link to={`/item/${encodeURIComponent(item.id)}`} className="poster-card">
+              {imageUrl(item.posterPath) ? (
+                <img className="poster-card__img" src={imageUrl(item.posterPath)} alt="" loading="lazy" />
+              ) : (
+                <div className="poster-card__img poster-card__img--placeholder">
+                  {item.mediaType === 'movie' ? '🎬' : '📺'}
+                </div>
+              )}
+              <span className="poster-card__title">{item.title}</span>
+            </Link>
+            <button
+              className={`fav-star${item.favorite ? ' fav-star--on' : ''}`}
+              title={item.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
+              aria-label={item.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
+              onClick={() => void toggleFavorite(item.id, !item.favorite)}
+            >
+              {item.favorite ? '★' : '☆'}
+            </button>
+            {next && <NextEpCard item={item} ep={next} />}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function NextEpCard({ item, ep }: { item: TrackedItem; ep: CachedEpisode }) {
+  const aired = hasAired(ep.airDate)
+  return (
+    <div className="next-ep">
+      <span className="next-ep__label">
+        S{ep.season}E{ep.episode}
+        {ep.name ? ` · ${ep.name}` : ''}
+      </span>
+      {aired ? (
+        <button
+          className="next-ep__check"
+          title="Mark watched"
+          aria-label={`Mark S${ep.season}E${ep.episode} watched`}
+          onClick={() => void markEpisode(item.id, ep.season, ep.episode, true)}
+        >
+          ✓
+        </button>
+      ) : (
+        <span className="next-ep__date">{ep.airDate ?? 'TBA'}</span>
+      )}
+    </div>
   )
 }

@@ -3,13 +3,15 @@ import type { ImportMode } from '../data/exportImport'
 import { applyImport } from '../data/importers/build'
 import { resolveTmdbIds } from '../data/importers/resolve'
 import { parseTvTimeZip } from '../data/importers/tvtime'
+import { parseTraktJson } from '../data/importers/trakt'
 import type { ImportItem } from '../data/importers/types'
 
-type Source = 'tvtime'
+type Source = 'tvtime' | 'trakt'
 
 // How to parse each supported source. Add a parser here to support a new tracker.
 const PARSERS: Record<Source, { label: string; accept: string; parse: (f: File) => Promise<ImportItem[]> }> = {
   tvtime: { label: 'TV Time (.zip export)', accept: '.zip', parse: parseTvTimeZip },
+  trakt: { label: 'Trakt (history .json)', accept: '.json', parse: parseTraktJson },
 }
 
 type Phase = 'idle' | 'parsing' | 'mapping' | 'saving' | 'done' | 'error'

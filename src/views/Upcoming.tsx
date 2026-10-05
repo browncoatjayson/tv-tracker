@@ -3,12 +3,23 @@ import { useQueries } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
-import { castNames, genreNames, getMovieDetails, imageUrl, watchNames, whereToWatch } from '../api/tmdb'
+import {
+  castNames,
+  genreNames,
+  getMovieDetails,
+  imageUrl,
+  isEndedStatus,
+  runtimeOf,
+  watchNames,
+  whereToWatch,
+} from '../api/tmdb'
 import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
 import { getTvDetailsCached } from '../data/episodeCache'
 import { matchesFilter, parseQuery } from '../utils/filter'
+import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import { markEpisode, markMovieWatched } from '../data/library'
 import type { MediaType } from '../data/types'
+import FilterBar from '../components/FilterBar'
 import UpcomingCalendar from '../components/UpcomingCalendar'
 
 interface FeedEntry {
@@ -22,10 +33,12 @@ interface FeedEntry {
   where?: string
   /** Local air time (from TVmaze), e.g. "9:00 PM". */
   time?: string
-  /** For genre/service/actor filtering. */
+  /** For genre/service/actor/status/length filtering. */
   genres?: string[]
   providers?: string[]
   cast?: string[]
+  ended?: boolean
+  runtime?: number
   // Present on aired entries, so the inline "mark watched" control knows what to log.
   season?: number
   episode?: number
@@ -75,7 +88,7 @@ export default function Upcoming() {
       // ignore
     }
   }, [view])
-  const [query, setQuery] = useState('')
+  const [query, setQuery] = usePersistentFilter('tvtracker.filter.upcoming')
 
   const tracked = (items ?? []).filter((i) => i.status !== 'dropped')
   const shows = tracked.filter((i) => i.mediaType === 'show')
@@ -140,6 +153,8 @@ export default function Upcoming() {
     const genres = genreNames(details)
     const providers = watchNames(details)
     const cast = castNames(details)
+    const ended = isEndedStatus(details.status)
+    const runtime = runtimeOf(details)
     const next = details.next_episode_to_air
     if (next?.air_date && next.air_date >= today) {
       upcoming.push({
@@ -153,6 +168,8 @@ export default function Upcoming() {
         genres,
         providers,
         cast,
+        ended,
+        runtime,
         time: airTime(s.imdbId, next.season_number, next.episode_number),
       })
     }
@@ -173,6 +190,8 @@ export default function Upcoming() {
         genres,
         providers,
         cast,
+        ended,
+        runtime,
         time: airTime(s.imdbId, last.season_number, last.episode_number),
         season: last.season_number,
         episode: last.episode_number,
@@ -188,6 +207,7 @@ export default function Upcoming() {
     const genres = genreNames(md)
     const providers = watchNames(md)
     const cast = castNames(md)
+    const runtime = runtimeOf(md)
     if (release >= today) {
       upcoming.push({
         itemId: m.id,
@@ -200,6 +220,7 @@ export default function Upcoming() {
         genres,
         providers,
         cast,
+        runtime,
       })
     } else if (inAiredWindow(release) && !watchedMovies.has(m.id)) {
       aired.push({
@@ -213,6 +234,7 @@ export default function Upcoming() {
         genres,
         providers,
         cast,
+        runtime,
       })
     }
   })
@@ -232,6 +254,8 @@ export default function Upcoming() {
         providers: e.providers,
         cast: e.cast,
         mediaType: e.mediaType,
+        ended: e.ended,
+        runtime: e.runtime,
       },
       parsed,
     )
@@ -283,33 +307,34 @@ export default function Upcoming() {
     )
   }
 
-  const controls = (
-    <div className="upcoming__controls">
-      {view === 'list' && (
-        <input
-          className="search__input"
-          type="search"
-          placeholder="Filter… name, genre:comedy, service:apple"
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-        />
-      )}
-      <div className="seg" role="tablist" aria-label="Upcoming view">
-        <button
-          className={`seg__btn${view === 'list' ? ' seg__btn--on' : ''}`}
-          onClick={() => setView('list')}
-        >
-          List
-        </button>
-        <button
-          className={`seg__btn${view === 'calendar' ? ' seg__btn--on' : ''}`}
-          onClick={() => setView('calendar')}
-        >
-          Calendar
-        </button>
-      </div>
+  const seg = (
+    <div className="seg" role="tablist" aria-label="Upcoming view">
+      <button
+        className={`seg__btn${view === 'list' ? ' seg__btn--on' : ''}`}
+        onClick={() => setView('list')}
+      >
+        List
+      </button>
+      <button
+        className={`seg__btn${view === 'calendar' ? ' seg__btn--on' : ''}`}
+        onClick={() => setView('calendar')}
+      >
+        Calendar
+      </button>
     </div>
   )
+  const controls =
+    view === 'list' ? (
+      <FilterBar
+        value={query}
+        onChange={setQuery}
+        placeholder="Filter… name, genre:comedy, service:apple"
+      >
+        {seg}
+      </FilterBar>
+    ) : (
+      <div className="upcoming__controls">{seg}</div>
+    )
 
   return (
     <div className="upcoming">

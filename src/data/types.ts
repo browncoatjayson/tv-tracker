@@ -46,6 +46,14 @@ export interface TrackedItem {
   providers?: string[]
   /** Top-billed cast names — backfilled for the actor filter. */
   cast?: string[]
+  /** Whether the show has ended/been cancelled (undefined for movies). */
+  ended?: boolean
+  /** Typical runtime in minutes (movie length, or a show's episode length). */
+  runtime?: number
+  /** When a movie was watched (editable; supports partial precision). */
+  movieWatchedAt?: number
+  /** Precision of movieWatchedAt for display. */
+  movieWatchedPrecision?: 'day' | 'month' | 'year'
   /** Epoch milliseconds. */
   addedAt: number
   updatedAt: number

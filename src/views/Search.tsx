@@ -10,6 +10,8 @@ import {
   getTvDetails,
   hasTmdbToken,
   imageUrl,
+  isEndedStatus,
+  runtimeOf,
   searchMulti,
   searchPerson,
   watchNames,
@@ -18,7 +20,9 @@ import {
 import { db, itemKey } from '../data/db'
 import { addItem } from '../data/library'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
+import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import { matchesFilter, parseQuery } from '../utils/filter'
+import FilterBar from '../components/FilterBar'
 import type { MediaType } from '../data/types'
 
 const HOUR = 1000 * 60 * 60
@@ -39,7 +43,7 @@ function resultYear(r: TmdbMediaResult): number | undefined {
 }
 
 export default function Search() {
-  const [input, setInput] = useState('')
+  const [input, setInput] = usePersistentFilter('tvtracker.filter.search')
   const query = useDebouncedValue(input, 350)
   const [addingId, setAddingId] = useState<number | null>(null)
 
@@ -90,24 +94,29 @@ export default function Search() {
     return (r.genre_ids ?? []).map((id) => map?.[id]).filter((n): n is string => Boolean(n))
   }
 
-  // Service filtering needs per-result providers, so fetch details for the shown
-  // results — but only when a service: token is actually in use.
-  const servicesActive = parsed.services.length > 0
-  const providerQueries = useQueries({
+  // service:, length:, and status: filtering need per-result details, so fetch
+  // them for the shown results — but only when one of those tokens is in use.
+  const needDetails =
+    parsed.services.length > 0 || parsed.lengths.length > 0 || parsed.ended.length > 0
+  const detailQueries = useQueries({
     queries: (allResults ?? []).map((r) => ({
       queryKey: [r.media_type === 'tv' ? 'tv' : 'movie', r.id],
       queryFn: () => (r.media_type === 'tv' ? getTvDetails(r.id) : getMovieDetails(r.id)),
-      enabled: servicesActive,
+      enabled: needDetails,
       staleTime: HOUR,
     })),
   })
 
   const results = (allResults ?? []).filter((r, i) => {
-    const providers = servicesActive
-      ? providerQueries[i]?.data
-        ? watchNames(providerQueries[i].data)
-        : []
-      : []
+    const d = needDetails ? detailQueries[i]?.data : undefined
+    const providers = parsed.services.length ? (d ? watchNames(d) : []) : []
+    const runtime = parsed.lengths.length ? (d ? runtimeOf(d) : undefined) : undefined
+    const ended =
+      parsed.ended.length && r.media_type === 'tv'
+        ? d
+          ? isEndedStatus(d.status)
+          : undefined
+        : undefined
     // In actor mode, the free text filters the actor's credits by title; in text
     // mode TMDB already handled the text, and the actor filter doesn't apply here.
     return matchesFilter(
@@ -115,6 +124,8 @@ export default function Search() {
         title: resultTitle(r),
         genres: resultGenres(r),
         providers,
+        runtime,
+        ended,
         mediaType: toMediaType(r),
       },
       { ...parsed, actors: [], text: actorName ? parsed.text : '' },
@@ -154,12 +165,10 @@ export default function Search() {
 
   return (
     <div className="search">
-      <input
-        className="search__input"
-        type="search"
-        placeholder="Search… name, genre:comedy, service:apple"
+      <FilterBar
         value={input}
-        onChange={(e) => setInput(e.target.value)}
+        onChange={setInput}
+        placeholder="Search… name, genre:comedy, service:apple"
         autoFocus
       />
 
@@ -199,14 +208,11 @@ export default function Search() {
           )
           return (
             <li key={`${r.media_type}:${r.id}`} className="result-row">
-              {/* Once added, the tile links to the show's detail page. */}
-              {added ? (
-                <Link to={`/item/${encodeURIComponent(id)}`} className="result-row__link">
-                  {inner}
-                </Link>
-              ) : (
-                <div className="result-row__link">{inner}</div>
-              )}
+              {/* Tiles always link to the detail page — a preview before adding,
+                  the full tracking view once in the library. */}
+              <Link to={`/item/${encodeURIComponent(id)}`} className="result-row__link">
+                {inner}
+              </Link>
               <button
                 className="btn btn--small"
                 disabled={added || addingId === r.id}

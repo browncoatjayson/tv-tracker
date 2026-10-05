@@ -1,4 +1,4 @@
-import { findByExternalId } from '../../api/tmdb'
+import { findByExternalId, getTitleBrief } from '../../api/tmdb'
 import type { ImportItem, ResolvedImportItem } from './types'
 
 export interface ResolveProgress {
@@ -15,7 +15,22 @@ export interface ResolveOutcome {
 async function resolveOne(item: ImportItem): Promise<ResolvedImportItem | null> {
   const tmdbMediaType = item.mediaType === 'show' ? 'tv' : 'movie'
 
-  // Prefer IMDb (movies), then TheTVDB (shows). Try both before giving up.
+  // If the source already gave us a TMDB id (e.g. Trakt), use it directly and
+  // just fetch poster/year — no external-id lookup needed.
+  if (item.tmdbId) {
+    const brief = await getTitleBrief(tmdbMediaType, item.tmdbId)
+    if (brief) {
+      return {
+        ...item,
+        tmdbId: brief.tmdbId,
+        posterPath: brief.posterPath,
+        year: brief.year,
+        imdbId: item.imdbId,
+      }
+    }
+  }
+
+  // Otherwise prefer IMDb (movies), then TheTVDB (shows). Try both before giving up.
   const attempts: { source: 'imdb_id' | 'tvdb_id'; id: string | number }[] = []
   if (item.imdbId) attempts.push({ source: 'imdb_id', id: item.imdbId })
   if (item.tvdbId) attempts.push({ source: 'tvdb_id', id: item.tvdbId })

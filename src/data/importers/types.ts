@@ -8,11 +8,21 @@ export interface ImportItem {
   /** External ids from the source; at least one is needed to find the TMDB id. */
   imdbId?: string
   tvdbId?: number
+  /** Direct TMDB id (e.g. from Trakt) — resolved without an external-id lookup. */
+  tmdbId?: number
   status: WatchStatus
   /** For a watched movie: when it was watched (epoch ms). */
   movieWatchedAt?: number
+  /** For a movie, every watch timestamp (epoch ms) — supports rewatch counts. */
+  movieWatchedAts?: number[]
   /** For a show: the episodes marked watched. */
-  watchedEpisodes?: { season: number; episode: number; watchedAt?: number }[]
+  watchedEpisodes?: {
+    season: number
+    episode: number
+    watchedAt?: number
+    /** Every watch timestamp (epoch ms) for this episode — supports rewatches. */
+    watchedAts?: number[]
+  }[]
 }
 
 /** An {@link ImportItem} after TMDB resolution. */

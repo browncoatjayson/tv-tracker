@@ -56,7 +56,13 @@ export async function setStatus(id: string, status: WatchStatus): Promise<void> 
 /** Backfill filterable metadata (genres, providers, cast) without bumping updatedAt. */
 export async function setItemMeta(
   id: string,
-  meta: { genres?: string[]; providers?: string[]; cast?: string[] },
+  meta: {
+    genres?: string[]
+    providers?: string[]
+    cast?: string[]
+    ended?: boolean
+    runtime?: number
+  },
 ): Promise<void> {
   await db.trackedItems.update(id, meta)
 }
@@ -161,6 +167,24 @@ export async function markMovieWatched(itemId: string, isRewatch = false): Promi
   const now = Date.now()
   await db.transaction('rw', db.watchEvents, db.trackedItems, async () => {
     await db.watchEvents.add({ itemId, episodeId: null, watchedAt: now, isRewatch })
-    await db.trackedItems.update(itemId, { updatedAt: now, status: 'completed' })
+    await db.trackedItems.update(itemId, {
+      updatedAt: now,
+      status: 'completed',
+      movieWatchedAt: now,
+      movieWatchedPrecision: 'day',
+    })
+  })
+}
+
+/** Set a movie's (editable) watched date, with day/month/year precision. */
+export async function setMovieWatchedDate(
+  itemId: string,
+  watchedAt: number,
+  precision: 'day' | 'month' | 'year',
+): Promise<void> {
+  await db.trackedItems.update(itemId, {
+    movieWatchedAt: watchedAt,
+    movieWatchedPrecision: precision,
+    updatedAt: Date.now(),
   })
 }

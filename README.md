@@ -35,10 +35,12 @@ The Library filter box also takes `genre:` and `service:` tokens, e.g.
 `genre:comedy` or `genre:crime, service:hbo`. (Genre/service data fills in as you
 browse, or all at once via **Settings → Build index**.)
 
-**3. Import your TV Time history (optional).** Request your data export from TV
-Time (you'll get a `.zip`), then go to **Settings → Import from another tracker →
-TV Time**, choose **Merge** or **Replace**, and pick the `.zip`. A large library
-takes a minute or two to match everything to TMDB.
+**3. Import your history (optional).** Under **Settings → Import from another
+tracker**, choose your source, **Merge** or **Replace**, and pick the file:
+- **TV Time** — a `.zip` export (request it from TV Time).
+- **Trakt** — a history `.json` export (re-import anytime; duplicates are skipped).
+
+A large library takes a minute or two to match everything to TMDB.
 
 **4. Sync across devices (optional).** **Settings → Connect Google Drive** stores
 your data in a private, app-only folder in your own Drive. Connect and sync on

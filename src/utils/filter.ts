@@ -2,6 +2,11 @@
 // Supports free text plus `genre:` and `service:` tokens, comma-separated, e.g.
 //   "crime, genre:drama, service:hbo"
 
+export interface LengthConstraint {
+  op: '<' | '>' | '<=' | '>=' | '='
+  value: number
+}
+
 export interface ParsedQuery {
   text: string
   genres: string[]
@@ -9,6 +14,10 @@ export interface ParsedQuery {
   actors: string[]
   /** Normalized media types to keep: 'movie' and/or 'show'. */
   types: ('movie' | 'show')[]
+  /** Show airing status to keep: 'ended' and/or 'ongoing'. */
+  ended: ('ended' | 'ongoing')[]
+  /** Runtime (minutes) constraints, e.g. {op:'<', value:30}. */
+  lengths: LengthConstraint[]
 }
 
 function normalizeType(v: string): 'movie' | 'show' | null {
@@ -24,8 +33,10 @@ export function parseQuery(raw: string): ParsedQuery {
   const services: string[] = []
   const actors: string[] = []
   const types: ('movie' | 'show')[] = []
+  const ended: ('ended' | 'ongoing')[] = []
+  const lengths: LengthConstraint[] = []
   for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
-    const m = part.match(/^(genre|service|actor|type):(.+)$/i)
+    const m = part.match(/^(genre|service|actor|type|status|length):(.+)$/i)
     if (!m) {
       text.push(part.toLowerCase())
       continue
@@ -35,12 +46,20 @@ export function parseQuery(raw: string): ParsedQuery {
     if (key === 'genre') genres.push(val.toLowerCase())
     else if (key === 'service') services.push(val.toLowerCase())
     else if (key === 'actor') actors.push(val.toLowerCase())
-    else {
+    else if (key === 'type') {
       const t = normalizeType(val)
       if (t) types.push(t)
+    } else if (key === 'status') {
+      const v = val.toLowerCase()
+      if (v === 'ended' || v === 'cancelled' || v === 'canceled') ended.push('ended')
+      else if (v === 'ongoing' || v === 'returning' || v === 'airing') ended.push('ongoing')
+    } else {
+      // length: optional operator + number of minutes.
+      const lm = val.match(/^(<=|>=|<|>|=)?\s*(\d+)$/)
+      if (lm) lengths.push({ op: (lm[1] as LengthConstraint['op']) || '=', value: Number(lm[2]) })
     }
   }
-  return { text: text.join(' ').trim(), genres, services, actors, types }
+  return { text: text.join(' ').trim(), genres, services, actors, types, ended, lengths }
 }
 
 export interface FilterTarget {
@@ -51,6 +70,23 @@ export interface FilterTarget {
   providers?: string[]
   cast?: string[]
   mediaType?: 'movie' | 'show'
+  ended?: boolean
+  runtime?: number
+}
+
+function runtimeSatisfies(runtime: number, c: LengthConstraint): boolean {
+  switch (c.op) {
+    case '<':
+      return runtime < c.value
+    case '>':
+      return runtime > c.value
+    case '<=':
+      return runtime <= c.value
+    case '>=':
+      return runtime >= c.value
+    default:
+      return runtime === c.value
+  }
 }
 
 export function matchesFilter(target: FilterTarget, q: ParsedQuery): boolean {
@@ -59,6 +95,13 @@ export function matchesFilter(target: FilterTarget, q: ParsedQuery): boolean {
     if (!hay.includes(q.text)) return false
   }
   if (q.types.length && (!target.mediaType || !q.types.includes(target.mediaType))) return false
+  if (q.ended.length) {
+    if (target.ended === undefined) return false
+    if (!q.ended.includes(target.ended ? 'ended' : 'ongoing')) return false
+  }
+  for (const l of q.lengths) {
+    if (target.runtime === undefined || !runtimeSatisfies(target.runtime, l)) return false
+  }
   for (const g of q.genres) {
     if (!(target.genres ?? []).some((x) => x.toLowerCase().includes(g))) return false
   }

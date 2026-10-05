@@ -130,6 +130,26 @@ export async function searchPerson(name: string): Promise<number | null> {
   return data.results?.[0]?.id ?? null
 }
 
+/** Minimal title info by TMDB id (poster + year), e.g. for Trakt imports. */
+export async function getTitleBrief(
+  mediaType: 'movie' | 'tv',
+  tmdbId: number,
+): Promise<TmdbFindResult | null> {
+  try {
+    const d = await tmdbGet<TmdbFindHit>(`/${mediaType}/${tmdbId}`)
+    const date = d.release_date || d.first_air_date
+    const year = date ? Number(date.slice(0, 4)) : NaN
+    return {
+      tmdbId,
+      title: d.title || d.name || 'Untitled',
+      posterPath: d.poster_path ?? undefined,
+      year: Number.isFinite(year) ? year : undefined,
+    }
+  } catch {
+    return null
+  }
+}
+
 /** A person's movie + TV credits as search results, deduped and popularity-sorted. */
 export async function getPersonCredits(personId: number): Promise<TmdbMediaResult[]> {
   const data = await tmdbGet<{
@@ -235,6 +255,30 @@ export interface WatchInfo {
   /** Synopsis. */
   overview?: string
   credits?: TmdbCredits
+  /** Movie runtime in minutes. */
+  runtime?: number
+  /** Show's typical episode runtime(s) in minutes. */
+  episode_run_time?: number[]
+  /** Show airing status: "Ended", "Returning Series", "Canceled", etc. */
+  status?: string
+  /** Title + poster + dates (for the preview Details screen). */
+  name?: string
+  title?: string
+  poster_path?: string | null
+  first_air_date?: string | null
+  release_date?: string | null
+}
+
+/** Typical runtime in minutes (movie length, or a show's episode length). */
+export function runtimeOf(details: WatchInfo): number | undefined {
+  if (typeof details.runtime === 'number' && details.runtime > 0) return details.runtime
+  const r = details.episode_run_time?.find((n) => n > 0)
+  return r
+}
+
+/** True if a show's airing status means it's finished. */
+export function isEndedStatus(status: string | undefined): boolean {
+  return status === 'Ended' || status === 'Canceled' || status === 'Cancelled'
 }
 
 /** Top-billed cast names (ordered), limited to `limit`. */
@@ -252,6 +296,7 @@ export interface TmdbTvDetails {
   number_of_episodes: number
   number_of_seasons: number
   status: string
+  episode_run_time?: number[]
   seasons: TmdbSeasonSummary[]
   /** Broadcast networks (e.g. CBS). */
   networks?: { name: string }[]
@@ -271,6 +316,7 @@ export interface TmdbMovieDetails {
   title: string
   release_date: string | null
   status: string
+  runtime?: number
   'watch/providers'?: TmdbWatchProviders
 }
 
@@ -321,6 +367,9 @@ export interface TmdbEpisode {
   air_date: string | null
   overview: string
   runtime: number | null
+  still_path?: string | null
+  vote_average?: number
+  guest_stars?: { name: string; character?: string }[]
 }
 
 export async function getSeasonEpisodes(

@@ -2,10 +2,11 @@ import type React from 'react'
 import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { getEpisodeImdbId, hasAired, type TmdbSeasonSummary } from '../api/tmdb'
+import { getEpisodeImdbId, hasAired, isEndedStatus, type TmdbSeasonSummary } from '../api/tmdb'
 import { db } from '../data/db'
 import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
 import { setEpisodeWatchCount, setEpisodeWatchedDate, setStatus } from '../data/library'
+import EpisodeDetails from './EpisodeDetails'
 import type { EpisodeState, TrackedItem } from '../data/types'
 
 // Order seasons ascending, but push "Specials" (season 0) to the end.
@@ -52,7 +53,14 @@ function pickExpandSeason(
   return next ? next.season_number : nextUpcomingSeason
 }
 
-export default function ShowEpisodes({ item }: { item: TrackedItem }) {
+export default function ShowEpisodes({
+  item,
+  readOnly = false,
+}: {
+  item: TrackedItem
+  /** Preview mode (title not in the library): show episodes + details, no watch controls. */
+  readOnly?: boolean
+}) {
   const {
     data: details,
     isLoading,
@@ -122,9 +130,10 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
   // Auto-advance status as you watch: watchlist -> watching on the first episode,
   // and -> completed once every episode is watched (never overrides "dropped").
   useEffect(() => {
-    if (!details || item.status === 'dropped') return
+    if (readOnly || !details || item.status === 'dropped') return
     const total = details.number_of_episodes
-    if (total > 0 && watchedCount >= total) {
+    // Only auto-complete an ended show — an ongoing one likely has more coming.
+    if (total > 0 && watchedCount >= total && isEndedStatus(details.status)) {
       if (item.status !== 'completed') void setStatus(item.id, 'completed')
     } else if (watchedCount > 0 && item.status === 'watchlist') {
       void setStatus(item.id, 'watching')
@@ -173,6 +182,7 @@ export default function ShowEpisodes({ item }: { item: TrackedItem }) {
           onToggle={() => toggle(season.season_number)}
           stateMap={stateMap}
           completedPasses={completedPasses}
+          readOnly={readOnly}
           scrollIntoViewOnLoad={season.season_number === scrollTarget}
         />
       ))}
@@ -187,6 +197,7 @@ function SeasonSection({
   onToggle,
   stateMap,
   completedPasses,
+  readOnly,
   scrollIntoViewOnLoad,
 }: {
   item: TrackedItem
@@ -195,9 +206,18 @@ function SeasonSection({
   onToggle: () => void
   stateMap: Map<string, EpisodeState>
   completedPasses: number
+  readOnly: boolean
   scrollIntoViewOnLoad: boolean
 }) {
   const rootRef = useRef<HTMLDivElement>(null)
+  const [openEps, setOpenEps] = useState<Set<number>>(new Set())
+  const toggleEp = (n: number) =>
+    setOpenEps((prev) => {
+      const next = new Set(prev)
+      if (next.has(n)) next.delete(n)
+      else next.add(n)
+      return next
+    })
 
   // Episodes are fetched lazily — only once the season is first opened. The
   // cached variant also records episode names/dates for search + the calendar.
@@ -258,9 +278,11 @@ function SeasonSection({
           {isLoading && <p className="muted">Loading…</p>}
           {episodes && (
             <>
-              <button className="btn btn--small btn--ghost" onClick={() => void markSeasonWatched()}>
-                Mark aired episodes watched
-              </button>
+              {!readOnly && (
+                <button className="btn btn--small btn--ghost" onClick={() => void markSeasonWatched()}>
+                  Mark aired episodes watched
+                </button>
+              )}
               <ul className="episode-list">
                 {episodes.map((ep) => {
                   const aired = hasAired(ep.air_date)
@@ -268,64 +290,86 @@ function SeasonSection({
                   const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
                   const inCurrentPass = wc > completedPasses // watched in the in-progress pass
                   const everWatched = wc > 0
+                  const expanded = openEps.has(ep.episode_number)
                   return (
                     <li key={ep.episode_number} className="episode">
-                      <button
-                        type="button"
-                        className={`epi-check${
-                          inCurrentPass ? ' epi-check--on' : everWatched ? ' epi-check--dim' : ''
-                        }`}
-                        disabled={!aired}
-                        aria-pressed={inCurrentPass}
-                        aria-label={`Mark S${ep.season_number}E${ep.episode_number} watched`}
-                        title={
-                          everWatched && !inCurrentPass
-                            ? 'Watched a previous time — click to mark this rewatch'
-                            : undefined
-                        }
-                        onClick={() =>
-                          void setEpisodeWatchCount(
-                            item.id,
-                            ep.season_number,
-                            ep.episode_number,
-                            inCurrentPass ? completedPasses : completedPasses + 1,
-                          )
-                        }
-                      >
-                        {everWatched ? '✓' : ''}
-                      </button>
-                      <div className="episode__main">
-                        <div className="episode__top">
-                          <span className="episode__num">
-                            S{ep.season_number}E{ep.episode_number}
-                          </span>
-                          <span className="episode__title">{ep.name}</span>
-                          <EpisodeImdbLink
-                            tmdbId={item.tmdbId}
-                            season={ep.season_number}
-                            episode={ep.episode_number}
-                          />
-                        </div>
-                        <div className="episode__meta">
-                          {aired ? (
-                            <span className="episode__date muted">
-                              Aired{ep.air_date ? ` · ${ep.air_date}` : ''}
+                      <div className="episode__row">
+                        {!readOnly && (
+                          <button
+                            type="button"
+                            className={`epi-check${
+                              inCurrentPass ? ' epi-check--on' : everWatched ? ' epi-check--dim' : ''
+                            }`}
+                            disabled={!aired}
+                            aria-pressed={inCurrentPass}
+                            aria-label={`Mark S${ep.season_number}E${ep.episode_number} watched`}
+                            title={
+                              everWatched && !inCurrentPass
+                                ? 'Watched a previous time — click to mark this rewatch'
+                                : undefined
+                            }
+                            onClick={() =>
+                              void setEpisodeWatchCount(
+                                item.id,
+                                ep.season_number,
+                                ep.episode_number,
+                                inCurrentPass ? completedPasses : completedPasses + 1,
+                              )
+                            }
+                          >
+                            {everWatched ? '✓' : ''}
+                          </button>
+                        )}
+                        {/* Clicking the episode body expands its details. */}
+                        <div
+                          className="episode__main episode__main--clickable"
+                          role="button"
+                          tabIndex={0}
+                          aria-expanded={expanded}
+                          onClick={() => toggleEp(ep.episode_number)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' || e.key === ' ') {
+                              e.preventDefault()
+                              toggleEp(ep.episode_number)
+                            }
+                          }}
+                        >
+                          <div className="episode__top">
+                            <span className="episode__chevron" aria-hidden="true">
+                              {expanded ? '▾' : '▸'}
                             </span>
-                          ) : (
-                            <span className="episode__upcoming">
-                              {ep.air_date ? `Upcoming · ${ep.air_date}` : 'TBA'}
+                            <span className="episode__num">
+                              S{ep.season_number}E{ep.episode_number}
                             </span>
-                          )}
-                          {everWatched && (
-                            <WatchedDate
-                              itemId={item.id}
+                            <span className="episode__title">{ep.name}</span>
+                            <EpisodeImdbLink
+                              tmdbId={item.tmdbId}
                               season={ep.season_number}
                               episode={ep.episode_number}
-                              watchedAt={st?.watchedAt}
                             />
-                          )}
+                          </div>
+                          <div className="episode__meta">
+                            {aired ? (
+                              <span className="episode__date muted">
+                                Aired{ep.air_date ? ` · ${ep.air_date}` : ''}
+                              </span>
+                            ) : (
+                              <span className="episode__upcoming">
+                                {ep.air_date ? `Upcoming · ${ep.air_date}` : 'TBA'}
+                              </span>
+                            )}
+                            {!readOnly && everWatched && (
+                              <WatchedDate
+                                itemId={item.id}
+                                season={ep.season_number}
+                                episode={ep.episode_number}
+                                watchedAt={st?.watchedAt}
+                              />
+                            )}
+                          </div>
                         </div>
                       </div>
+                      {expanded && <EpisodeDetails ep={ep} />}
                     </li>
                   )
                 })}
@@ -352,6 +396,7 @@ function EpisodeImdbLink({
 
   async function open(e: React.MouseEvent) {
     e.preventDefault()
+    e.stopPropagation()
     if (busy) return
     setBusy(true)
     // Open the tab synchronously (preserves the click gesture), then navigate it.
@@ -403,7 +448,11 @@ function WatchedDate({
   })()
 
   return (
-    <label className="episode__watched">
+    <label
+      className="episode__watched"
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+    >
       <span className="muted">Watched</span>
       <input
         type="date"

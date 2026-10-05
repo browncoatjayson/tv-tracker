@@ -9,13 +9,15 @@ import {
   getImdbId,
   getMovieDetails,
   imageUrl,
+  isEndedStatus,
+  runtimeOf,
   watchNames,
   whereToWatch,
   type WatchInfo,
 } from '../api/tmdb'
 import { getTvDetailsCached } from '../data/episodeCache'
-import { removeItem, setItemMeta, setRating, setStatus } from '../data/library'
-import type { WatchStatus } from '../data/types'
+import { addItem, removeItem, setItemMeta, setRating, setStatus } from '../data/library'
+import type { MediaType, TrackedItem, WatchStatus } from '../data/types'
 import ShowEpisodes from '../components/ShowEpisodes'
 import MovieWatch from '../components/MovieWatch'
 
@@ -24,83 +26,108 @@ const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped'
 export default function ItemDetail() {
   const { id = '' } = useParams()
   const itemId = decodeURIComponent(id)
-  // Normalize "not found" to null so we can tell it apart from useLiveQuery's
-  // own "still loading" undefined.
-  const item = useLiveQuery(() => db.trackedItems.get(itemId).then((r) => r ?? null), [itemId])
+  const [mediaPart, tmdbPart] = itemId.split(':')
+  const mediaType: MediaType = mediaPart === 'movie' ? 'movie' : 'show'
+  const tmdbId = Number(tmdbPart)
+  const validId = Number.isFinite(tmdbId) && tmdbId > 0
 
-  // Backfill a missing IMDb id (e.g. shows imported from TV Time, which only had
-  // a TVDB id). Written without bumping updatedAt so it doesn't churn sync.
+  // null = not in library (preview mode); undefined = still loading from Dexie.
+  const item = useLiveQuery(() => db.trackedItems.get(itemId).then((r) => r ?? null), [itemId])
+  const [editingRating, setEditingRating] = useState(false)
+
+  // Details come from TMDB regardless of library membership (powers preview).
+  const detailsQuery = useQuery<WatchInfo>({
+    queryKey: [mediaType === 'movie' ? 'movie' : 'tv', tmdbId],
+    queryFn: () =>
+      mediaType === 'movie' ? getMovieDetails(tmdbId) : getTvDetailsCached(itemId, tmdbId),
+    enabled: validId,
+    staleTime: 1000 * 60 * 60,
+  })
+  const d = detailsQuery.data
+
+  // Backfill a missing IMDb id for library items (imports lack it).
   useEffect(() => {
     if (!item || item.imdbId) return
-    const source = item.mediaType === 'show' ? 'tv' : 'movie'
-    getImdbId(source, item.tmdbId)
+    getImdbId(item.mediaType === 'show' ? 'tv' : 'movie', item.tmdbId)
       .then((imdb) => {
         if (imdb) void db.trackedItems.update(item.id, { imdbId: imdb })
       })
       .catch(() => {})
   }, [item?.id, item?.imdbId])
 
-  // "Where to watch" (networks + streaming) — shares the cached details query.
-  const detailsQuery = useQuery<WatchInfo>({
-    queryKey: [item?.mediaType === 'movie' ? 'movie' : 'tv', item?.tmdbId],
-    queryFn: () =>
-      item!.mediaType === 'movie'
-        ? getMovieDetails(item!.tmdbId)
-        : getTvDetailsCached(item!.id, item!.tmdbId),
-    enabled: !!item,
-    staleTime: 1000 * 60 * 60,
-  })
-  const where = detailsQuery.data ? whereToWatch(detailsQuery.data) : undefined
-  const [editingRating, setEditingRating] = useState(false)
-
-  // Backfill filterable metadata (genres, providers) for the Library filter.
+  // Backfill filterable metadata for library items once details arrive.
   useEffect(() => {
-    const d = detailsQuery.data
     if (item && d) {
       void setItemMeta(item.id, {
         genres: genreNames(d),
         providers: watchNames(d),
         cast: castNames(d),
+        runtime: runtimeOf(d),
+        ended: item.mediaType === 'show' ? isEndedStatus(d.status) : undefined,
       })
     }
-  }, [item?.id, detailsQuery.data])
+  }, [item?.id, d])
 
-  if (item === undefined) return <p className="muted">Loading…</p>
-  if (item === null) {
+  if (!validId) {
     return (
       <div className="placeholder">
-        <p>That title isn’t in your library.</p>
+        <p>Unknown title.</p>
         <Link to="/library">← Back to Library</Link>
       </div>
     )
   }
+  if (item === undefined && !d) return <p className="muted">Loading…</p>
 
-  const imdbUrl = item.imdbId ? `https://www.imdb.com/title/${item.imdbId}/` : undefined
+  const title = item?.title ?? d?.name ?? d?.title ?? ''
+  const dateStr = d?.first_air_date || d?.release_date
+  const year = item?.year ?? (dateStr ? Number(dateStr.slice(0, 4)) || undefined : undefined)
+  const poster = item?.posterPath ?? d?.poster_path ?? undefined
+  const imdbUrl = item?.imdbId ? `https://www.imdb.com/title/${item.imdbId}/` : undefined
+  const where = d ? whereToWatch(d) : undefined
+  const average =
+    typeof d?.vote_average === 'number' && d.vote_average > 0
+      ? `★ ${d.vote_average.toFixed(1)}/10`
+      : '—'
+
+  const stubItem: TrackedItem = {
+    id: itemId,
+    tmdbId,
+    mediaType,
+    title,
+    status: 'watchlist',
+    addedAt: 0,
+    updatedAt: 0,
+  }
 
   return (
     <div className="detail">
       <div className="detail__header">
-        {imageUrl(item.posterPath, 'w185') ? (
-          <img className="detail__poster" src={imageUrl(item.posterPath, 'w185')} alt="" />
+        {imageUrl(poster, 'w185') ? (
+          <img className="detail__poster" src={imageUrl(poster, 'w185')} alt="" />
         ) : (
           <div className="detail__poster detail__poster--placeholder">
-            {item.mediaType === 'movie' ? '🎬' : '📺'}
+            {mediaType === 'movie' ? '🎬' : '📺'}
           </div>
         )}
         <div>
           <h2 className="detail__title">
-            {item.title} {item.year && <span className="muted">({item.year})</span>}
+            {title || '…'} {year && <span className="muted">({year})</span>}
           </h2>
-          <p className="muted">{item.mediaType === 'movie' ? 'Movie' : 'TV Show'}</p>
+          <p className="muted">
+            {mediaType === 'movie' ? 'Movie' : 'TV Show'}
+            {mediaType === 'show' && d?.status && (
+              <> · {isEndedStatus(d.status) ? 'Ended' : 'Ongoing'}</>
+            )}
+          </p>
           {imdbUrl && (
             <a href={imdbUrl} target="_blank" rel="noopener noreferrer" className="link-out">
               View on IMDb ↗
             </a>
           )}
           {where && <p className="muted detail__where">{where}</p>}
-          {detailsQuery.data?.genres && detailsQuery.data.genres.length > 0 && (
+          {d?.genres && d.genres.length > 0 && (
             <div className="genre-badges">
-              {detailsQuery.data.genres.map((g) => (
+              {d.genres.map((g) => (
                 <span key={g.name} className="genre-badge">
                   {g.name}
                 </span>
@@ -110,14 +137,12 @@ export default function ItemDetail() {
         </div>
       </div>
 
-      {detailsQuery.data?.overview && (
-        <p className="detail__overview muted">{detailsQuery.data.overview}</p>
-      )}
+      {d?.overview && <p className="detail__overview muted">{d.overview}</p>}
 
-      {detailsQuery.data && castNames(detailsQuery.data, 8).length > 0 && (
+      {d && castNames(d, 8).length > 0 && (
         <p className="detail__cast muted">
           Cast:{' '}
-          {castNames(detailsQuery.data, 8).map((name, i) => (
+          {castNames(d, 8).map((name, i) => (
             <span key={name}>
               {i > 0 && ', '}
               <Link to={`/search?q=${encodeURIComponent(`actor:${name}`)}`}>{name}</Link>
@@ -126,76 +151,83 @@ export default function ItemDetail() {
         </p>
       )}
 
-      <label className="field">
-        <span>Status</span>
-        <select
-          value={item.status}
-          onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}
-        >
-          {STATUSES.map((s) => (
-            <option key={s} value={s}>
-              {s}
-            </option>
-          ))}
-        </select>
-      </label>
+      {item ? (
+        <>
+          <label className="field">
+            <span>Status</span>
+            <select
+              value={item.status}
+              onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}
+            >
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
 
-      <div className="ratings-row">
-        <div className="rating-col">
-          <span className="rating-col__label">Your rating</span>
-          {item.userRating !== undefined && !editingRating ? (
-            <span className="rating-value">
-              ★ {item.userRating}/10{' '}
-              <button className="link-btn" onClick={() => setEditingRating(true)}>
-                revise
-              </button>
-            </span>
-          ) : (
-            <RatingStars
-              value={item.userRating}
-              onPick={(n) => {
-                void setRating(item.id, n)
-                setEditingRating(false)
-              }}
-              onClear={
-                item.userRating !== undefined
-                  ? () => {
-                      void setRating(item.id, undefined)
-                      setEditingRating(false)
-                    }
-                  : undefined
+          <div className="ratings-row">
+            <div className="rating-col">
+              <span className="rating-col__label">Your rating</span>
+              {item.userRating !== undefined && !editingRating ? (
+                <span className="rating-value">
+                  ★ {item.userRating}/10{' '}
+                  <button className="link-btn" onClick={() => setEditingRating(true)}>
+                    revise
+                  </button>
+                </span>
+              ) : (
+                <RatingStars
+                  value={item.userRating}
+                  onPick={(n) => {
+                    void setRating(item.id, n)
+                    setEditingRating(false)
+                  }}
+                  onClear={
+                    item.userRating !== undefined
+                      ? () => {
+                          void setRating(item.id, undefined)
+                          setEditingRating(false)
+                        }
+                      : undefined
+                  }
+                />
+              )}
+            </div>
+            <div className="rating-col">
+              <span className="rating-col__label">Average</span>
+              <span className="rating-value">{average}</span>
+            </div>
+          </div>
+
+          {item.mediaType === 'show' ? <ShowEpisodes item={item} /> : <MovieWatch item={item} />}
+
+          <button
+            className="btn btn--danger"
+            onClick={() => {
+              if (confirm(`Remove "${item.title}" and its watch history?`)) {
+                void removeItem(item.id)
               }
-            />
-          )}
-        </div>
-        <div className="rating-col">
-          <span className="rating-col__label">Average</span>
-          <span className="rating-value">
-            {typeof detailsQuery.data?.vote_average === 'number' &&
-            detailsQuery.data.vote_average > 0
-              ? `★ ${detailsQuery.data.vote_average.toFixed(1)}/10`
-              : '—'}
-          </span>
-        </div>
-      </div>
-
-      {/* Media-specific tracking: episodes for shows, watch log for movies. */}
-      {item.mediaType === 'show' ? (
-        <ShowEpisodes item={item} />
+            }}
+          >
+            Remove from library
+          </button>
+        </>
       ) : (
-        <MovieWatch item={item} />
+        <>
+          <div className="ratings-row">
+            <div className="rating-col">
+              <span className="rating-col__label">Average</span>
+              <span className="rating-value">{average}</span>
+            </div>
+          </div>
+          <button className="btn" onClick={() => void addItem({ tmdbId, mediaType, title, posterPath: poster, year })}>
+            + Add to library
+          </button>
+          {mediaType === 'show' && <ShowEpisodes item={stubItem} readOnly />}
+        </>
       )}
-
-      <button
-        className="btn btn--danger"
-        onClick={() => {
-          if (confirm(`Remove "${item.title}" and its watch history?`)) {
-            void removeItem(item.id)
-          }
-        }}
-      >
-        Remove from library
-      </button>
     </div>
   )
 }
