@@ -21,7 +21,7 @@ import type { MediaType, TrackedItem, WatchStatus } from '../data/types'
 import ShowEpisodes from '../components/ShowEpisodes'
 import MovieWatch from '../components/MovieWatch'
 import RatingStars from '../components/RatingStars'
-import ReviewsPlaceholder from '../components/ReviewsPlaceholder'
+import Reviews from '../components/Reviews'
 
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
 
@@ -207,7 +207,7 @@ export default function ItemDetail() {
 
           {item.mediaType === 'show' ? <ShowEpisodes item={item} /> : <MovieWatch item={item} />}
 
-          <ReviewsPlaceholder />
+          <Reviews target={{ mediaType, tmdbId }} />
 
           <button
             className="btn btn--danger"
@@ -233,7 +233,7 @@ export default function ItemDetail() {
           </button>
           {mediaType === 'show' && <ShowEpisodes item={stubItem} readOnly />}
 
-          <ReviewsPlaceholder />
+          <Reviews target={{ mediaType, tmdbId }} />
         </>
       )}
     </div>

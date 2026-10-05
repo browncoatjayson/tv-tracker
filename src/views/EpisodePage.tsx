@@ -7,7 +7,7 @@ import { getEpisodeDetails, hasAired, imageUrl, type TmdbCredit } from '../api/t
 import { getTvDetailsCached } from '../data/episodeCache'
 import { setEpisodeRating } from '../data/library'
 import RatingStars from '../components/RatingStars'
-import ReviewsPlaceholder from '../components/ReviewsPlaceholder'
+import Reviews from '../components/Reviews'
 
 export default function EpisodePage() {
   const { id = '', season = '', episode = '' } = useParams()
@@ -140,7 +140,7 @@ export default function EpisodePage() {
       {guests.length > 0 && <CreditList title="Guest stars" people={guests} />}
       {cast.length > 0 && <CreditList title="Cast" people={cast} />}
 
-      <ReviewsPlaceholder />
+      <Reviews target={{ mediaType: 'show', tmdbId, season: seasonNum, episode: episodeNum }} />
     </div>
   )
 }

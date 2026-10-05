@@ -9,6 +9,10 @@ interface ImportMetaEnv {
   readonly VITE_TMDB_TOKEN?: string
   /** Google OAuth client ID for Drive sync. Public by design. */
   readonly VITE_GOOGLE_CLIENT_ID?: string
+  /** Trakt API client ID. Needed to read reviews/comments. */
+  readonly VITE_TRAKT_CLIENT_ID?: string
+  /** Trakt API client secret. Needed for sign-in (posting/liking/replying). */
+  readonly VITE_TRAKT_CLIENT_SECRET?: string
 }
 
 interface ImportMeta {

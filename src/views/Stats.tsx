@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
 import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
 import { LAST_EXPORT_KEY } from '../data/exportImport'
 import { itemNeedsIndex, startIndexing, useIndexProgress } from '../data/episodeIndex'
+import { getTraktLastSync, getTraktStats } from '../api/trakt'
+import { useTraktAuth } from '../hooks/useTraktAuth'
 
 const LAST_SYNCED_KEY = 'tvtracker.lastSynced'
 
@@ -48,6 +51,15 @@ export default function Stats() {
 
   const index = useIndexProgress()
   const [indexDismissed, setIndexDismissed] = useState(false)
+
+  const trakt = useTraktAuth()
+  const traktStatsQuery = useQuery({
+    queryKey: ['trakt-stats'],
+    queryFn: getTraktStats,
+    enabled: trakt.signedIn,
+    staleTime: 5 * 60_000,
+  })
+  const traktLastSync = getTraktLastSync()
 
   const lastSynced = readTs(LAST_SYNCED_KEY)
   const lastExport = readTs(LAST_EXPORT_KEY)
@@ -347,6 +359,63 @@ export default function Stats() {
           </div>
         </dl>
       </section>
+
+      {trakt.signedIn && (
+        <section className="card">
+          <h3 className="section-title">Trakt</h3>
+          {(() => {
+            const ts = traktStatsQuery.data
+            const traktMinutes = (ts?.movies?.minutes ?? 0) + (ts?.episodes?.minutes ?? 0)
+            const traktComments =
+              (ts?.movies?.comments ?? 0) +
+              (ts?.shows?.comments ?? 0) +
+              (ts?.seasons?.comments ?? 0) +
+              (ts?.episodes?.comments ?? 0)
+            return (
+              <dl className="meta-list">
+                <div>
+                  <dt>Account</dt>
+                  <dd>{trakt.username ?? 'Signed in'}</dd>
+                </div>
+                <div>
+                  <dt>Last history sync</dt>
+                  <dd>{formatTs(traktLastSync)}</dd>
+                </div>
+                {ts && (
+                  <>
+                    <div>
+                      <dt>Movies watched</dt>
+                      <dd>{(ts.movies?.watched ?? 0).toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt>Episodes watched</dt>
+                      <dd>{(ts.episodes?.watched ?? 0).toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt>Time on Trakt</dt>
+                      <dd>{formatDuration(traktMinutes)}</dd>
+                    </div>
+                    <div>
+                      <dt>Ratings</dt>
+                      <dd>{(ts.ratings?.total ?? 0).toLocaleString()}</dd>
+                    </div>
+                    <div>
+                      <dt>Comments &amp; reviews</dt>
+                      <dd>{traktComments.toLocaleString()}</dd>
+                    </div>
+                  </>
+                )}
+                {traktStatsQuery.isLoading && (
+                  <div>
+                    <dt className="muted">Loading Trakt stats…</dt>
+                    <dd />
+                  </div>
+                )}
+              </dl>
+            )
+          })()}
+        </section>
+      )}
 
       {pendingIndex > 0 && !indexing && (
         <p className="muted stat-note stat-note--foot">

@@ -6,6 +6,7 @@ import { createAsyncStoragePersister } from '@tanstack/query-async-storage-persi
 import { del, get, set } from 'idb-keyval'
 import { HashRouter } from 'react-router-dom'
 import App from './App.tsx'
+import { completeSignInFromRedirect } from './api/trakt'
 import './index.css'
 
 const HOUR = 1000 * 60 * 60
@@ -34,15 +35,25 @@ const persister = createAsyncStoragePersister({
 
 // HashRouter keeps routing entirely client-side (URLs look like /#/library) —
 // bulletproof on GitHub Pages with no server config.
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <PersistQueryClientProvider
-      client={queryClient}
-      persistOptions={{ persister, maxAge: DAY, buster: 'v1' }}
-    >
-      <HashRouter>
-        <App />
-      </HashRouter>
-    </PersistQueryClientProvider>
-  </StrictMode>,
-)
+function render() {
+  createRoot(document.getElementById('root')!).render(
+    <StrictMode>
+      <PersistQueryClientProvider
+        client={queryClient}
+        persistOptions={{ persister, maxAge: DAY, buster: 'v1' }}
+      >
+        <HashRouter>
+          <App />
+        </HashRouter>
+      </PersistQueryClientProvider>
+    </StrictMode>,
+  )
+}
+
+// If we're returning from a Trakt OAuth redirect (?code=…), finish sign-in and
+// clean the URL before the app mounts; otherwise render immediately.
+if (new URLSearchParams(window.location.search).has('code')) {
+  completeSignInFromRedirect().finally(render)
+} else {
+  render()
+}

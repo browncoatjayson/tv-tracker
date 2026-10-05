@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { downloadBackup, importBackup, type ImportMode } from '../data/exportImport'
 import DriveSync from '../components/DriveSync'
+import TraktConnect from '../components/TraktConnect'
 import ImportTracker from '../components/ImportTracker'
 import EpisodeIndex from '../components/EpisodeIndex'
 import ResetAccount from '../components/ResetAccount'
@@ -38,6 +39,8 @@ export default function Settings() {
       </section>
 
       <DriveSync />
+
+      <TraktConnect />
 
       <EpisodeIndex />
 
