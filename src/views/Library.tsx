@@ -349,7 +349,11 @@ function PosterGrid({ items }: { items: TrackedItem[] }) {
     <ul className="poster-grid">
       {items.map((item) => (
         <li key={item.id} className="poster-cell">
-          <Link to={`/item/${encodeURIComponent(item.id)}`} className="poster-card">
+          <Link
+            to={`/item/${encodeURIComponent(item.id)}`}
+            className="poster-card"
+            title={item.title}
+          >
             {imageUrl(item.posterPath) ? (
               <img className="poster-card__img" src={imageUrl(item.posterPath)} alt="" loading="lazy" />
             ) : (
@@ -388,9 +392,10 @@ function WatchingGrid({
     <ul className="poster-grid">
       {items.map((item) => {
         const next = item.mediaType === 'show' ? nextUnwatched(item.id) : null
+        const to = `/item/${encodeURIComponent(item.id)}`
         return (
-          <li key={item.id} className="poster-cell">
-            <Link to={`/item/${encodeURIComponent(item.id)}`} className="poster-card">
+          <li key={item.id} className="poster-cell watching-cell">
+            <Link to={to} className="watching-art" aria-label={item.title} title={item.title}>
               {imageUrl(item.posterPath) ? (
                 <img className="poster-card__img" src={imageUrl(item.posterPath)} alt="" loading="lazy" />
               ) : (
@@ -398,7 +403,6 @@ function WatchingGrid({
                   {item.mediaType === 'movie' ? '🎬' : '📺'}
                 </div>
               )}
-              <span className="poster-card__title">{item.title}</span>
             </Link>
             <button
               className={`fav-star${item.favorite ? ' fav-star--on' : ''}`}
@@ -408,7 +412,11 @@ function WatchingGrid({
             >
               {item.favorite ? '★' : '☆'}
             </button>
+            {/* Next-episode card tucked behind the poster, then the title. */}
             {next && <NextEpCard item={item} ep={next} />}
+            <Link to={to} className="poster-card__title watching-title" title={item.title}>
+              {item.title}
+            </Link>
           </li>
         )
       })}
@@ -418,11 +426,11 @@ function WatchingGrid({
 
 function NextEpCard({ item, ep }: { item: TrackedItem; ep: CachedEpisode }) {
   const aired = hasAired(ep.airDate)
+  const label = `S${ep.season}E${ep.episode}${ep.name ? ` · ${ep.name}` : ''}`
   return (
     <div className="next-ep">
-      <span className="next-ep__label">
-        S{ep.season}E{ep.episode}
-        {ep.name ? ` · ${ep.name}` : ''}
+      <span className="next-ep__label" title={label}>
+        {label}
       </span>
       {aired ? (
         <button

@@ -34,7 +34,7 @@ export default function Settings() {
         <h2>About</h2>
         <p className="muted">
           TV Tracker — a personal, offline-first replacement for TV Time. Metadata from TMDB and
-          TVmaze (air times), detail pages link to IMDb.
+          TVmaze (air times), reviews from Trakt, and detail pages link to IMDb.
         </p>
       </section>
 

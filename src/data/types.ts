@@ -54,6 +54,9 @@ export interface TrackedItem {
   episodeCount?: number
   /** TMDB's average score 0–10 — backfilled for the stats "critic profile". */
   tmdbRating?: number
+  /** Set when indexing couldn't fetch TMDB data for this title, so the stats
+   *  "needs indexing" prompt stops flagging it. A full rebuild retries it. */
+  indexFailed?: boolean
   /** When a movie was watched (editable; supports partial precision). */
   movieWatchedAt?: number
   /** Precision of movieWatchedAt for display. */

@@ -42,15 +42,21 @@ export interface IndexState {
   total: number
 }
 
-/**
- * Whether a title still needs indexing to have complete stats metadata. Catches
- * titles never indexed AND ones indexed by an older app version (before we added
- * `tmdbRating`/`episodeCount`), so "Build index" repopulates them instead of
- * skipping anything already in the done-set.
- */
-export function itemNeedsIndex(i: TrackedItem): boolean {
+/** Whether a title is missing the backfilled stats fields (tmdbRating, and for
+ *  shows episodeCount). Used to decide what the indexer should (re)process. */
+function missesStatsFields(i: TrackedItem): boolean {
   if (i.tmdbRating === undefined) return true
   return i.mediaType === 'show' ? i.episodeCount == null : false
+}
+
+/**
+ * Whether a title should still prompt a (re)index for complete stats. Excludes
+ * dropped titles (the normal indexer skips them, so they'd nag forever) and ones
+ * already flagged as unfetchable — a manual rebuild retries both.
+ */
+export function itemNeedsIndex(i: TrackedItem): boolean {
+  if (i.status === 'dropped' || i.indexFailed) return false
+  return missesStatsFields(i)
 }
 
 let state: IndexState = { status: 'idle', done: 0, total: 0 }
@@ -94,6 +100,9 @@ async function indexItem(item: TrackedItem): Promise<void> {
     episodeCount: details.number_of_episodes,
     tmdbRating: details.vote_average,
   })
+  // Dropped shows (only reached on a full rebuild) get their stats metadata but
+  // skip the per-season episode caching — episode search isn't needed for them.
+  if (item.status === 'dropped') return
   for (const season of details.seasons) {
     if (season.episode_count <= 0) continue
     const have = await db.episodeCache
@@ -116,16 +125,29 @@ async function indexItem(item: TrackedItem): Promise<void> {
 
 let running = false
 
-/** Start (or resume) indexing. Safe to call repeatedly; no-ops while running. */
-export async function startIndexing(concurrency = 3): Promise<void> {
+/**
+ * Start (or resume) indexing. Safe to call repeatedly; no-ops while running.
+ * `full` is a manual rebuild: it also includes dropped titles and retries ones
+ * that previously failed to fetch (otherwise both are left alone so they don't
+ * nag or waste API calls on every background run).
+ */
+export async function startIndexing(
+  opts: { full?: boolean; concurrency?: number } = {},
+): Promise<void> {
+  const { full = false, concurrency = 3 } = opts
   if (running) return
   running = true
   try {
     const done = loadDone()
-    const all = (await db.trackedItems.toArray()).filter((i) => i.status !== 'dropped')
-    // Reprocess titles missing the stats fields even if they're in the done-set
-    // (e.g. indexed before those fields existed) so re-indexing actually fixes them.
-    const todo = all.filter((i) => !done.has(i.id) || itemNeedsIndex(i))
+    const allItems = await db.trackedItems.toArray()
+    const all = full ? allItems : allItems.filter((i) => i.status !== 'dropped')
+    // Reprocess titles missing stats fields even if they're in the done-set (e.g.
+    // indexed by an older app version). Skip known failures unless this is a full
+    // rebuild, so they don't retry every background pass.
+    const todo = all.filter((i) => {
+      if (i.indexFailed && !full) return false
+      return !done.has(i.id) || missesStatsFields(i)
+    })
 
     if (todo.length === 0) {
       setState({ status: 'done', done: all.length, total: all.length })
@@ -143,8 +165,22 @@ export async function startIndexing(concurrency = 3): Promise<void> {
           await indexItem(item)
           done.add(item.id)
           saveDone(done)
+          // Clear a stale failure flag now that it succeeded.
+          if (item.indexFailed) {
+            try {
+              await db.trackedItems.update(item.id, { indexFailed: false })
+            } catch {
+              // ignore
+            }
+          }
         } catch {
-          // Leave failed titles out of `done` so a later run retries them.
+          // TMDB couldn't fetch it — flag so it stops prompting (a full rebuild
+          // clears this and tries again). Left out of `done`.
+          try {
+            await db.trackedItems.update(item.id, { indexFailed: true })
+          } catch {
+            // ignore
+          }
         }
         doneCount += 1
         setState({ status: 'running', done: doneCount, total: all.length })

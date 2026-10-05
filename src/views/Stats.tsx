@@ -114,10 +114,15 @@ export default function Stats() {
   const totalMinutes = tvMinutes + movieMinutes
 
   // --- Completion ratio (needs backfilled episodeCount) --------------------
+  // Dropped shows are excluded — you've decided not to finish them, so they
+  // shouldn't drag completion down.
   let epWatchedForRatio = 0
   let epTotalForRatio = 0
+  let showsInRatio = 0
   for (const sh of shows) {
+    if (sh.status === 'dropped') continue
     if (!sh.episodeCount || sh.episodeCount <= 0) continue
+    showsInRatio += 1
     epWatchedForRatio += Math.min(watchedPerShow.get(sh.id) ?? 0, sh.episodeCount)
     epTotalForRatio += sh.episodeCount
   }
@@ -178,7 +183,6 @@ export default function Stats() {
   }
 
   // --- Coverage / indexing -------------------------------------------------
-  const showsMissingCount = shows.filter((s) => !s.episodeCount).length
   const pendingIndex = items.filter(itemNeedsIndex).length
   const indexing = index.status === 'running'
   // Prompt to bring the index up to date — the stats only add up once it is.
@@ -264,8 +268,8 @@ export default function Stats() {
             </div>
             <p className="muted stat-note">
               {epWatchedForRatio.toLocaleString()} of {epTotalForRatio.toLocaleString()} episodes
-              watched across {shows.length - showsMissingCount} show
-              {shows.length - showsMissingCount === 1 ? '' : 's'}.
+              watched across {showsInRatio} show{showsInRatio === 1 ? '' : 's'} (dropped shows
+              excluded).
             </p>
           </>
         ) : (

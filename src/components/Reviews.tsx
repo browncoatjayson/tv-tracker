@@ -18,7 +18,7 @@ import { useTraktAuth } from '../hooks/useTraktAuth'
 import { UserGlyph } from '../views/Stats'
 
 /** Collapsible reviews/discussion section (Trakt) for the bottom of detail pages. */
-export default function Reviews({ target }: { target: ReviewTarget }) {
+export default function Reviews({ target, poweredBy }: { target: ReviewTarget; poweredBy?: boolean }) {
   const [open, setOpen] = useState(false)
 
   return (
@@ -26,7 +26,10 @@ export default function Reviews({ target }: { target: ReviewTarget }) {
       className="reviews"
       onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}
     >
-      <summary className="reviews__summary">Reviews &amp; discussion</summary>
+      <summary className="reviews__summary">
+        <span>Community discussion &amp; reviews</span>
+        {poweredBy && hasTraktClientId() && <span className="reviews__powered">Powered by Trakt</span>}
+      </summary>
       <div className="reviews__body">
         {!hasTraktClientId() ? (
           <p className="muted">Reviews aren’t configured yet.</p>

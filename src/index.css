@@ -470,16 +470,34 @@ a:hover {
   color: var(--warn);
 }
 
-/* Next-unwatched-episode strip in the Watching section. */
+/* Watching section: next-episode card tucked out from behind the poster. */
+.watching-cell {
+  display: flex;
+  flex-direction: column;
+}
+.watching-art {
+  position: relative;
+  z-index: 2;
+  display: block;
+}
+.fav-star {
+  z-index: 3;
+}
+.watching-title {
+  margin-top: 7px;
+}
 .next-ep {
+  position: relative;
+  z-index: 1;
+  width: 90%;
+  margin: -20px auto 0;
   display: flex;
   align-items: center;
   gap: 6px;
-  margin-top: 6px;
-  background: var(--surface);
-  border: 1px solid var(--surface-2);
-  border-radius: 8px;
-  padding: 5px 7px;
+  background: var(--surface-2);
+  border-radius: 0 0 10px 10px;
+  padding: 22px 8px 7px;
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.45);
 }
 .next-ep__label {
   flex: 1;
@@ -1052,7 +1070,8 @@ input[type='file'] {
 .reviews[open] .reviews__summary::before {
   content: '▾';
 }
-.reviews__soon {
+.reviews__soon,
+.reviews__powered {
   font-size: 0.72rem;
   font-weight: 600;
   text-transform: uppercase;
@@ -1062,8 +1081,396 @@ input[type='file'] {
   border-radius: 999px;
   padding: 2px 8px;
 }
+.reviews__summary > span:first-of-type {
+  margin-right: auto;
+}
 .reviews__body {
   padding: 0 14px 14px;
+}
+
+/* ---- Show detail redesign (hero / scrollers / cards) --------------------- */
+.show-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+.hero {
+  position: relative;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+.hero__backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.35;
+}
+.hero__overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.4) 0%, var(--bg) 100%);
+}
+.hero__links {
+  position: relative;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 10px 12px 0;
+}
+.ext-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--surface-2);
+  color: var(--text);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ext-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.hero__body {
+  position: relative;
+  display: flex;
+  gap: 16px;
+  padding: 10px 16px 18px;
+}
+.hero__poster {
+  width: 120px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  align-self: flex-start;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.hero__poster--ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 180px;
+  font-size: 2rem;
+  background: var(--surface-2);
+}
+.hero__meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hero__title {
+  margin: 0;
+  font-size: 1.5rem;
+  line-height: 1.2;
+}
+.hero__years {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 1rem;
+}
+.hero__status {
+  margin: 0;
+  font-size: 0.85rem;
+}
+.hero__tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.hero__sep {
+  opacity: 0.6;
+}
+.where-pill {
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text);
+  white-space: nowrap;
+}
+.hero__overview {
+  margin: 4px 0 0;
+  font-size: 0.92rem;
+  line-height: 1.5;
+}
+
+/* Episode hero: show backdrop behind, episode still on the left, meta on the right. */
+.hero__topbar {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 14px 0;
+}
+.hero__topbar .hero__links {
+  padding: 0;
+}
+.hero__topbar .back-link {
+  margin: 0;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+.episode-hero__still {
+  width: 260px;
+  max-width: 42%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 10px;
+  flex-shrink: 0;
+  align-self: flex-start;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.episode-hero__still--ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+  background: var(--surface-2);
+}
+.episode-watch {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 4px 0;
+}
+.episode-watch .episode__watched {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+}
+.episode-watch input[type='date'] {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--surface-2);
+  border-radius: 6px;
+  padding: 4px 8px;
+  color-scheme: dark;
+}
+
+.show-detail__add {
+  align-self: flex-start;
+}
+.show-detail__status {
+  max-width: 260px;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Horizontal snap scrollers (cast, seasons, episodes). */
+.hscroll {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  scroll-snap-type: x proximity;
+  padding-bottom: 6px;
+  -webkit-overflow-scrolling: touch;
+}
+.hscroll > * {
+  scroll-snap-align: start;
+}
+
+/* Wrapping grid of actor cards (cast + guest stars flow together). */
+.cast-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 10px;
+  align-items: flex-start;
+}
+.cast-card {
+  width: 96px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text);
+}
+/* Inline "Guest stars" marker between cast and guests. */
+.cast-divider {
+  flex-shrink: 0;
+  height: 128px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 4px;
+  border-left: 2px solid var(--surface-2);
+  color: var(--muted);
+}
+.cast-divider span {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+}
+.cast-card__photo {
+  width: 96px;
+  height: 128px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.cast-card__photo--ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2rem;
+}
+.cast-card__char {
+  font-size: 0.72rem;
+  color: var(--muted);
+  line-height: 1.2;
+}
+.cast-card__name {
+  font-size: 0.8rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.cast-card:hover .cast-card__name {
+  color: var(--accent);
+}
+
+.season-tabs {
+  gap: 8px;
+}
+.season-tab {
+  flex-shrink: 0;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--surface-2);
+  background: transparent;
+  color: var(--text);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.season-tab--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06283a;
+}
+.season-tab__rating {
+  color: var(--warn);
+  font-weight: 700;
+}
+.season-tab--on .season-tab__rating {
+  color: #06283a;
+}
+
+.episode-row {
+  gap: 12px;
+}
+.ep-card {
+  width: 240px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+  border-radius: 10px;
+  overflow: hidden;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+}
+.ep-card:hover {
+  border-color: var(--accent);
+}
+.ep-card__still {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  background: var(--surface-2);
+}
+.ep-card__still--ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+}
+.ep-card__body {
+  padding: 8px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.ep-card__code {
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.ep-card__summary {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 4;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.ep-card__watched {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+.gallery__item img {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 8px;
+  display: block;
+}
+
+.facts {
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius);
+}
+.facts__summary {
+  padding: 10px 14px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+}
+.facts__summary::-webkit-details-marker {
+  display: none;
+}
+.facts__summary::before {
+  content: '▸ ';
+  color: var(--muted);
+}
+.facts[open] .facts__summary::before {
+  content: '▾ ';
+}
+.facts__list {
+  padding: 0 14px 12px;
 }
 
 /* ---- Reviews panel (Trakt) ----------------------------------------------- */

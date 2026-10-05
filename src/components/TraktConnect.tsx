@@ -1,12 +1,5 @@
 import { useState } from 'react'
-import {
-  beginSignIn,
-  canSignIn,
-  getRedirectUri,
-  getTraktLastSync,
-  hasTraktClientId,
-  signOut,
-} from '../api/trakt'
+import { beginSignIn, canSignIn, getTraktLastSync, hasTraktClientId, signOut } from '../api/trakt'
 import { syncTraktHistory } from '../data/traktSync'
 import { useTraktAuth } from '../hooks/useTraktAuth'
 
@@ -72,24 +65,13 @@ export default function TraktConnect() {
     <section className="card">
       <h2>Trakt reviews &amp; sync</h2>
       <p className="muted">
-        Reviews on detail pages come from{' '}
-        <a href="https://trakt.tv" target="_blank" rel="noopener noreferrer">
-          Trakt
-        </a>
-        . Sign in to post and to sync your Trakt watch history into your library.
+        Sign in to post reviews and sync your Trakt watch history into your library.
       </p>
 
       {!signedIn ? (
-        <>
-          <button className="btn" disabled={busy || !canSignIn()} onClick={() => void startSignIn()}>
-            {busy ? 'Redirecting…' : 'Sign in with Trakt'}
-          </button>
-          <p className="muted trakt-redirect">
-            If sign-in shows “invalid redirect”, add this exact URL to your Trakt app’s{' '}
-            <strong>Redirect URI</strong> list (one per environment):
-            <code className="trakt-redirect__uri">{getRedirectUri()}</code>
-          </p>
-        </>
+        <button className="btn" disabled={busy || !canSignIn()} onClick={() => void startSignIn()}>
+          {busy ? 'Redirecting…' : 'Sign in with Trakt'}
+        </button>
       ) : (
         <>
           <div className="sync-actions">

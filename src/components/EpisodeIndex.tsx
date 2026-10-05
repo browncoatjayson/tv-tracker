@@ -9,12 +9,13 @@ export default function EpisodeIndex() {
     <section className="card">
       <h2>Episode search index</h2>
       <p className="muted">
-        Index your shows’ episodes so Library search can match <em>episode names</em>, not just
-        titles. It runs in the background — you can keep using the app — and resumes where it left
-        off, so a large library may take a few passes.
+        Index your library to power <em>episode-name</em> search, the Library filters
+        (genre, service, length, status), and your personal stats. It runs in the background — you
+        can keep using the app — and resumes where it left off, so a large library may take a few
+        passes.
       </p>
 
-      <button className="btn" disabled={running} onClick={() => void startIndexing()}>
+      <button className="btn" disabled={running} onClick={() => void startIndexing({ full: true })}>
         {running ? `Indexing… ${done}/${total}` : 'Build / update index'}
       </button>
 

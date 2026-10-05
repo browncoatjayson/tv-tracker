@@ -243,7 +243,7 @@ export interface TmdbWatchProviders {
 
 /** The minimal shape {@link whereToWatch} needs (satisfied by TV and movie details). */
 export interface TmdbCredits {
-  cast?: { name: string; character?: string; order?: number }[]
+  cast?: { name: string; character?: string; order?: number; profile_path?: string | null }[]
 }
 
 export interface WatchInfo {
@@ -300,6 +300,16 @@ export interface TmdbTvDetails {
   status: string
   /** TMDB average score 0–10. */
   vote_average?: number
+  overview?: string
+  genres?: { name: string }[]
+  /** Wide hero image path fragment. */
+  backdrop_path?: string | null
+  poster_path?: string | null
+  first_air_date?: string | null
+  last_air_date?: string | null
+  in_production?: boolean
+  created_by?: { name: string }[]
+  credits?: TmdbCredits
   episode_run_time?: number[]
   seasons: TmdbSeasonSummary[]
   /** Broadcast networks (e.g. CBS). */
@@ -309,6 +319,31 @@ export interface TmdbTvDetails {
   /** The next episode scheduled to air, or null if none is scheduled. */
   next_episode_to_air: TmdbEpisodePointer | null
   last_episode_to_air: TmdbEpisodePointer | null
+}
+
+/** A TMDB image reference (backdrop / still) for the screencap gallery. */
+export interface TmdbImage {
+  file_path: string
+}
+
+/** Backdrop images for a title, for the screencap gallery. */
+export async function getImages(mediaType: 'tv' | 'movie', tmdbId: number): Promise<TmdbImage[]> {
+  const data = await tmdbGet<{ backdrops?: TmdbImage[] }>(`/${mediaType}/${tmdbId}/images`, {
+    include_image_language: 'en,null',
+  })
+  return data.backdrops ?? []
+}
+
+/** Still frames for a single episode, for the screencap gallery. */
+export async function getEpisodeImages(
+  tmdbId: number,
+  season: number,
+  episode: number,
+): Promise<TmdbImage[]> {
+  const data = await tmdbGet<{ stills?: TmdbImage[] }>(
+    `/tv/${tmdbId}/season/${season}/episode/${episode}/images`,
+  )
+  return data.stills ?? []
 }
 
 export async function getTvDetails(tmdbId: number): Promise<TmdbTvDetails> {
@@ -323,6 +358,11 @@ export interface TmdbMovieDetails {
   runtime?: number
   /** TMDB average score 0–10. */
   vote_average?: number
+  overview?: string
+  genres?: { name: string }[]
+  poster_path?: string | null
+  backdrop_path?: string | null
+  credits?: TmdbCredits
   'watch/providers'?: TmdbWatchProviders
 }
 
