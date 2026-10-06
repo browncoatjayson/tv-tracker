@@ -39,6 +39,9 @@ jobs:
           # Google OAuth client ID for Drive sync (public value; stored as a
           # secret only for consistency). Add as repo secret VITE_GOOGLE_CLIENT_ID.
           VITE_GOOGLE_CLIENT_ID: ${{ secrets.VITE_GOOGLE_CLIENT_ID }}
+          # Trakt API client ID for reviews + Trakt sync (PKCE, no secret).
+          # Add as repo secret VITE_TRAKT_CLIENT_ID.
+          VITE_TRAKT_CLIENT_ID: ${{ secrets.VITE_TRAKT_CLIENT_ID }}
         run: npm run build
 
       - uses: actions/upload-pages-artifact@v5
