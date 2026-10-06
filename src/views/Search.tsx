@@ -3,6 +3,7 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
+  getCreditEpisodes,
   getGenreMap,
   getImdbId,
   getMovieDetails,
@@ -15,6 +16,7 @@ import {
   searchMulti,
   searchPerson,
   watchNames,
+  type CreditEpisode,
   type TmdbMediaResult,
 } from '../api/tmdb'
 import { db, itemKey } from '../data/db'
@@ -26,6 +28,9 @@ import FilterBar from '../components/FilterBar'
 import type { MediaType } from '../data/types'
 
 const HOUR = 1000 * 60 * 60
+// Results are revealed a page at a time so an actor's credits only poll TMDB
+// (for guest-appearance episodes) as far down the list as you actually look.
+const PAGE = 12
 
 /** TMDB uses 'tv'; our domain uses 'show'. */
 function toMediaType(r: TmdbMediaResult): MediaType {
@@ -46,6 +51,8 @@ export default function Search() {
   const [input, setInput] = usePersistentFilter('tvtracker.filter.search')
   const query = useDebouncedValue(input, 350)
   const [addingId, setAddingId] = useState<number | null>(null)
+  const [visibleCount, setVisibleCount] = useState(PAGE)
+  const [loadingMore, setLoadingMore] = useState(false)
 
   // Prefill from a ?q= link (e.g. the cast links on the detail page).
   const [searchParams] = useSearchParams()
@@ -53,6 +60,11 @@ export default function Search() {
     const q = searchParams.get('q')
     if (q !== null) setInput(q)
   }, [searchParams])
+
+  // A new query collapses the list back to the first page.
+  useEffect(() => {
+    setVisibleCount(PAGE)
+  }, [query])
 
   // Live set of ids already in the library, so results can show "in library".
   const trackedIds = useLiveQuery(() => db.trackedItems.toCollection().primaryKeys(), [])
@@ -132,6 +144,39 @@ export default function Search() {
     )
   })
 
+  const visibleResults = results.slice(0, visibleCount)
+  const hasMore = results.length > visibleResults.length
+
+  // In actor mode, pull each shown TV credit's specific episodes so guest /
+  // recurring appearances can be listed. TMDB returns episodes only for guests;
+  // series regulars come back empty (so no appearances strip). Scoped to the
+  // visible page — this is person-per-show data TMDB keeps only in the credit
+  // detail, so it can't come from our local index even for library titles.
+  const creditSource = actorName ? visibleResults : []
+  const creditQueries = useQueries({
+    queries: creditSource.map((r) => ({
+      queryKey: ['credit-eps', r.credit_id],
+      queryFn: () => getCreditEpisodes(r.credit_id as string),
+      enabled: r.media_type === 'tv' && !!r.credit_id,
+      staleTime: HOUR,
+    })),
+  })
+  const creditEpsByCreditId = new Map<string, CreditEpisode[]>()
+  creditSource.forEach((r, i) => {
+    const data = creditQueries[i]?.data
+    if (r.credit_id && data) creditEpsByCreditId.set(r.credit_id, data)
+  })
+
+  // Reveal the next page after a brief beat, so the new rows' credit lookups
+  // don't all fire the instant the button is pressed.
+  function showMore() {
+    setLoadingMore(true)
+    window.setTimeout(() => {
+      setVisibleCount((n) => n + PAGE)
+      setLoadingMore(false)
+    }, 300)
+  }
+
   async function handleAdd(r: TmdbMediaResult) {
     setAddingId(r.id)
     try {
@@ -183,7 +228,7 @@ export default function Search() {
       )}
 
       <ul className="result-list">
-        {results.map((r) => {
+        {visibleResults.map((r) => {
           const id = itemKey(toMediaType(r), r.id)
           const added = trackedSet.has(id)
           const poster = imageUrl(r.poster_path ?? undefined, 'w92')
@@ -206,24 +251,60 @@ export default function Search() {
               </div>
             </>
           )
+          // Guest/recurring appearances (actor mode, TV only) — series regulars
+          // come back with no episodes, so this strip is skipped for main cast.
+          const appearances =
+            actorName && r.media_type === 'tv' && r.credit_id
+              ? creditEpsByCreditId.get(r.credit_id) ?? []
+              : []
           return (
-            <li key={`${r.media_type}:${r.id}`} className="result-row">
-              {/* Tiles always link to the detail page — a preview before adding,
-                  the full tracking view once in the library. */}
-              <Link to={`/item/${encodeURIComponent(id)}`} className="result-row__link">
-                {inner}
-              </Link>
-              <button
-                className="btn btn--small"
-                disabled={added || addingId === r.id}
-                onClick={() => void handleAdd(r)}
-              >
-                {added ? '✓ In library' : addingId === r.id ? 'Adding…' : 'Add'}
-              </button>
+            <li key={`${r.media_type}:${r.id}`} className="result-item">
+              <div className="result-row">
+                {/* Tiles always link to the detail page — a preview before adding,
+                    the full tracking view once in the library. */}
+                <Link to={`/item/${encodeURIComponent(id)}`} className="result-row__link">
+                  {inner}
+                </Link>
+                <button
+                  className="btn btn--small"
+                  disabled={added || addingId === r.id}
+                  onClick={() => void handleAdd(r)}
+                >
+                  {added ? '✓ In library' : addingId === r.id ? 'Adding…' : 'Add'}
+                </button>
+              </div>
+              {appearances.length > 0 && (
+                <div className="appearances">
+                  <span className="appearances__label">Appearances</span>
+                  <span className="appearances__eps">
+                    {appearances.map((ep, i) => (
+                      <span key={`${ep.season_number}:${ep.episode_number}`}>
+                        {i > 0 && <span className="appearances__sep">, </span>}
+                        <Link
+                          className="appearances__ep"
+                          to={`/item/${encodeURIComponent(id)}/episode/${ep.season_number}/${ep.episode_number}`}
+                          title={ep.name || undefined}
+                        >
+                          S{String(ep.season_number).padStart(2, '0')}E
+                          {String(ep.episode_number).padStart(2, '0')}
+                        </Link>
+                      </span>
+                    ))}
+                  </span>
+                </div>
+              )}
             </li>
           )
         })}
       </ul>
+
+      {hasMore && (
+        <div className="show-more">
+          <button className="btn btn--ghost" onClick={showMore} disabled={loadingMore}>
+            {loadingMore ? 'Loading…' : `Show more (${results.length - visibleResults.length})`}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

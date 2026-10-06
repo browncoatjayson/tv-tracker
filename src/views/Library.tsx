@@ -412,8 +412,15 @@ function WatchingGrid({
             >
               {item.favorite ? '★' : '☆'}
             </button>
-            {/* Next-episode card tucked behind the poster, then the title. */}
-            {next && <NextEpCard item={item} ep={next} />}
+            {/* Next-episode card tucked behind the poster, then the title.
+                Always rendered (even empty) so every card is the same height. */}
+            {next ? (
+              <NextEpCard item={item} ep={next} />
+            ) : (
+              <div className="next-ep next-ep--empty">
+                <span className="next-ep__label">Nothing scheduled</span>
+              </div>
+            )}
             <Link to={to} className="poster-card__title watching-title" title={item.title}>
               {item.title}
             </Link>

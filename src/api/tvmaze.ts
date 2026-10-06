@@ -49,6 +49,28 @@ export async function getTvmazeEpisodesByImdb(imdbId: string): Promise<TvmazeEpi
   return (await epsRes.json()) as TvmazeEpisode[]
 }
 
+/**
+ * Alternative titles (AKAs) for a show, by IMDb id. Returns de-duped names, or
+ * an empty array if TVmaze has no match. TVmaze is TV-only (no movies).
+ */
+export async function getShowAkas(imdbId: string): Promise<string[]> {
+  const lookup = await tvmazeFetch(`${BASE}/lookup/shows?imdb=${encodeURIComponent(imdbId)}`)
+  if (!lookup) return []
+  const show = (await lookup.json()) as { id: number; name?: string }
+  const akasRes = await tvmazeFetch(`${BASE}/shows/${show.id}/akas`)
+  if (!akasRes) return []
+  const akas = (await akasRes.json()) as { name?: string }[]
+  const seen = new Set<string>([(show.name ?? '').toLowerCase()])
+  const names: string[] = []
+  for (const a of akas) {
+    const n = a.name?.trim()
+    if (!n || seen.has(n.toLowerCase())) continue
+    seen.add(n.toLowerCase())
+    names.push(n)
+  }
+  return names
+}
+
 /** Format an ISO airstamp as a local time, e.g. "9:00 PM". */
 export function formatAirTime(airstamp: string | undefined): string | undefined {
   if (!airstamp) return undefined

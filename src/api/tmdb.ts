@@ -83,6 +83,10 @@ export interface TmdbSearchResult {
   poster_path?: string | null
   overview?: string
   genre_ids?: number[]
+  /** Person-credit results only: this specific credit's id (for episode lookups). */
+  credit_id?: string
+  /** Person-credit results only: how many episodes the person appeared in. */
+  episode_count?: number
 }
 
 /** TMDB genre id -> name maps (separate for movies and TV). Cached indefinitely. */
@@ -162,6 +166,27 @@ export async function getPersonCredits(personId: number): Promise<TmdbMediaResul
       (seen.has(r.id) ? false : (seen.add(r.id), true)),
     )
     .sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+}
+
+/** A single episode a person guest-starred in (from a credit's detail). */
+export interface CreditEpisode {
+  season_number: number
+  episode_number: number
+  name?: string
+  air_date?: string | null
+}
+
+/**
+ * The specific episodes a person appeared in for one TV credit. TMDB populates
+ * `media.episodes` only for guest/recurring appearances; it's empty for series
+ * regulars (so an empty result means "main cast — no per-episode breakdown").
+ */
+export async function getCreditEpisodes(creditId: string): Promise<CreditEpisode[]> {
+  const data = await tmdbGet<{ media?: { episodes?: CreditEpisode[] } }>(`/credit/${creditId}`)
+  const eps = data.media?.episodes ?? []
+  return [...eps].sort(
+    (a, b) => a.season_number - b.season_number || a.episode_number - b.episode_number,
+  )
 }
 
 /** Fetch a title's IMDb id (e.g. "tt0944947") for outbound links, if TMDB has it. */
@@ -344,6 +369,41 @@ export async function getEpisodeImages(
     `/tv/${tmdbId}/season/${season}/episode/${episode}/images`,
   )
   return data.stills ?? []
+}
+
+/** A YouTube video (trailer, teaser, clip, featurette…) for a title. */
+export interface TmdbVideo {
+  key: string
+  site: string
+  type: string
+  name: string
+  official?: boolean
+}
+
+/** Trailers / teasers / clips etc. for a title (YouTube only). */
+export async function getVideos(mediaType: 'tv' | 'movie', tmdbId: number): Promise<TmdbVideo[]> {
+  const data = await tmdbGet<{ results?: TmdbVideo[] }>(`/${mediaType}/${tmdbId}/videos`)
+  return (data.results ?? []).filter((v) => v.site === 'YouTube' && v.key)
+}
+
+/** A recommended / similar title. */
+export interface TmdbRecommendation {
+  id: number
+  title?: string
+  name?: string
+  poster_path?: string | null
+  media_type?: 'movie' | 'tv'
+}
+
+/** "You might also like" titles for a movie or show. */
+export async function getRecommendations(
+  mediaType: 'tv' | 'movie',
+  tmdbId: number,
+): Promise<TmdbRecommendation[]> {
+  const data = await tmdbGet<{ results?: TmdbRecommendation[] }>(
+    `/${mediaType}/${tmdbId}/recommendations`,
+  )
+  return data.results ?? []
 }
 
 export async function getTvDetails(tmdbId: number): Promise<TmdbTvDetails> {

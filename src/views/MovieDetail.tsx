@@ -8,6 +8,8 @@ import {
   getImages,
   getImdbId,
   getMovieDetails,
+  getRecommendations,
+  getVideos,
   imageUrl,
   runtimeOf,
   watchNames,
@@ -20,6 +22,8 @@ import CastRow from '../components/CastRow'
 import MovieWatch from '../components/MovieWatch'
 import RatingStars from '../components/RatingStars'
 import Reviews from '../components/Reviews'
+import Gallery from '../components/Gallery'
+import Recommendations from '../components/Recommendations'
 
 const HOUR = 1000 * 60 * 60
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
@@ -44,6 +48,16 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
   const images = useQuery({
     queryKey: ['images', 'movie', tmdbId],
     queryFn: () => getImages('movie', tmdbId),
+    staleTime: HOUR,
+  })
+  const videos = useQuery({
+    queryKey: ['videos', 'movie', tmdbId],
+    queryFn: () => getVideos('movie', tmdbId),
+    staleTime: HOUR,
+  })
+  const recommendations = useQuery({
+    queryKey: ['recommendations', 'movie', tmdbId],
+    queryFn: () => getRecommendations('movie', tmdbId),
     staleTime: HOUR,
   })
 
@@ -91,7 +105,6 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
   }
 
   const cast = (d.credits?.cast ?? []).slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).slice(0, 20)
-  const gallery = (images.data ?? []).slice(0, 10)
 
   const facts: { label: string; value: string }[] = []
   if (d.release_date) facts.push({ label: 'Released', value: d.release_date })
@@ -178,21 +191,7 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
           </div>
         </div>
 
-        {gallery.length > 0 && (
-          <div className="gallery">
-            {gallery.map((img) => (
-              <a
-                key={img.file_path}
-                href={imageUrl(img.file_path, 'original')}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="gallery__item"
-              >
-                <img src={imageUrl(img.file_path, 'w300')} alt="" loading="lazy" />
-              </a>
-            ))}
-          </div>
-        )}
+        <Gallery videos={videos.data ?? []} images={images.data ?? []} />
 
         {facts.length > 0 && (
           <details className="facts">
@@ -212,6 +211,8 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
       {item && <MovieWatch item={item} />}
 
       <Reviews target={{ mediaType: 'movie', tmdbId }} poweredBy />
+
+      <Recommendations recs={recommendations.data ?? []} mediaType="movie" />
 
       {item && (
         <button

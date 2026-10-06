@@ -97,6 +97,9 @@ a:hover {
   bottom: 0;
   left: 0;
   right: 0;
+  /* Above content: the Watching cards use z-index for the tucked episode strip,
+     which would otherwise draw over the fixed nav. */
+  z-index: 20;
   height: var(--nav-h);
   display: flex;
   background: var(--surface);
@@ -494,10 +497,20 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 6px;
+  /* min-height so date-only and empty strips match the taller check-button one. */
+  min-height: 51px;
   background: var(--surface-2);
   border-radius: 0 0 10px 10px;
   padding: 22px 8px 7px;
   box-shadow: 0 8px 14px rgba(0, 0, 0, 0.45);
+}
+.next-ep--empty {
+  justify-content: center;
+}
+.next-ep--empty .next-ep__label {
+  flex: none;
+  color: var(--muted);
+  text-align: center;
 }
 .next-ep__label {
   flex: 1;
@@ -598,6 +611,10 @@ input[type='file'] {
   flex-direction: column;
   gap: 8px;
 }
+.result-item {
+  display: flex;
+  flex-direction: column;
+}
 .result-row {
   display: flex;
   align-items: center;
@@ -605,6 +622,47 @@ input[type='file'] {
   background: var(--surface);
   border-radius: var(--radius);
   padding: 8px;
+  position: relative;
+  z-index: 1;
+}
+/* Guest-appearance strip — tucks under the result row like the Library
+   watching cards, peeking out below with a darker inset panel. */
+.appearances {
+  position: relative;
+  z-index: 0;
+  width: calc(100% - 20px);
+  margin: -10px auto 0;
+  padding: 18px 12px 8px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  background: var(--surface-2);
+  border-radius: 0 0 10px 10px;
+  box-shadow: 0 8px 14px rgba(0, 0, 0, 0.35);
+}
+.appearances__label {
+  font-size: 0.68rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--muted);
+}
+.appearances__eps {
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.appearances__ep {
+  color: var(--accent);
+  white-space: nowrap;
+}
+.appearances__sep {
+  color: var(--muted);
+}
+.show-more {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0 4px;
 }
 .result-row__link {
   display: flex;
@@ -1050,6 +1108,10 @@ input[type='file'] {
   border-radius: var(--radius);
   background: var(--surface);
 }
+/* Sits directly under the Reviews block, whose bottom margin already spaces it. */
+.reviews--recs {
+  margin-top: 0;
+}
 .reviews__summary {
   display: flex;
   align-items: center;
@@ -1262,8 +1324,41 @@ input[type='file'] {
 .show-detail__add {
   align-self: flex-start;
 }
+.show-detail__controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.show-detail__controls .field {
+  margin: 0;
+}
+/* Nudge the rewatch action up so it lines up with the select, not its bottom. */
+.show-detail__controls > .btn,
+.show-detail__controls > .show-detail__rewatching {
+  margin-bottom: 6px;
+}
+.show-detail__rewatching {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
 .show-detail__status {
   max-width: 260px;
+}
+.show-detail .episodes__rewatch {
+  margin: -4px 0 0;
+}
+.season-bar {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.season-bar__rating {
+  color: var(--warn);
+  font-weight: 600;
+  font-size: 0.85rem;
 }
 
 .section {
@@ -1434,6 +1529,11 @@ input[type='file'] {
   color: var(--muted);
   cursor: pointer;
 }
+.ep-card__upcoming {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--warn);
+}
 
 .gallery {
   display: grid;
@@ -1446,6 +1546,38 @@ input[type='file'] {
   object-fit: cover;
   border-radius: 8px;
   display: block;
+}
+.gallery__item--video {
+  position: relative;
+}
+.gallery__play {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 38px;
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding-left: 3px;
+  font-size: 15px;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.6);
+  border-radius: 50%;
+  pointer-events: none;
+}
+.gallery__vtype {
+  position: absolute;
+  left: 6px;
+  bottom: 6px;
+  padding: 2px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #fff;
+  background: rgba(0, 0, 0, 0.7);
+  border-radius: 6px;
+  pointer-events: none;
 }
 
 .facts {

@@ -8,6 +8,8 @@ import {
   genreNames,
   getImages,
   getImdbId,
+  getRecommendations,
+  getVideos,
   hasAired,
   imageUrl,
   isEndedStatus,
@@ -15,14 +17,25 @@ import {
   watchNames,
   type TmdbSeasonSummary,
 } from '../api/tmdb'
+import { getShowAkas } from '../api/tvmaze'
 import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
 import { hasTraktClientId, resolveTraktId } from '../api/trakt'
-import { addItem, markEpisode, removeItem, setItemMeta, setRating, setStatus } from '../data/library'
+import {
+  addItem,
+  markEpisode,
+  removeItem,
+  setEpisodeWatchCount,
+  setItemMeta,
+  setRating,
+  setStatus,
+} from '../data/library'
 import type { EpisodeState, TrackedItem, WatchStatus } from '../data/types'
 import DetailHero, { WherePills } from '../components/DetailHero'
 import CastRow from '../components/CastRow'
 import RatingStars from '../components/RatingStars'
 import Reviews from '../components/Reviews'
+import Gallery from '../components/Gallery'
+import Recommendations from '../components/Recommendations'
 
 const HOUR = 1000 * 60 * 60
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
@@ -57,6 +70,9 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
   const navigate = useNavigate()
   const item = useLiveQuery(() => db.trackedItems.get(itemId).then((r) => r ?? null), [itemId])
   const [editingRating, setEditingRating] = useState(false)
+  // While true, episode checks track a fresh pass (so you can tick them off as
+  // you rewatch) instead of just showing "ever watched".
+  const [rewatching, setRewatching] = useState(false)
 
   const detailsQuery = useQuery({
     queryKey: ['tv', tmdbId],
@@ -81,6 +97,22 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
   const images = useQuery({
     queryKey: ['images', 'tv', tmdbId],
     queryFn: () => getImages('tv', tmdbId),
+    staleTime: HOUR,
+  })
+  const videos = useQuery({
+    queryKey: ['videos', 'tv', tmdbId],
+    queryFn: () => getVideos('tv', tmdbId),
+    staleTime: HOUR,
+  })
+  const recommendations = useQuery({
+    queryKey: ['recommendations', 'tv', tmdbId],
+    queryFn: () => getRecommendations('tv', tmdbId),
+    staleTime: HOUR,
+  })
+  const akas = useQuery({
+    queryKey: ['akas', item?.imdbId],
+    queryFn: () => getShowAkas(item!.imdbId!),
+    enabled: !!item?.imdbId,
     staleTime: HOUR,
   })
 
@@ -152,7 +184,6 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
   }
 
   const cast = (d.credits?.cast ?? []).slice().sort((a, b) => (a.order ?? 999) - (b.order ?? 999)).slice(0, 20)
-  const gallery = (images.data ?? []).slice(0, 10)
 
   const facts: { label: string; value: string }[] = []
   if (d.created_by?.length) facts.push({ label: 'Created by', value: d.created_by.map((c) => c.name).join(', ') })
@@ -165,9 +196,45 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
   const rt = runtimeOf(d)
   if (rt) facts.push({ label: 'Runtime', value: `~${rt} min / episode` })
   if (d.status) facts.push({ label: 'Status', value: d.status })
+  if (akas.data?.length) facts.push({ label: 'Also known as', value: akas.data.slice(0, 8).join(' · ') })
 
   const stub: TrackedItem = { id: itemId, tmdbId, mediaType: 'show', title, status: 'watchlist', addedAt: 0, updatedAt: 0 }
   const activeItem = item ?? stub
+
+  // Rewatch-pass bookkeeping: watchCount tracks how many times each episode was
+  // seen, so a fully-watched show can be rewatched without losing history.
+  let watchedCount = 0
+  let minWatchCount = Infinity
+  let lastWatchedAt = 0
+  for (const s of states ?? []) {
+    if (!s.watched) continue
+    watchedCount += 1
+    const c = s.watchCount ?? 1
+    if (c < minWatchCount) minWatchCount = c
+    if (s.watchedAt && s.watchedAt > lastWatchedAt) lastWatchedAt = s.watchedAt
+  }
+  const totalEpisodes = d.number_of_episodes ?? 0
+  const fullyWatched = totalEpisodes > 0 && watchedCount >= totalEpisodes
+  const completedPasses = fullyWatched && minWatchCount !== Infinity ? minWatchCount : 0
+
+  const selectedSeason = seasons.find((s) => s.season_number === season)
+  const seasonRatingPct = selectedSeason?.vote_average ? Math.round(selectedSeason.vote_average * 10) : 0
+
+  // Mark the selected season's aired episodes watched for the current pass.
+  async function markSeasonWatched() {
+    if (!item) return
+    for (const ep of episodesQuery.data ?? []) {
+      if (!hasAired(ep.air_date)) continue
+      const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
+      const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
+      await setEpisodeWatchCount(
+        item.id,
+        ep.season_number,
+        ep.episode_number,
+        Math.max(wc, completedPasses + 1),
+      )
+    }
+  }
 
   return (
     <div className="show-detail">
@@ -198,16 +265,31 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
           + Add to library
         </button>
       ) : (
-        <label className="field show-detail__status">
-          <span>Status</span>
-          <select value={item.status} onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
+        <div className="show-detail__controls">
+          <label className="field show-detail__status">
+            <span>Status</span>
+            <select value={item.status} onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}>
+              {STATUSES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          {fullyWatched &&
+            (rewatching ? (
+              <span className="badge badge--ok show-detail__rewatching">
+                Rewatching · pass {completedPasses + 1}
+                <button className="link-btn" onClick={() => setRewatching(false)}>
+                  done
+                </button>
+              </span>
+            ) : (
+              <button className="btn btn--small btn--ghost" onClick={() => setRewatching(true)}>
+                ↻ Start a rewatch
+              </button>
             ))}
-          </select>
-        </label>
+        </div>
       )}
 
       <CastRow title="Cast" people={cast} />
@@ -215,27 +297,46 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
       {seasons.length > 0 && (
         <section className="section">
           <h3 className="section-title">Episodes</h3>
+          {completedPasses >= 1 && (
+            <p className="muted episodes__rewatch">
+              Watched {completedPasses} {completedPasses === 1 ? 'time' : 'times'}
+              {lastWatchedAt > 0 && <> · last on {new Date(lastWatchedAt).toLocaleDateString()}</>}
+            </p>
+          )}
           <div className="hscroll season-tabs">
-            {seasons.map((s) => {
-              const pct = s.vote_average ? Math.round(s.vote_average * 10) : 0
-              return (
-                <button
-                  key={s.season_number}
-                  className={`season-tab${s.season_number === season ? ' season-tab--on' : ''}`}
-                  onClick={() => setPicked(s.season_number)}
-                >
-                  {seasonLabel(s)}
-                  {pct > 0 && <span className="season-tab__rating"> ★{pct}%</span>}
-                </button>
-              )
-            })}
+            {seasons.map((s) => (
+              <button
+                key={s.season_number}
+                className={`season-tab${s.season_number === season ? ' season-tab--on' : ''}`}
+                onClick={() => setPicked(s.season_number)}
+              >
+                {seasonLabel(s)}
+              </button>
+            ))}
           </div>
+
+          {(seasonRatingPct > 0 || !readOnly) && (
+            <div className="season-bar">
+              {seasonRatingPct > 0 && (
+                <span className="season-bar__rating">★ {seasonRatingPct}% season rating</span>
+              )}
+              {!readOnly && (
+                <button className="btn btn--small btn--ghost" onClick={() => void markSeasonWatched()}>
+                  Mark aired episodes watched
+                </button>
+              )}
+            </div>
+          )}
 
           {episodesQuery.isLoading && <p className="muted">Loading episodes…</p>}
           <div className="hscroll episode-row">
             {(episodesQuery.data ?? []).map((ep) => {
               const key = `${ep.season_number}:${ep.episode_number}`
-              const watched = !!stateMap.get(key)?.watched
+              const st = stateMap.get(key)
+              const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
+              const everWatched = wc > 0
+              const inCurrentPass = wc > completedPasses
+              const checked = rewatching ? inCurrentPass : everWatched
               const aired = hasAired(ep.air_date)
               const still = imageUrl(ep.still_path ?? undefined, 'w300')
               const go = () =>
@@ -265,24 +366,36 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
                       {ep.name ? ` • ${ep.name}` : ''}
                     </span>
                     <p className="ep-card__summary muted">
-                      {ep.overview || (aired ? 'No summary yet.' : `Airs ${ep.air_date ?? 'soon'}.`)}
+                      {ep.overview || 'No synopsis yet.'}
                     </p>
-                    {!readOnly && (
-                      <label
-                        className="ep-card__watched"
-                        onClick={(e) => e.stopPropagation()}
-                        onKeyDown={(e) => e.stopPropagation()}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={watched}
-                          disabled={!aired}
-                          onChange={(e) =>
-                            void markEpisode(item.id, ep.season_number, ep.episode_number, e.target.checked)
-                          }
-                        />
-                        {watched ? 'Watched' : aired ? 'Mark watched' : 'Unaired'}
-                      </label>
+                    {!aired ? (
+                      <span className="ep-card__upcoming">Airs · {ep.air_date ?? 'TBA'}</span>
+                    ) : (
+                      !readOnly && (
+                        <label
+                          className="ep-card__watched"
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => e.stopPropagation()}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => {
+                              if (rewatching) {
+                                void setEpisodeWatchCount(
+                                  item.id,
+                                  ep.season_number,
+                                  ep.episode_number,
+                                  inCurrentPass ? completedPasses : completedPasses + 1,
+                                )
+                              } else {
+                                void markEpisode(item.id, ep.season_number, ep.episode_number, !everWatched)
+                              }
+                            }}
+                          />
+                          {checked ? 'Watched' : 'Mark watched'}
+                        </label>
+                      )
                     )}
                   </div>
                 </div>
@@ -330,21 +443,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
           </div>
         </div>
 
-        {gallery.length > 0 && (
-          <div className="gallery">
-            {gallery.map((img) => (
-              <a
-                key={img.file_path}
-                href={imageUrl(img.file_path, 'original')}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="gallery__item"
-              >
-                <img src={imageUrl(img.file_path, 'w300')} alt="" loading="lazy" />
-              </a>
-            ))}
-          </div>
-        )}
+        <Gallery videos={videos.data ?? []} images={images.data ?? []} />
 
         {facts.length > 0 && (
           <details className="facts">
@@ -362,6 +461,8 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
       </section>
 
       <Reviews target={{ mediaType: 'show', tmdbId }} poweredBy />
+
+      <Recommendations recs={recommendations.data ?? []} mediaType="tv" />
 
       {item && (
         <button
