@@ -14,6 +14,7 @@ import {
 import { getTvDetailsCached } from '../data/episodeCache'
 import { hasTraktClientId, resolveTraktId } from '../api/trakt'
 import { markEpisode, setEpisodeRating, setEpisodeWatchedDate } from '../data/library'
+import { markWatchedWithCatchUp } from '../utils/watchActions'
 import ExternalLinks from '../components/ExternalLinks'
 import { WherePills } from '../components/DetailHero'
 import CastRow from '../components/CastRow'
@@ -256,7 +257,11 @@ export default function EpisodePage() {
           <button
             className="btn"
             disabled={!aired}
-            onClick={() => void markEpisode(itemId, seasonNum, episodeNum, !watched)}
+            onClick={() =>
+              void (watched
+                ? markEpisode(itemId, seasonNum, episodeNum, false)
+                : markWatchedWithCatchUp(itemId, seasonNum, episodeNum))
+            }
           >
             {watched ? '✓ Watched' : 'Mark as watched'}
           </button>

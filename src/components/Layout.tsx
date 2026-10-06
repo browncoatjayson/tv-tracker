@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet } from 'react-router-dom'
 import { useIndexProgress } from '../data/episodeIndex'
 import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
 import UpdatePrompt from './UpdatePrompt'
+import ConfirmHost from './ConfirmHost'
 import { UserGlyph } from '../views/Stats'
 
 // Tabs shown in the nav bar. A single source of truth keeps the markup tidy.
@@ -30,6 +31,7 @@ export default function Layout() {
       </main>
 
       <UpdatePrompt />
+      <ConfirmHost />
 
       {/* Bottom tab bar — the mobile-app feel, also works fine on desktop. */}
       <nav className="app-nav" aria-label="Primary">

@@ -1397,18 +1397,29 @@ input[type='file'] {
   text-decoration: none;
   color: var(--text);
 }
-/* Inline "Guest stars" marker between cast and guests. */
-.cast-divider {
+/* One-card-wide group divider: vertical label + count + optional Hide. Shared
+   by the Cast row and the Library collapsed view, sized to a single card so the
+   cards after it keep their alignment. */
+.section-divider {
   flex-shrink: 0;
-  height: 128px;
+  align-self: stretch;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 4px;
+  gap: 6px;
+  padding: 0 2px;
   border-left: 2px solid var(--surface-2);
   color: var(--muted);
 }
-.cast-divider span {
+.section-divider--cast {
+  width: 96px;
+  min-height: 128px;
+}
+.section-divider--lib {
+  width: 74px;
+  min-height: 111px;
+}
+.section-divider__label {
   writing-mode: vertical-rl;
   transform: rotate(180deg);
   font-size: 0.72rem;
@@ -1416,6 +1427,34 @@ input[type='file'] {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   white-space: nowrap;
+}
+.section-divider__meta {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+/* Count + Hide read bottom-to-top, matching the vertical section label. */
+.section-divider__count {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 0.72rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.section-divider__hide {
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.68rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.section-divider__hide input {
+  accent-color: var(--accent);
+  cursor: pointer;
 }
 .cast-card__photo {
   width: 96px;
@@ -1441,6 +1480,77 @@ input[type='file'] {
   line-height: 1.2;
 }
 .cast-card:hover .cast-card__name {
+  color: var(--accent);
+}
+
+/* ---- Library: collapsed view + Dropped "Hide" ---------------------------- */
+/* "Hide" checkbox in the Dropped header (full view) / after the divider (collapsed). */
+.section-title--row {
+  display: flex;
+  align-items: center;
+}
+.section-title--row .count {
+  margin-right: auto;
+}
+.lib-hide {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 0.78rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+.lib-hide input {
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+.lib-hidden-note {
+  margin: 4px 0 0;
+  font-size: 0.82rem;
+}
+/* One continuous wrapping list; each group opens with a vertical-text divider. */
+.lib-collapsed {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 10px;
+  align-items: flex-start;
+  margin-top: 14px;
+}
+.lib-chip {
+  width: 74px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text);
+}
+.lib-chip__img {
+  width: 74px;
+  height: 111px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: var(--surface-2);
+}
+.lib-chip__img--ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.6rem;
+}
+.lib-chip__title {
+  font-size: 0.72rem;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.lib-chip:hover .lib-chip__title {
   color: var(--accent);
 }
 
@@ -2300,6 +2410,19 @@ input[type='file'] {
   font-size: 0.85rem;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
   max-width: calc(100% - 32px);
+}
+/* Confirm variant: message on its own line, actions right-aligned below. */
+.confirm-toast {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  width: min(420px, calc(100% - 32px));
+}
+.confirm-toast > span {
+  flex: 1 1 100%;
+}
+.confirm-toast__actions {
+  display: flex;
+  gap: 8px;
 }
 
 /* ---- Danger zone + modal ------------------------------------------------- */

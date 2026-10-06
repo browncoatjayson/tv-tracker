@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
@@ -8,6 +8,7 @@ import type { CachedEpisode, EpisodeState, TrackedItem, WatchStatus } from '../d
 import { matchesFilter, parseQuery } from '../utils/filter'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import FilterBar from '../components/FilterBar'
+import SectionDivider from '../components/SectionDivider'
 
 const STATUS_ORDER: WatchStatus[] = ['watching', 'watchlist', 'completed', 'dropped']
 const STATUS_LABEL: Record<WatchStatus, string> = {
@@ -22,6 +23,39 @@ const SORT_LABEL: Record<SortKey, string> = {
   title: 'Title (A–Z)',
   premiere: 'Premiere date (newest)',
   lastEpisode: 'Last episode date (newest)',
+}
+
+/** One rendered group of titles (a status, or Favorites). */
+interface Section {
+  key: string
+  label: string
+  items: TrackedItem[]
+  /** Watching shows get the "next episode" strip (full view only). */
+  watching?: boolean
+  /** Dropped gets a "Hide" toggle so you can tuck it away. */
+  dropped?: boolean
+}
+
+function readFlag(key: string): boolean {
+  try {
+    return localStorage.getItem(key) === '1'
+  } catch {
+    return false
+  }
+}
+
+const HIDDEN_KEY = 'tvtracker.libraryHidden'
+
+/** Section keys the user has collapsed. Migrates the old dropped-only flag. */
+function readHidden(): Set<string> {
+  try {
+    const raw = localStorage.getItem(HIDDEN_KEY)
+    if (raw) return new Set(JSON.parse(raw) as string[])
+    if (localStorage.getItem('tvtracker.libraryHideDropped') === '1') return new Set(['dropped'])
+  } catch {
+    // ignore
+  }
+  return new Set()
 }
 
 function comparator(sort: SortKey): (a: TrackedItem, b: TrackedItem) => number {
@@ -51,6 +85,16 @@ export default function Library() {
     }
     return 'title'
   })
+  // Compact "collapsed" layout, and which groups are tucked away.
+  const [collapsed, setCollapsed] = useState(() => readFlag('tvtracker.libraryCollapsed'))
+  const [hidden, setHidden] = useState<Set<string>>(readHidden)
+  const toggleHidden = (key: string, v: boolean) =>
+    setHidden((prev) => {
+      const next = new Set(prev)
+      if (v) next.add(key)
+      else next.delete(key)
+      return next
+    })
   useEffect(() => {
     try {
       localStorage.setItem('tvtracker.librarySort', sort)
@@ -58,6 +102,20 @@ export default function Library() {
       // ignore
     }
   }, [sort])
+  useEffect(() => {
+    try {
+      localStorage.setItem('tvtracker.libraryCollapsed', collapsed ? '1' : '0')
+    } catch {
+      // ignore
+    }
+  }, [collapsed])
+  useEffect(() => {
+    try {
+      localStorage.setItem(HIDDEN_KEY, JSON.stringify([...hidden]))
+    } catch {
+      // ignore
+    }
+  }, [hidden])
 
   // Episode-name matches from the local cache (populated as shows are viewed /
   // the calendar loads). Coverage grows with use; shows never opened won't match.
@@ -122,155 +180,261 @@ export default function Library() {
   const parsed = parseQuery(query)
   const searching = query.trim().length > 0
 
+  // When searching, keep only titles matching the query/filters; otherwise all.
+  const matched = searching
+    ? sorted.filter((i) =>
+        matchesFilter(
+          {
+            title: i.title,
+            genres: i.genres,
+            providers: i.providers,
+            cast: i.cast,
+            mediaType: i.mediaType,
+            ended: i.ended,
+            runtime: i.runtime,
+          },
+          parsed,
+        ),
+      )
+    : sorted
+
+  // Keep the status groups in both modes so results stay in context. Favorites
+  // get their own section only when browsing (not mixed into search results).
+  const sections: Section[] = []
+  if (!searching) {
+    const favs = matched.filter((i) => i.favorite)
+    if (favs.length > 0) sections.push({ key: 'fav', label: '★ Favorites', items: favs })
+  }
+  for (const status of STATUS_ORDER) {
+    const group = matched.filter((i) => i.status === status && (searching || !i.favorite))
+    if (group.length > 0) {
+      sections.push({
+        key: status,
+        label: STATUS_LABEL[status],
+        items: group,
+        watching: status === 'watching',
+        dropped: status === 'dropped',
+      })
+    }
+  }
+
+  // Episode-name matches, one row per episode (only for shows not already matched
+  // by title, and still respecting any genre/service/actor/type filter).
+  const itemsById = new Map(items.map((i) => [i.id, i]))
+  const titleIds = new Set(matched.map((i) => i.id))
+  const episodeHits = searching
+    ? (episodeMatches ?? [])
+        .filter((e) => {
+          const it = itemsById.get(e.itemId)
+          if (!it || titleIds.has(e.itemId)) return false
+          return matchesFilter(
+            {
+              genres: it.genres,
+              providers: it.providers,
+              cast: it.cast,
+              mediaType: 'show',
+              ended: it.ended,
+              runtime: it.runtime,
+            },
+            { ...parsed, text: '' },
+          )
+        })
+        .sort(
+          (a, b) => a.itemId.localeCompare(b.itemId) || a.season - b.season || a.episode - b.episode,
+        )
+        .slice(0, 40)
+    : []
+
+  const noMatches = searching && sections.length === 0 && episodeHits.length === 0
+
   return (
     <div className="library">
       <FilterBar value={query} onChange={setQuery} placeholder="Search for a title">
+        <ViewToggle collapsed={collapsed} onChange={setCollapsed} />
         <SortMenu sort={sort} onChange={setSort} />
       </FilterBar>
 
-      {searching ? (
-        (() => {
-          const titleResults = sorted.filter((i) =>
-            matchesFilter(
-              {
-                title: i.title,
-                genres: i.genres,
-                providers: i.providers,
-                cast: i.cast,
-                mediaType: i.mediaType,
-                ended: i.ended,
-                runtime: i.runtime,
-              },
-              parsed,
-            ),
-          )
+      {noMatches && <p className="muted">No matches for “{query}”.</p>}
 
-          // Episode-name matches, one row per episode (excluding shows already
-          // matched by title, or excluded by an active genre/service filter).
-          const titleIds = new Set(titleResults.map((i) => i.id))
-          const itemsById = new Map(items.map((i) => [i.id, i]))
-          const episodeHits = (episodeMatches ?? [])
-            .filter((e) => {
-              const it = itemsById.get(e.itemId)
-              if (!it || titleIds.has(e.itemId)) return false
-              // Respect genre/service/actor/type filters on the episode's show too.
-              return matchesFilter(
-                {
-                  genres: it.genres,
-                  providers: it.providers,
-                  cast: it.cast,
-                  mediaType: 'show',
-                  ended: it.ended,
-                  runtime: it.runtime,
-                },
-                { ...parsed, text: '' },
+      {!noMatches &&
+        (collapsed ? (
+          <CollapsedList sections={sections} hidden={hidden} onToggleHidden={toggleHidden} />
+        ) : (
+          sections.map((sec) => (
+            <FullSection
+              key={sec.key}
+              sec={sec}
+              hidden={hidden.has(sec.key)}
+              onToggleHidden={toggleHidden}
+              nextUnwatched={nextUnwatched}
+            />
+          ))
+        ))}
+
+      {episodeHits.length > 0 && (
+        <section className="library__section">
+          <h2 className="section-title">
+            Episode matches <span className="count">{episodeHits.length}</span>
+          </h2>
+          <ul className="result-list">
+            {episodeHits.map((e) => {
+              const item = itemsById.get(e.itemId) as TrackedItem
+              const aired = hasAired(e.airDate)
+              return (
+                <li key={e.id} className="result-row">
+                  <Link to={`/item/${encodeURIComponent(item.id)}`} className="result-row__link">
+                    {imageUrl(item.posterPath, 'w92') ? (
+                      <img
+                        className="result-row__poster"
+                        src={imageUrl(item.posterPath, 'w92')}
+                        alt=""
+                        loading="lazy"
+                      />
+                    ) : (
+                      <div className="result-row__poster result-row__poster--placeholder">📺</div>
+                    )}
+                    <div className="result-row__info">
+                      <span className="result-row__title">{item.title}</span>
+                      <span className="muted upcoming__detail">
+                        S{e.season}E{e.episode} · {e.name}
+                      </span>
+                    </div>
+                    {aired ? (
+                      <span className="upcoming__date">{e.airDate}</span>
+                    ) : (
+                      <span className="episode__upcoming">
+                        {e.airDate ? `Upcoming · ${e.airDate}` : 'Upcoming'}
+                      </span>
+                    )}
+                  </Link>
+                </li>
               )
-            })
-            .sort(
-              (a, b) =>
-                a.itemId.localeCompare(b.itemId) || a.season - b.season || a.episode - b.episode,
-            )
-            .slice(0, 40)
-
-          if (titleResults.length === 0 && episodeHits.length === 0) {
-            return <p className="muted">No matches for “{query}”.</p>
-          }
-
-          return (
-            <>
-              {titleResults.length > 0 && (
-                <section className="library__section">
-                  <h2 className="section-title">
-                    Results <span className="count">{titleResults.length}</span>
-                  </h2>
-                  <PosterGrid items={titleResults} />
-                </section>
-              )}
-              {episodeHits.length > 0 && (
-                <section className="library__section">
-                  <h2 className="section-title">
-                    Episode matches <span className="count">{episodeHits.length}</span>
-                  </h2>
-                  <ul className="result-list">
-                    {episodeHits.map((e) => {
-                      const item = itemsById.get(e.itemId) as TrackedItem
-                      const aired = hasAired(e.airDate)
-                      return (
-                        <li key={e.id} className="result-row">
-                          <Link
-                            to={`/item/${encodeURIComponent(item.id)}`}
-                            className="result-row__link"
-                          >
-                            {imageUrl(item.posterPath, 'w92') ? (
-                              <img
-                                className="result-row__poster"
-                                src={imageUrl(item.posterPath, 'w92')}
-                                alt=""
-                                loading="lazy"
-                              />
-                            ) : (
-                              <div className="result-row__poster result-row__poster--placeholder">
-                                📺
-                              </div>
-                            )}
-                            <div className="result-row__info">
-                              <span className="result-row__title">{item.title}</span>
-                              <span className="muted upcoming__detail">
-                                S{e.season}E{e.episode} · {e.name}
-                              </span>
-                            </div>
-                            {aired ? (
-                              <span className="upcoming__date">{e.airDate}</span>
-                            ) : (
-                              <span className="episode__upcoming">
-                                {e.airDate ? `Upcoming · ${e.airDate}` : 'Upcoming'}
-                              </span>
-                            )}
-                          </Link>
-                        </li>
-                      )
-                    })}
-                  </ul>
-                </section>
-              )}
-            </>
-          )
-        })()
-      ) : (
-        <>
-          {(() => {
-            const favs = sorted.filter((i) => i.favorite)
-            if (favs.length === 0) return null
-            return (
-              <section className="library__section">
-                <h2 className="section-title">
-                  ★ Favorites <span className="count">{favs.length}</span>
-                </h2>
-                <PosterGrid items={favs} />
-              </section>
-            )
-          })()}
-
-          {STATUS_ORDER.map((status) => {
-            // Favorites are shown in their own section above, not duplicated here.
-            const group = sorted.filter((i) => i.status === status && !i.favorite)
-            if (group.length === 0) return null
-            return (
-              <section key={status} className="library__section">
-                <h2 className="section-title">
-                  {STATUS_LABEL[status]} <span className="count">{group.length}</span>
-                </h2>
-                {status === 'watching' ? (
-                  <WatchingGrid items={group} nextUnwatched={nextUnwatched} />
-                ) : (
-                  <PosterGrid items={group} />
-                )}
-              </section>
-            )
-          })}
-        </>
+            })}
+          </ul>
+        </section>
       )}
     </div>
+  )
+}
+
+/** A full-size status group: header (+ Hide toggle for Dropped) and a poster grid. */
+function FullSection({
+  sec,
+  hidden,
+  onToggleHidden,
+  nextUnwatched,
+}: {
+  sec: Section
+  hidden: boolean
+  onToggleHidden: (key: string, v: boolean) => void
+  nextUnwatched: (id: string) => CachedEpisode | null
+}) {
+  // In the full view only Dropped is collapsible.
+  const isHidden = !!sec.dropped && hidden
+  return (
+    <section className="library__section">
+      <h2 className={`section-title${sec.dropped ? ' section-title--row' : ''}`}>
+        {sec.label} <span className="count">{sec.items.length}</span>
+        {sec.dropped && (
+          <label className="lib-hide">
+            <input
+              type="checkbox"
+              checked={hidden}
+              onChange={(e) => onToggleHidden(sec.key, e.target.checked)}
+            />
+            Hide
+          </label>
+        )}
+      </h2>
+      {isHidden ? (
+        <p className="muted lib-hidden-note">{sec.items.length} hidden</p>
+      ) : sec.watching ? (
+        <WatchingGrid items={sec.items} nextUnwatched={nextUnwatched} />
+      ) : (
+        <PosterGrid items={sec.items} />
+      )}
+    </section>
+  )
+}
+
+/** Compact layout: every group flows in one wrapping list, each introduced by a
+ *  one-card-wide divider with its count and a Hide toggle (mirrors the Cast row). */
+function CollapsedList({
+  sections,
+  hidden,
+  onToggleHidden,
+}: {
+  sections: Section[]
+  hidden: Set<string>
+  onToggleHidden: (key: string, v: boolean) => void
+}) {
+  return (
+    <div className="lib-collapsed">
+      {sections.map((sec) => {
+        const isHidden = hidden.has(sec.key)
+        return (
+          <Fragment key={sec.key}>
+            <SectionDivider
+              className="section-divider--lib"
+              label={sec.label}
+              count={sec.items.length}
+              countNoun="Title"
+              hidden={isHidden}
+              onToggleHide={(v) => onToggleHidden(sec.key, v)}
+            />
+            {!isHidden && sec.items.map((item) => <LibChip key={item.id} item={item} />)}
+          </Fragment>
+        )
+      })}
+    </div>
+  )
+}
+
+/** A small poster + title card for the collapsed view. */
+function LibChip({ item }: { item: TrackedItem }) {
+  const poster = imageUrl(item.posterPath, 'w92')
+  return (
+    <Link to={`/item/${encodeURIComponent(item.id)}`} className="lib-chip" title={item.title}>
+      {poster ? (
+        <img className="lib-chip__img" src={poster} alt="" loading="lazy" />
+      ) : (
+        <div className="lib-chip__img lib-chip__img--ph">{item.mediaType === 'movie' ? '🎬' : '📺'}</div>
+      )}
+      <span className="lib-chip__title">{item.title}</span>
+    </Link>
+  )
+}
+
+/** Toggle between the full poster grid and the compact collapsed view. */
+function ViewToggle({ collapsed, onChange }: { collapsed: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <button
+      type="button"
+      className={`sort-btn${collapsed ? ' filter-btn--active' : ''}`}
+      aria-pressed={collapsed}
+      title={collapsed ? 'Full view' : 'Collapsed view'}
+      aria-label={collapsed ? 'Switch to full view' : 'Switch to collapsed view'}
+      onClick={() => onChange(!collapsed)}
+    >
+      <svg
+        width="18"
+        height="18"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <line x1="8" y1="6" x2="21" y2="6" />
+        <line x1="8" y1="12" x2="21" y2="12" />
+        <line x1="8" y1="18" x2="21" y2="18" />
+        <line x1="3" y1="6" x2="3.01" y2="6" />
+        <line x1="3" y1="12" x2="3.01" y2="12" />
+        <line x1="3" y1="18" x2="3.01" y2="18" />
+      </svg>
+    </button>
   )
 }
 

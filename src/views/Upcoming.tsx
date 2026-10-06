@@ -17,7 +17,8 @@ import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
 import { getTvDetailsCached } from '../data/episodeCache'
 import { matchesFilter, parseQuery } from '../utils/filter'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
-import { markEpisode, markMovieWatched } from '../data/library'
+import { markMovieWatched } from '../data/library'
+import { markWatchedWithCatchUp } from '../utils/watchActions'
 import type { MediaType } from '../data/types'
 import FilterBar from '../components/FilterBar'
 import UpcomingCalendar from '../components/UpcomingCalendar'
@@ -294,7 +295,7 @@ export default function Upcoming() {
 
   function markAiredWatched(e: FeedEntry) {
     if (e.mediaType === 'show' && e.season != null && e.episode != null) {
-      void markEpisode(e.itemId, e.season, e.episode, true)
+      void markWatchedWithCatchUp(e.itemId, e.season, e.episode)
     } else {
       void markMovieWatched(e.itemId)
     }

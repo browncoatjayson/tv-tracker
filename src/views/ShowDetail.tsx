@@ -36,6 +36,8 @@ import RatingStars from '../components/RatingStars'
 import Reviews from '../components/Reviews'
 import Gallery from '../components/Gallery'
 import Recommendations from '../components/Recommendations'
+import { markWatchedWithCatchUp } from '../utils/watchActions'
+import { appConfirm } from '../utils/confirm'
 
 const HOUR = 1000 * 60 * 60
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
@@ -388,8 +390,10 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
                                   ep.episode_number,
                                   inCurrentPass ? completedPasses : completedPasses + 1,
                                 )
+                              } else if (everWatched) {
+                                void markEpisode(item.id, ep.season_number, ep.episode_number, false)
                               } else {
-                                void markEpisode(item.id, ep.season_number, ep.episode_number, !everWatched)
+                                void markWatchedWithCatchUp(item.id, ep.season_number, ep.episode_number)
                               }
                             }}
                           />
@@ -467,11 +471,14 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
       {item && (
         <button
           className="btn btn--danger"
-          onClick={() => {
-            if (confirm(`Remove "${item.title}" and its watch history?`)) {
-              void removeItem(item.id)
-            }
-          }}
+          onClick={() =>
+            void appConfirm(`Remove "${item.title}" and its watch history?`, {
+              confirmLabel: 'Remove',
+              cancelLabel: 'Cancel',
+            }).then((ok) => {
+              if (ok) void removeItem(item.id)
+            })
+          }
         >
           Remove from library
         </button>

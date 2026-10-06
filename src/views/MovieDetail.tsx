@@ -24,6 +24,7 @@ import RatingStars from '../components/RatingStars'
 import Reviews from '../components/Reviews'
 import Gallery from '../components/Gallery'
 import Recommendations from '../components/Recommendations'
+import { appConfirm } from '../utils/confirm'
 
 const HOUR = 1000 * 60 * 60
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
@@ -217,11 +218,14 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
       {item && (
         <button
           className="btn btn--danger"
-          onClick={() => {
-            if (confirm(`Remove "${item.title}" and its watch history?`)) {
-              void removeItem(item.id)
-            }
-          }}
+          onClick={() =>
+            void appConfirm(`Remove "${item.title}" and its watch history?`, {
+              confirmLabel: 'Remove',
+              cancelLabel: 'Cancel',
+            }).then((ok) => {
+              if (ok) void removeItem(item.id)
+            })
+          }
         >
           Remove from library
         </button>
