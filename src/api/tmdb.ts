@@ -11,7 +11,8 @@
 const BASE_URL = 'https://api.themoviedb.org/3'
 const IMAGE_BASE = 'https://image.tmdb.org/t/p'
 
-const token = import.meta.env.VITE_TMDB_TOKEN
+// .trim() guards against a stray newline/space in the .env value or repo secret.
+const token = import.meta.env.VITE_TMDB_TOKEN?.trim()
 
 export function hasTmdbToken(): boolean {
   return typeof token === 'string' && token.length > 0

@@ -10,7 +10,9 @@
 
 const BASE = 'https://api.trakt.tv'
 const AUTHORIZE_URL = 'https://trakt.tv/oauth/authorize'
-const CLIENT_ID = import.meta.env.VITE_TRAKT_CLIENT_ID
+// .trim() guards against a stray newline/space in the .env value or repo secret
+// (a trailing newline makes Trakt reject the authorize request as "invalid client").
+const CLIENT_ID = import.meta.env.VITE_TRAKT_CLIENT_ID?.trim()
 const TOKEN_KEY = 'tvtracker.trakt'
 const PKCE_KEY = 'tvtracker.trakt.pkce'
 const LAST_SYNC_KEY = 'tvtracker.traktLastSync'

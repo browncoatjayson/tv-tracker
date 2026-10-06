@@ -18,7 +18,8 @@ const SCOPE =
   'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.profile'
 const FILE_NAME = 'tvtracker-backup.json'
 const GIS_SRC = 'https://accounts.google.com/gsi/client'
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID
+// .trim() guards against a stray newline/space in the .env value or repo secret.
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim()
 
 // Remembers across reloads that the user has connected before, so we can try a
 // silent (no-popup) token refresh on load.
