@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
-import { useIndexProgress } from '../data/episodeIndex'
+import { startIndexing, useIndexProgress } from '../data/episodeIndex'
 import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
 import UpdatePrompt from './UpdatePrompt'
 import ConfirmHost from './ConfirmHost'
@@ -15,6 +15,13 @@ const TABS = [
 ] as const
 
 export default function Layout() {
+  // Warm the index (and the shared TMDB cache it populates) on launch, so a show
+  // just added or pulled in by a sync is ready on Library/Upcoming without first
+  // opening Stats. No-ops when everything is already indexed.
+  useEffect(() => {
+    void startIndexing()
+  }, [])
+
   return (
     <div className="app-shell">
       <header className="app-header">

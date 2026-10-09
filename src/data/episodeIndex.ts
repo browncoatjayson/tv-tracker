@@ -10,7 +10,11 @@ import {
 import { db } from './db'
 import { getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
 import { setItemMeta } from './library'
+import { queryClient } from './queryClient'
 import type { TrackedItem } from './types'
+
+const HOUR = 1000 * 60 * 60
+const today = () => new Date().toISOString().slice(0, 10)
 
 // ---------------------------------------------------------------------------
 // Background episode indexer. Walks every tracked show and caches its episode
@@ -79,17 +83,31 @@ export function useIndexProgress(): IndexState {
 /** Index one title: backfill genres/providers, and (for shows) cache episodes. */
 async function indexItem(item: TrackedItem): Promise<void> {
   if (item.mediaType === 'movie') {
-    const details = await getMovieDetails(item.tmdbId)
+    // Fetch through the shared query cache (same key the detail/Upcoming views
+    // use) so indexing also warms them — not just the Dexie episode cache.
+    const details = await queryClient.fetchQuery({
+      queryKey: ['movie', item.tmdbId],
+      queryFn: () => getMovieDetails(item.tmdbId),
+      staleTime: HOUR,
+    })
+    // Released movies get their release date for the Library "last episode" sort;
+    // unreleased ones are left blank so they sort to the end.
+    const release = details.release_date
     await setItemMeta(item.id, {
       genres: genreNames(details),
       providers: watchNames(details),
       cast: castNames(details),
       runtime: runtimeOf(details),
       tmdbRating: details.vote_average,
+      lastAirDate: release && release <= today() ? release : undefined,
     })
     return
   }
-  const details = await getTvDetailsCached(item.id, item.tmdbId)
+  const details = await queryClient.fetchQuery({
+    queryKey: ['tv', item.tmdbId],
+    queryFn: () => getTvDetailsCached(item.id, item.tmdbId),
+    staleTime: HOUR,
+  })
   let runtime = runtimeOf(details)
   await setItemMeta(item.id, {
     genres: genreNames(details),
@@ -99,6 +117,8 @@ async function indexItem(item: TrackedItem): Promise<void> {
     runtime,
     episodeCount: details.number_of_episodes,
     tmdbRating: details.vote_average,
+    // Last *aired* episode date — drives the Library "last episode" sort.
+    lastAirDate: details.last_episode_to_air?.air_date ?? undefined,
   })
   // Dropped shows (only reached on a full rebuild) get their stats metadata but
   // skip the per-season episode caching — episode search isn't needed for them.
@@ -141,11 +161,13 @@ export async function startIndexing(
     const done = loadDone()
     const allItems = await db.trackedItems.toArray()
     const all = full ? allItems : allItems.filter((i) => i.status !== 'dropped')
-    // Reprocess titles missing stats fields even if they're in the done-set (e.g.
-    // indexed by an older app version). Skip known failures unless this is a full
-    // rebuild, so they don't retry every background pass.
+    // A manual full rebuild redoes every title (so fields added in a newer app
+    // version — like lastAirDate — get backfilled, and the shared TMDB cache is
+    // re-warmed). A background pass only touches titles not yet done or missing
+    // stats, and skips known failures so they don't retry every time.
     const todo = all.filter((i) => {
-      if (i.indexFailed && !full) return false
+      if (full) return true
+      if (i.indexFailed) return false
       return !done.has(i.id) || missesStatsFields(i)
     })
 

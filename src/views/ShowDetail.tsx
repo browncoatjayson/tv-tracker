@@ -136,9 +136,22 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
         ended: isEndedStatus(d.status),
         episodeCount: d.number_of_episodes,
         tmdbRating: d.vote_average,
+        // Last aired episode date — drives the Library "last episode" sort.
+        lastAirDate: d.last_episode_to_air?.air_date ?? undefined,
       })
     }
   }, [item?.id, d])
+
+  // Auto-complete an ended show once every episode is watched. (watchlist ->
+  // watching is handled in the data layer whenever any episode is marked.)
+  useEffect(() => {
+    if (!item || !d || item.status === 'dropped' || item.status === 'completed') return
+    const total = d.number_of_episodes ?? 0
+    const watched = (states ?? []).filter((s) => s.watched).length
+    if (total > 0 && watched >= total && isEndedStatus(d.status)) {
+      void setStatus(item.id, 'completed')
+    }
+  }, [item?.id, item?.status, d, states])
 
   const seasons = useMemo(() => sortSeasons(d?.seasons ?? []), [d])
   // Default to the season with the first unwatched episode; the user's pick wins.

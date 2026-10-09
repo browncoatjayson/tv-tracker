@@ -19,6 +19,7 @@ import { matchesFilter, parseQuery } from '../utils/filter'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import { markMovieWatched } from '../data/library'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
+import { useTrackedItems } from '../hooks/useTrackedItems'
 import type { MediaType } from '../data/types'
 import FilterBar from '../components/FilterBar'
 import UpcomingCalendar from '../components/UpcomingCalendar'
@@ -70,7 +71,7 @@ function formatDate(date: string): string {
 }
 
 export default function Upcoming() {
-  const items = useLiveQuery(() => db.trackedItems.toArray())
+  const items = useTrackedItems()
   const episodeStates = useLiveQuery(() => db.episodeStates.toArray())
   const watchEvents = useLiveQuery(() => db.watchEvents.toArray())
 

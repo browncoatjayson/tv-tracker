@@ -7,6 +7,7 @@ import { markEpisode, toggleFavorite } from '../data/library'
 import type { CachedEpisode, EpisodeState, TrackedItem, WatchStatus } from '../data/types'
 import { matchesFilter, parseQuery } from '../utils/filter'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
+import { useTrackedItems } from '../hooks/useTrackedItems'
 import FilterBar from '../components/FilterBar'
 import SectionDivider from '../components/SectionDivider'
 
@@ -64,9 +65,17 @@ function comparator(sort: SortKey): (a: TrackedItem, b: TrackedItem) => number {
       // Newest first; items without a year sort last.
       return (a, b) => (b.year ?? -Infinity) - (a.year ?? -Infinity) || a.title.localeCompare(b.title)
     case 'lastEpisode': {
-      // Newest last-aired first; fall back to the year, then push blanks last.
-      const key = (i: TrackedItem) => i.lastAirDate ?? (i.year ? `${i.year}-00-00` : '')
-      return (a, b) => key(b).localeCompare(key(a)) || a.title.localeCompare(b.title)
+      // Sort by the last *aired* episode date (shows) / release date (movies),
+      // newest first. Titles with nothing aired yet (unaired shows, unreleased
+      // movies, or not-yet-indexed) have no date and sort to the end, alphabetically.
+      return (a, b) => {
+        const ka = a.lastAirDate ?? ''
+        const kb = b.lastAirDate ?? ''
+        if (ka && kb) return kb.localeCompare(ka) || a.title.localeCompare(b.title)
+        if (ka) return -1
+        if (kb) return 1
+        return a.title.localeCompare(b.title)
+      }
     }
     default:
       return (a, b) => a.title.localeCompare(b.title)
@@ -74,7 +83,7 @@ function comparator(sort: SortKey): (a: TrackedItem, b: TrackedItem) => number {
 }
 
 export default function Library() {
-  const items = useLiveQuery(() => db.trackedItems.toArray())
+  const items = useTrackedItems()
   const [query, setQuery] = usePersistentFilter('tvtracker.filter.library')
   const [sort, setSort] = useState<SortKey>(() => {
     try {

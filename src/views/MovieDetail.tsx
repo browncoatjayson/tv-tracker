@@ -72,12 +72,16 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
   }, [item?.id, item?.imdbId])
   useEffect(() => {
     if (item && d) {
+      const release = d.release_date
+      const todayStr = new Date().toISOString().slice(0, 10)
       void setItemMeta(item.id, {
         genres: genreNames(d),
         providers: watchNames(d),
         cast: castNames(d),
         runtime: runtimeOf(d),
         tmdbRating: d.vote_average,
+        // Released movies sort by their release date; unreleased sort to the end.
+        lastAirDate: release && release <= todayStr ? release : undefined,
       })
     }
   }, [item?.id, d])

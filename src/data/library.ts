@@ -68,6 +68,8 @@ export async function setItemMeta(
     runtime?: number
     episodeCount?: number
     tmdbRating?: number
+    /** Last aired episode date (shows) or release date (movies), YYYY-MM-DD. */
+    lastAirDate?: string
   },
 ): Promise<void> {
   await db.trackedItems.update(id, meta)
@@ -191,7 +193,11 @@ export async function setEpisodeWatchCount(
         isRewatch: k >= 1,
       })
     }
-    await db.trackedItems.update(itemId, { updatedAt: now })
+    // Watching an episode moves a watchlist title into "watching" (never touches
+    // completed/dropped — those are deliberate states).
+    const item = await db.trackedItems.get(itemId)
+    const promote = count > 0 && item?.status === 'watchlist' ? { status: 'watching' as const } : {}
+    await db.trackedItems.update(itemId, { updatedAt: now, ...promote })
   })
 }
 
