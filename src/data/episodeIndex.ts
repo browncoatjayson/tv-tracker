@@ -100,6 +100,7 @@ async function indexItem(item: TrackedItem): Promise<void> {
       runtime: runtimeOf(details),
       tmdbRating: details.vote_average,
       lastAirDate: release && release <= today() ? release : undefined,
+      nextAirDate: release && release > today() ? release : undefined,
     })
     return
   }
@@ -117,8 +118,10 @@ async function indexItem(item: TrackedItem): Promise<void> {
     runtime,
     episodeCount: details.number_of_episodes,
     tmdbRating: details.vote_average,
-    // Last *aired* episode date — drives the Library "last episode" sort.
+    // Last *aired* episode date — drives the "last episode" sort + Released:aired.
     lastAirDate: details.last_episode_to_air?.air_date ?? undefined,
+    // Next *upcoming* episode — powers Released:upcoming for shows mid-run.
+    nextAirDate: details.next_episode_to_air?.air_date ?? undefined,
   })
   // Dropped shows (only reached on a full rebuild) get their stats metadata but
   // skip the per-season episode caching — episode search isn't needed for them.

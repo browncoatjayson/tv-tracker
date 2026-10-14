@@ -16,6 +16,8 @@ export interface ParsedQuery {
   types: ('movie' | 'show')[]
   /** Show airing status to keep: 'ended' and/or 'ongoing'. */
   ended: ('ended' | 'ongoing')[]
+  /** Release state to keep: 'aired' (already out) and/or 'upcoming' (future). */
+  released: ('aired' | 'upcoming')[]
   /** Runtime (minutes) constraints, e.g. {op:'<', value:30}. */
   lengths: LengthConstraint[]
 }
@@ -34,9 +36,10 @@ export function parseQuery(raw: string): ParsedQuery {
   const actors: string[] = []
   const types: ('movie' | 'show')[] = []
   const ended: ('ended' | 'ongoing')[] = []
+  const released: ('aired' | 'upcoming')[] = []
   const lengths: LengthConstraint[] = []
   for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
-    const m = part.match(/^(genre|service|actor|type|status|length):(.+)$/i)
+    const m = part.match(/^(genre|service|actor|type|status|released|length):(.+)$/i)
     if (!m) {
       text.push(part.toLowerCase())
       continue
@@ -53,13 +56,17 @@ export function parseQuery(raw: string): ParsedQuery {
       const v = val.toLowerCase()
       if (v === 'ended' || v === 'cancelled' || v === 'canceled') ended.push('ended')
       else if (v === 'ongoing' || v === 'returning' || v === 'airing') ended.push('ongoing')
+    } else if (key === 'released') {
+      const v = val.toLowerCase()
+      if (v === 'aired' || v === 'released' || v === 'out') released.push('aired')
+      else if (v === 'upcoming' || v === 'unaired' || v === 'unreleased') released.push('upcoming')
     } else {
       // length: optional operator + number of minutes.
       const lm = val.match(/^(<=|>=|<|>|=)?\s*(\d+)$/)
       if (lm) lengths.push({ op: (lm[1] as LengthConstraint['op']) || '=', value: Number(lm[2]) })
     }
   }
-  return { text: text.join(' ').trim(), genres, services, actors, types, ended, lengths }
+  return { text: text.join(' ').trim(), genres, services, actors, types, ended, released, lengths }
 }
 
 export interface FilterTarget {
@@ -71,7 +78,22 @@ export interface FilterTarget {
   cast?: string[]
   mediaType?: 'movie' | 'show'
   ended?: boolean
+  /** Single-state release flag (episodes, movies, search results): has it aired /
+   *  released as of today? Undefined = unknown → never filtered out. */
+  aired?: boolean
+  /** Multi-state release flags (a show title can be both, e.g. mid-run): which of
+   *  'aired' / 'upcoming' apply. Takes precedence over `aired` when provided.
+   *  Undefined = unknown → never filtered out. */
+  releasedStates?: ('aired' | 'upcoming')[]
   runtime?: number
+}
+
+/** The release states a target belongs to, or undefined if unknown. */
+function releasedStatesOf(t: FilterTarget): ('aired' | 'upcoming')[] | undefined {
+  if (t.releasedStates) return t.releasedStates
+  if (t.aired === true) return ['aired']
+  if (t.aired === false) return ['upcoming']
+  return undefined
 }
 
 function runtimeSatisfies(runtime: number, c: LengthConstraint): boolean {
@@ -98,6 +120,13 @@ export function matchesFilter(target: FilterTarget, q: ParsedQuery): boolean {
   if (q.ended.length) {
     if (target.ended === undefined) return false
     if (!q.ended.includes(target.ended ? 'ended' : 'ongoing')) return false
+  }
+  // Released state: both selected (or none) = no restriction. A title must belong
+  // to the kept state — a mid-run show counts as both 'aired' and 'upcoming', so
+  // it survives either. Unknown (undefined) is never hidden.
+  if (q.released.length === 1) {
+    const states = releasedStatesOf(target)
+    if (states && !states.includes(q.released[0])) return false
   }
   for (const l of q.lengths) {
     if (target.runtime === undefined || !runtimeSatisfies(target.runtime, l)) return false

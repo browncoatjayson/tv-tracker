@@ -53,6 +53,7 @@ interface Editor {
   free: string
   types: Set<'movie' | 'show'>
   statuses: Set<'ended' | 'ongoing'>
+  released: Set<'aired' | 'upcoming'>
   genres: Set<string>
   services: Set<string>
   actor: string
@@ -60,7 +61,7 @@ interface Editor {
   lenVal: string
 }
 
-const TOKEN_RE = /^(genre|service|actor|type|status|length):/i
+const TOKEN_RE = /^(genre|service|actor|type|status|released|length):/i
 
 /** Split a raw query string into the dropdown's structured working state. */
 function parseForEditor(raw: string): Editor {
@@ -75,6 +76,8 @@ function parseForEditor(raw: string): Editor {
     free,
     types: new Set(p.types),
     statuses: new Set(p.ended),
+    // No token = both shown, so default both chips on; a single token restricts.
+    released: new Set(p.released.length ? p.released : (['aired', 'upcoming'] as const)),
     genres: new Set(p.genres),
     services: new Set(p.services),
     actor: p.actors[0] ?? '',
@@ -89,6 +92,8 @@ function buildQuery(e: Editor): string {
   if (e.free.trim()) parts.push(e.free.trim())
   for (const t of e.types) parts.push(`type:${t}`)
   for (const s of e.statuses) parts.push(`status:${s}`)
+  // Only a single pick restricts (both/none = show everything, so no token).
+  if (e.released.size === 1) parts.push(`released:${[...e.released][0]}`)
   for (const g of e.genres) parts.push(`genre:${g}`)
   for (const s of e.services) parts.push(`service:${s}`)
   if (e.actor.trim()) parts.push(`actor:${e.actor.trim()}`)
@@ -104,6 +109,7 @@ function activeCount(raw: string): number {
   return (
     p.types.length +
     p.ended.length +
+    (p.released.length === 1 ? 1 : 0) +
     p.genres.length +
     p.services.length +
     p.actors.length +
@@ -253,6 +259,26 @@ export default function FilterBar({
                   onClick={() => setEd({ ...ed, statuses: toggleIn(ed.statuses, s) })}
                 >
                   {s === 'ended' ? 'Ended' : 'Ongoing'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="filter-pop__group">
+            <span className="filter-pop__label">Released</span>
+            <div className="chip-row">
+              {([
+                ['aired', 'Aired'],
+                ['upcoming', 'Upcoming'],
+              ] as const).map(([v, label]) => (
+                <button
+                  key={v}
+                  type="button"
+                  className={`chip${ed.released.has(v) ? ' chip--on' : ''}`}
+                  aria-pressed={ed.released.has(v)}
+                  onClick={() => setEd({ ...ed, released: toggleIn(ed.released, v) })}
+                >
+                  {label}
                 </button>
               ))}
             </div>

@@ -36,10 +36,15 @@ export interface TrackedItem {
   userRating?: number
   /** Pinned to the Favorites section at the top of the Library. */
   favorite?: boolean
-  /** Most recent episode air date (shows) or release date (movies), YYYY-MM-DD.
-   *  Backfilled from TMDB when a title is viewed or appears in Upcoming; used for
-   *  the "Last episode date" sort. */
+  /** Most recent *aired* episode date (shows) or release date (movies), YYYY-MM-DD.
+   *  Backfilled from TMDB; used for the "Last episode date" sort and the
+   *  Released:aired filter. */
   lastAirDate?: string
+  /** Next *upcoming* episode air date (shows) or future release date (movies),
+   *  YYYY-MM-DD. Backfilled from TMDB; powers the Released:upcoming filter (a
+   *  currently-airing show has both this and lastAirDate). Cleared once nothing
+   *  is scheduled. */
+  nextAirDate?: string
   /** Broad genres (e.g. ["Drama","Crime"]) — backfilled for filtering. */
   genres?: string[]
   /** Where to watch (networks + streaming names) — backfilled for filtering. */

@@ -70,6 +70,8 @@ export async function setItemMeta(
     tmdbRating?: number
     /** Last aired episode date (shows) or release date (movies), YYYY-MM-DD. */
     lastAirDate?: string
+    /** Next upcoming episode / future release date, YYYY-MM-DD (undefined clears). */
+    nextAirDate?: string
   },
 ): Promise<void> {
   await db.trackedItems.update(id, meta)

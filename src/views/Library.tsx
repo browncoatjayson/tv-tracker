@@ -59,6 +59,17 @@ function readHidden(): Set<string> {
   return new Set()
 }
 
+/** Which release states a title belongs to (for the Released filter). A show can
+ *  be both — aired episodes (lastAirDate) plus upcoming ones (future nextAirDate).
+ *  Returns undefined when nothing is known yet, so the filter leaves it alone. */
+function titleReleasedStates(i: TrackedItem): ('aired' | 'upcoming')[] | undefined {
+  const today = new Date().toISOString().slice(0, 10)
+  const states: ('aired' | 'upcoming')[] = []
+  if (i.lastAirDate) states.push('aired')
+  if (i.nextAirDate && i.nextAirDate > today) states.push('upcoming')
+  return states.length ? states : undefined
+}
+
 function comparator(sort: SortKey): (a: TrackedItem, b: TrackedItem) => number {
   switch (sort) {
     case 'premiere':
@@ -164,12 +175,14 @@ export default function Library() {
     arr.push(e)
     epByItem.set(e.itemId, arr)
   }
-  const nextUnwatched = (itemId: string): CachedEpisode | null => {
-    const eps = (epByItem.get(itemId) ?? [])
-      .slice()
-      .sort((a, b) => a.season - b.season || a.episode - b.episode)
-    return eps.find((e) => !watchedEpKeys.has(`${e.itemId}:${e.season}:${e.episode}`)) ?? null
-  }
+  const sortedEps = (itemId: string): CachedEpisode[] =>
+    (epByItem.get(itemId) ?? []).slice().sort((a, b) => a.season - b.season || a.episode - b.episode)
+  const nextUnwatched = (itemId: string): CachedEpisode | null =>
+    sortedEps(itemId).find((e) => !watchedEpKeys.has(`${e.itemId}:${e.season}:${e.episode}`)) ?? null
+  // The next episode still to air — used when filtering to upcoming, so the card
+  // answers "when's it back?" instead of pointing at an already-aired episode.
+  const nextUpcoming = (itemId: string): CachedEpisode | null =>
+    sortedEps(itemId).find((e) => !hasAired(e.airDate)) ?? null
 
   if (items === undefined) return <p className="muted">Loading…</p>
 
@@ -189,6 +202,11 @@ export default function Library() {
   const parsed = parseQuery(query)
   const searching = query.trim().length > 0
 
+  // When filtering to upcoming-only, the watching card points at the next episode
+  // still to air (not the next unwatched one, which may already be out).
+  const upcomingOnly = parsed.released.length === 1 && parsed.released[0] === 'upcoming'
+  const pickNextEp = upcomingOnly ? nextUpcoming : nextUnwatched
+
   // When searching, keep only titles matching the query/filters; otherwise all.
   const matched = searching
     ? sorted.filter((i) =>
@@ -200,6 +218,9 @@ export default function Library() {
             cast: i.cast,
             mediaType: i.mediaType,
             ended: i.ended,
+            // A title can be both: a mid-run show has aired episodes (lastAirDate)
+            // AND upcoming ones (nextAirDate). Unknown (not indexed) → undefined.
+            releasedStates: titleReleasedStates(i),
             runtime: i.runtime,
           },
           parsed,
@@ -243,6 +264,7 @@ export default function Library() {
               cast: it.cast,
               mediaType: 'show',
               ended: it.ended,
+              aired: hasAired(e.airDate),
               runtime: it.runtime,
             },
             { ...parsed, text: '' },
@@ -275,7 +297,7 @@ export default function Library() {
               sec={sec}
               hidden={hidden.has(sec.key)}
               onToggleHidden={toggleHidden}
-              nextUnwatched={nextUnwatched}
+              pickNextEp={pickNextEp}
             />
           ))
         ))}
@@ -331,12 +353,12 @@ function FullSection({
   sec,
   hidden,
   onToggleHidden,
-  nextUnwatched,
+  pickNextEp,
 }: {
   sec: Section
   hidden: boolean
   onToggleHidden: (key: string, v: boolean) => void
-  nextUnwatched: (id: string) => CachedEpisode | null
+  pickNextEp: (id: string) => CachedEpisode | null
 }) {
   // In the full view only Dropped is collapsible.
   const isHidden = !!sec.dropped && hidden
@@ -358,7 +380,7 @@ function FullSection({
       {isHidden ? (
         <p className="muted lib-hidden-note">{sec.items.length} hidden</p>
       ) : sec.watching ? (
-        <WatchingGrid items={sec.items} nextUnwatched={nextUnwatched} />
+        <WatchingGrid items={sec.items} pickNextEp={pickNextEp} />
       ) : (
         <PosterGrid items={sec.items} />
       )}
@@ -556,15 +578,15 @@ function PosterGrid({ items }: { items: TrackedItem[] }) {
 /** Watching section: each show card gets a "next unwatched episode" strip. */
 function WatchingGrid({
   items,
-  nextUnwatched,
+  pickNextEp,
 }: {
   items: TrackedItem[]
-  nextUnwatched: (id: string) => CachedEpisode | null
+  pickNextEp: (id: string) => CachedEpisode | null
 }) {
   return (
     <ul className="poster-grid">
       {items.map((item) => {
-        const next = item.mediaType === 'show' ? nextUnwatched(item.id) : null
+        const next = item.mediaType === 'show' ? pickNextEp(item.id) : null
         const to = `/item/${encodeURIComponent(item.id)}`
         return (
           <li key={item.id} className="poster-cell watching-cell">

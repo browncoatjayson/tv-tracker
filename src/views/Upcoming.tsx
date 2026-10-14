@@ -41,6 +41,8 @@ interface FeedEntry {
   cast?: string[]
   ended?: boolean
   runtime?: number
+  /** True for recently-aired/released entries, false for still-upcoming ones. */
+  aired: boolean
   // Present on aired entries, so the inline "mark watched" control knows what to log.
   season?: number
   episode?: number
@@ -178,6 +180,7 @@ export default function Upcoming() {
         ended,
         runtime,
         time: airTime(s.imdbId, next.season_number, next.episode_number),
+        aired: false,
       })
     }
     const last = details.last_episode_to_air
@@ -200,6 +203,7 @@ export default function Upcoming() {
         ended,
         runtime,
         time: airTime(s.imdbId, last.season_number, last.episode_number),
+        aired: true,
         season: last.season_number,
         episode: last.episode_number,
       })
@@ -228,6 +232,7 @@ export default function Upcoming() {
         providers,
         cast,
         runtime,
+        aired: false,
       })
     } else if (inAiredWindow(release) && !watchedMovies.has(m.id)) {
       aired.push({
@@ -242,6 +247,7 @@ export default function Upcoming() {
         providers,
         cast,
         runtime,
+        aired: true,
       })
     }
   })
@@ -262,6 +268,7 @@ export default function Upcoming() {
         cast: e.cast,
         mediaType: e.mediaType,
         ended: e.ended,
+        aired: e.aired,
         runtime: e.runtime,
       },
       parsed,

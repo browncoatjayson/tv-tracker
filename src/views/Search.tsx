@@ -47,6 +47,14 @@ function resultYear(r: TmdbMediaResult): number | undefined {
   return Number.isFinite(year) ? year : undefined
 }
 
+/** Whether a result has been released/aired (true), is still upcoming (false),
+ *  or has no known date (undefined — so the Released filter leaves it alone). */
+function releaseState(r: TmdbMediaResult): boolean | undefined {
+  const date = r.release_date || r.first_air_date
+  if (!date) return undefined
+  return date.slice(0, 10) <= new Date().toISOString().slice(0, 10)
+}
+
 export default function Search() {
   const [input, setInput] = usePersistentFilter('tvtracker.filter.search')
   const query = useDebouncedValue(input, 350)
@@ -138,6 +146,7 @@ export default function Search() {
         providers,
         runtime,
         ended,
+        aired: releaseState(r),
         mediaType: toMediaType(r),
       },
       { ...parsed, actors: [], text: actorName ? parsed.text : '' },

@@ -82,6 +82,8 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
         tmdbRating: d.vote_average,
         // Released movies sort by their release date; unreleased sort to the end.
         lastAirDate: release && release <= todayStr ? release : undefined,
+        // A not-yet-released movie is "upcoming".
+        nextAirDate: release && release > todayStr ? release : undefined,
       })
     }
   }, [item?.id, d])

@@ -138,6 +138,8 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
         tmdbRating: d.vote_average,
         // Last aired episode date — drives the Library "last episode" sort.
         lastAirDate: d.last_episode_to_air?.air_date ?? undefined,
+        // Next upcoming episode — powers the Released:upcoming filter.
+        nextAirDate: d.next_episode_to_air?.air_date ?? undefined,
       })
     }
   }, [item?.id, d])
