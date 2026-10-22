@@ -4,6 +4,7 @@ import DriveSync from '../components/DriveSync'
 import TraktConnect from '../components/TraktConnect'
 import ImportTracker from '../components/ImportTracker'
 import EpisodeIndex from '../components/EpisodeIndex'
+import NotificationsSettings from '../components/NotificationsSettings'
 import ResetAccount from '../components/ResetAccount'
 
 export default function Settings() {
@@ -43,6 +44,8 @@ export default function Settings() {
       <TraktConnect />
 
       <EpisodeIndex />
+
+      <NotificationsSettings />
 
       <section className="card">
         <h2>Backup &amp; restore</h2>

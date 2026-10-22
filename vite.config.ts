@@ -16,6 +16,8 @@ export default defineConfig({
       // Prompt the user to reload when a new build is available (see UpdatePrompt).
       registerType: 'prompt',
       includeAssets: ['favicon.svg', 'app-icon.svg', 'apple-touch-icon.png'],
+      // Pull the notificationclick handler into the generated service worker.
+      workbox: { importScripts: ['notify-sw.js'] },
       manifest: {
         name: 'TV Tracker',
         short_name: 'TV Tracker',

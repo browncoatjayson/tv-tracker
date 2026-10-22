@@ -1,8 +1,11 @@
 import { Fragment, useEffect, useRef, useState } from 'react'
+import { useQueries } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
 import { hasAired, imageUrl } from '../api/tmdb'
+import { getTvmazeEpisodesByImdb } from '../api/tvmaze'
+import { airsToday, compactAirTime, hasAiredByTime } from '../utils/airTime'
 import { markEpisode, toggleFavorite } from '../data/library'
 import type { CachedEpisode, EpisodeState, TrackedItem, WatchStatus } from '../data/types'
 import { matchesFilter, parseQuery } from '../utils/filter'
@@ -68,6 +71,16 @@ function titleReleasedStates(i: TrackedItem): ('aired' | 'upcoming')[] | undefin
   if (i.lastAirDate) states.push('aired')
   if (i.nextAirDate && i.nextAirDate > today) states.push('upcoming')
   return states.length ? states : undefined
+}
+
+/** Compact label for a not-yet-aired next episode: "at 7:00p" when it airs later
+ *  today (keeping the episode code readable), otherwise the plain date. */
+function formatNextAir(airDate: string | null, airstamp?: string): string {
+  if (airsToday(airstamp)) {
+    const t = compactAirTime(airstamp)
+    if (t) return `at ${t}`
+  }
+  return airDate ?? 'TBA'
 }
 
 function comparator(sort: SortKey): (a: TrackedItem, b: TrackedItem) => number {
@@ -165,6 +178,30 @@ export default function Library() {
         : Promise.resolve([] as EpisodeState[]),
     [watchingKey],
   )
+  // Precise air times (from TVmaze) for the watching shows, so the next-episode
+  // strip can tell "airs later today" from "already aired". Matched by IMDb id,
+  // keyed per item by "season:episode". Cached 24h and shared with Upcoming.
+  const watchingImdb = (items ?? []).filter(
+    (i) => i.status === 'watching' && i.mediaType === 'show' && i.imdbId,
+  )
+  const tvmazeResults = useQueries({
+    queries: watchingImdb.map((s) => ({
+      queryKey: ['tvmaze', s.imdbId],
+      queryFn: () => getTvmazeEpisodesByImdb(s.imdbId as string),
+      staleTime: 1000 * 60 * 60 * 24,
+    })),
+  })
+  const airstampByItem = new Map<string, Map<string, string>>()
+  watchingImdb.forEach((s, i) => {
+    const eps = tvmazeResults[i]?.data
+    if (!eps) return
+    const m = new Map<string, string>()
+    for (const e of eps) if (e.airstamp) m.set(`${e.season}:${e.number}`, e.airstamp)
+    airstampByItem.set(s.id, m)
+  })
+  const airstampOf = (itemId: string, season: number, episode: number): string | undefined =>
+    airstampByItem.get(itemId)?.get(`${season}:${episode}`)
+
   const watchedEpKeys = new Set(
     (watchingStates ?? []).filter((s) => s.watched).map((s) => `${s.itemId}:${s.season}:${s.episode}`),
   )
@@ -298,6 +335,7 @@ export default function Library() {
               hidden={hidden.has(sec.key)}
               onToggleHidden={toggleHidden}
               pickNextEp={pickNextEp}
+              airstampOf={airstampOf}
             />
           ))
         ))}
@@ -354,11 +392,13 @@ function FullSection({
   hidden,
   onToggleHidden,
   pickNextEp,
+  airstampOf,
 }: {
   sec: Section
   hidden: boolean
   onToggleHidden: (key: string, v: boolean) => void
   pickNextEp: (id: string) => CachedEpisode | null
+  airstampOf: (itemId: string, season: number, episode: number) => string | undefined
 }) {
   // In the full view only Dropped is collapsible.
   const isHidden = !!sec.dropped && hidden
@@ -380,7 +420,7 @@ function FullSection({
       {isHidden ? (
         <p className="muted lib-hidden-note">{sec.items.length} hidden</p>
       ) : sec.watching ? (
-        <WatchingGrid items={sec.items} pickNextEp={pickNextEp} />
+        <WatchingGrid items={sec.items} pickNextEp={pickNextEp} airstampOf={airstampOf} />
       ) : (
         <PosterGrid items={sec.items} />
       )}
@@ -579,9 +619,11 @@ function PosterGrid({ items }: { items: TrackedItem[] }) {
 function WatchingGrid({
   items,
   pickNextEp,
+  airstampOf,
 }: {
   items: TrackedItem[]
   pickNextEp: (id: string) => CachedEpisode | null
+  airstampOf: (itemId: string, season: number, episode: number) => string | undefined
 }) {
   return (
     <ul className="poster-grid">
@@ -610,7 +652,7 @@ function WatchingGrid({
             {/* Next-episode card tucked behind the poster, then the title.
                 Always rendered (even empty) so every card is the same height. */}
             {next ? (
-              <NextEpCard item={item} ep={next} />
+              <NextEpCard item={item} ep={next} airstamp={airstampOf(item.id, next.season, next.episode)} />
             ) : (
               <div className="next-ep next-ep--empty">
                 <span className="next-ep__label">Nothing scheduled</span>
@@ -626,8 +668,17 @@ function WatchingGrid({
   )
 }
 
-function NextEpCard({ item, ep }: { item: TrackedItem; ep: CachedEpisode }) {
-  const aired = hasAired(ep.airDate)
+function NextEpCard({
+  item,
+  ep,
+  airstamp,
+}: {
+  item: TrackedItem
+  ep: CachedEpisode
+  airstamp?: string
+}) {
+  // Prefer the precise air time: an episode airing later today hasn't aired yet.
+  const aired = hasAiredByTime(ep.airDate, airstamp)
   const label = `S${ep.season}E${ep.episode}${ep.name ? ` · ${ep.name}` : ''}`
   return (
     <div className="next-ep">
@@ -644,7 +695,7 @@ function NextEpCard({ item, ep }: { item: TrackedItem; ep: CachedEpisode }) {
           ✓
         </button>
       ) : (
-        <span className="next-ep__date">{ep.airDate ?? 'TBA'}</span>
+        <span className="next-ep__date">{formatNextAir(ep.airDate, airstamp)}</span>
       )}
     </div>
   )

@@ -4,6 +4,7 @@ import { startIndexing, useIndexProgress } from '../data/episodeIndex'
 import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
 import UpdatePrompt from './UpdatePrompt'
 import ConfirmHost from './ConfirmHost'
+import NotificationScheduler from './NotificationScheduler'
 import { UserGlyph } from '../views/Stats'
 
 // Tabs shown in the nav bar. A single source of truth keeps the markup tidy.
@@ -39,6 +40,7 @@ export default function Layout() {
 
       <UpdatePrompt />
       <ConfirmHost />
+      <NotificationScheduler />
 
       {/* Bottom tab bar — the mobile-app feel, also works fine on desktop. */}
       <nav className="app-nav" aria-label="Primary">

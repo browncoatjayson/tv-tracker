@@ -7,7 +7,6 @@ import {
   getEpisodeDetails,
   getEpisodeImages,
   getEpisodeImdbId,
-  hasAired,
   imageUrl,
   watchNames,
 } from '../api/tmdb'
@@ -15,6 +14,8 @@ import { getTvDetailsCached } from '../data/episodeCache'
 import { hasTraktClientId, resolveTraktId } from '../api/trakt'
 import { markEpisode, setEpisodeRating, setEpisodeWatchedDate } from '../data/library'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
+import { airTimeOrDate, hasAiredByTime } from '../utils/airTime'
+import { useShowAirstamps } from '../hooks/useShowAirstamps'
 import ExternalLinks from '../components/ExternalLinks'
 import { WherePills } from '../components/DetailHero'
 import CastRow from '../components/CastRow'
@@ -81,6 +82,7 @@ export default function EpisodePage() {
     [itemId, seasonNum, episodeNum],
   )
   const inLibrary = !!item
+  const airstampOf = useShowAirstamps(item?.imdbId)
 
   if (!valid) {
     return (
@@ -105,7 +107,8 @@ export default function EpisodePage() {
   const showTitle = item?.title ?? show.data?.name ?? 'Show'
   const showBackdrop = imageUrl(show.data?.backdrop_path ?? undefined, 'w1280')
   const still = imageUrl(ep.still_path ?? undefined, 'w500')
-  const aired = hasAired(ep.air_date)
+  const airstamp = airstampOf(seasonNum, episodeNum)
+  const aired = hasAiredByTime(ep.air_date, airstamp)
   const watched = !!epState?.watched
   const average =
     typeof ep.vote_average === 'number' && ep.vote_average > 0 ? `★ ${ep.vote_average.toFixed(1)} / 10` : '—'
@@ -129,7 +132,8 @@ export default function EpisodePage() {
   const facts: { label: string; value: string }[] = []
   if (directors.length) facts.push({ label: 'Directed by', value: [...new Set(directors)].join(', ') })
   if (writers.length) facts.push({ label: 'Written by', value: [...new Set(writers)].join(', ') })
-  if (ep.air_date) facts.push({ label: aired ? 'Aired' : 'Airs', value: ep.air_date })
+  if (ep.air_date)
+    facts.push({ label: aired ? 'Aired' : 'Airs', value: aired ? ep.air_date : airTimeOrDate(ep.air_date, airstamp) })
   if (ep.runtime) facts.push({ label: 'Runtime', value: `${ep.runtime} min` })
   if (guests.length) facts.push({ label: 'Guest stars', value: String(guests.length) })
 
@@ -159,7 +163,11 @@ export default function EpisodePage() {
             </h2>
             <div className="genre-badges">
               <span className="genre-badge">{aired ? 'Aired' : 'Airs'}</span>
-              {ep.air_date && <span className="genre-badge">{ep.air_date}</span>}
+              {ep.air_date && (
+                <span className="genre-badge">
+                  {aired ? ep.air_date : airTimeOrDate(ep.air_date, airstamp)}
+                </span>
+              )}
               {ep.runtime ? <span className="genre-badge">{ep.runtime} min</span> : null}
             </div>
             <div className="hero__tags">

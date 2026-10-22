@@ -10,7 +10,6 @@ import {
   getImdbId,
   getRecommendations,
   getVideos,
-  hasAired,
   imageUrl,
   isEndedStatus,
   runtimeOf,
@@ -38,6 +37,8 @@ import Gallery from '../components/Gallery'
 import Recommendations from '../components/Recommendations'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
 import { appConfirm } from '../utils/confirm'
+import { airTimeOrDate, hasAiredByTime } from '../utils/airTime'
+import { useShowAirstamps } from '../hooks/useShowAirstamps'
 
 const HOUR = 1000 * 60 * 60
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
@@ -117,6 +118,8 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
     enabled: !!item?.imdbId,
     staleTime: HOUR,
   })
+  // Precise air times so an episode airing later today reads as upcoming.
+  const airstampOf = useShowAirstamps(item?.imdbId)
 
   useEffect(() => {
     if (!item || item.imdbId) return
@@ -241,7 +244,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
   async function markSeasonWatched() {
     if (!item) return
     for (const ep of episodesQuery.data ?? []) {
-      if (!hasAired(ep.air_date)) continue
+      if (!hasAiredByTime(ep.air_date, airstampOf(ep.season_number, ep.episode_number))) continue
       const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
       const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
       await setEpisodeWatchCount(
@@ -354,7 +357,8 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
               const everWatched = wc > 0
               const inCurrentPass = wc > completedPasses
               const checked = rewatching ? inCurrentPass : everWatched
-              const aired = hasAired(ep.air_date)
+              const airstamp = airstampOf(ep.season_number, ep.episode_number)
+              const aired = hasAiredByTime(ep.air_date, airstamp)
               const still = imageUrl(ep.still_path ?? undefined, 'w300')
               const go = () =>
                 navigate(`/item/${encodeURIComponent(itemId)}/episode/${ep.season_number}/${ep.episode_number}`)
@@ -386,7 +390,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
                       {ep.overview || 'No synopsis yet.'}
                     </p>
                     {!aired ? (
-                      <span className="ep-card__upcoming">Airs · {ep.air_date ?? 'TBA'}</span>
+                      <span className="ep-card__upcoming">Airs · {airTimeOrDate(ep.air_date, airstamp)}</span>
                     ) : (
                       !readOnly && (
                         <label

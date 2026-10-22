@@ -17,7 +17,7 @@ import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
 import { getTvDetailsCached } from '../data/episodeCache'
 import { matchesFilter, parseQuery } from '../utils/filter'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
-import { markMovieWatched } from '../data/library'
+import { markMovieWatched, setItemMeta } from '../data/library'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
 import { useTrackedItems } from '../hooks/useTrackedItems'
 import type { MediaType } from '../data/types'
@@ -287,6 +287,43 @@ export default function Upcoming() {
     watchEvents !== undefined &&
     !showResults.some((r) => r.isLoading) &&
     !movieResults.some((r) => r.isLoading)
+
+  // Persist each title's next/last air dates back onto the tracked item. Upcoming
+  // is the one view that already fetches this for every non-dropped title, so a
+  // visit here keeps the Library "last episode" sort and Released filter accurate
+  // (and fresh as episodes air) without a manual reindex. Signature deps mean we
+  // only write when the fetched dates actually change.
+  const showDateSig = shows
+    .map((s, i) => {
+      const d = showResults[i]?.data
+      return `${s.id}|${d?.last_episode_to_air?.air_date ?? ''}|${d?.next_episode_to_air?.air_date ?? ''}`
+    })
+    .join(',')
+  const movieDateSig = movies
+    .map((m, i) => `${m.id}|${movieResults[i]?.data?.release_date ?? ''}`)
+    .join(',')
+  useEffect(() => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    shows.forEach((s, i) => {
+      const d = showResults[i]?.data
+      if (!d) return
+      const last = d.last_episode_to_air?.air_date ?? undefined
+      const next = d.next_episode_to_air?.air_date ?? undefined
+      if (last !== s.lastAirDate || next !== s.nextAirDate) {
+        void setItemMeta(s.id, { lastAirDate: last, nextAirDate: next })
+      }
+    })
+    movies.forEach((m, i) => {
+      const rel = movieResults[i]?.data?.release_date
+      if (!rel) return
+      const last = rel <= todayStr ? rel : undefined
+      const next = rel > todayStr ? rel : undefined
+      if (last !== m.lastAirDate || next !== m.nextAirDate) {
+        void setItemMeta(m.id, { lastAirDate: last, nextAirDate: next })
+      }
+    })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showDateSig, movieDateSig])
 
   // On first load, if there's a "Recently aired" section above, scroll so the
   // first upcoming group sits at the top — Recently aired is then a scroll up.

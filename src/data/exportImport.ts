@@ -172,10 +172,34 @@ export function mergeBackups(a: BackupData, b: BackupData): BackupData {
     if (prev === undefined || t.deletedAt > prev) tombstones.set(t.id, t.deletedAt)
   }
 
+  // User-authored fields follow last-write-wins by updatedAt (ties → the copy
+  // iterated last, i.e. the remote). The TMDB-derived cache fields are filled in
+  // from whichever side has them, so a sync never drops re-derivable metadata —
+  // otherwise a title that lost the race looks un-indexed and gets re-flagged.
+  // (Indexing deliberately doesn't bump updatedAt, so the indexed copy often
+  // isn't the winner.)
   const items = new Map<string, TrackedItem>()
   for (const it of [...a.trackedItems, ...b.trackedItems]) {
     const prev = items.get(it.id)
-    if (!prev || (it.updatedAt ?? 0) >= (prev.updatedAt ?? 0)) items.set(it.id, it)
+    if (!prev) {
+      items.set(it.id, it)
+      continue
+    }
+    const winner = (it.updatedAt ?? 0) >= (prev.updatedAt ?? 0) ? it : prev
+    const loser = winner === it ? prev : it
+    items.set(it.id, {
+      ...winner,
+      imdbId: winner.imdbId ?? loser.imdbId,
+      genres: winner.genres ?? loser.genres,
+      providers: winner.providers ?? loser.providers,
+      cast: winner.cast ?? loser.cast,
+      ended: winner.ended ?? loser.ended,
+      runtime: winner.runtime ?? loser.runtime,
+      episodeCount: winner.episodeCount ?? loser.episodeCount,
+      tmdbRating: winner.tmdbRating ?? loser.tmdbRating,
+      lastAirDate: winner.lastAirDate ?? loser.lastAirDate,
+      nextAirDate: winner.nextAirDate ?? loser.nextAirDate,
+    })
   }
 
   // Drop items whose newest state predates (or equals) a deletion; keep an item
