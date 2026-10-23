@@ -9,6 +9,7 @@ import {
   supportsTriggers,
   type NotifyPermission,
 } from '../data/notifications'
+import { pushConfigured, sendTestPush, unregisterPush } from '../data/push'
 
 export default function NotificationsSettings() {
   const supported = notificationsSupported()
@@ -40,9 +41,24 @@ export default function NotificationsSettings() {
     setNotifyEnabled(false)
     setEnabled(false)
     void clearAllNotifications()
+    void unregisterPush()
+  }
+
+  const [testMsg, setTestMsg] = useState<string | null>(null)
+  async function test() {
+    setTestMsg('Sending…')
+    const status = await sendTestPush()
+    setTestMsg(
+      status === 201 || status === 200
+        ? 'Test sent — you should see a notification shortly.'
+        : status === null
+          ? 'Couldn’t send (no subscription yet — reopen the app once).'
+          : `Push service returned ${status}.`,
+    )
   }
 
   const on = enabled && perm === 'granted'
+  const background = pushConfigured()
 
   return (
     <section className="card">
@@ -66,10 +82,20 @@ export default function NotificationsSettings() {
         </>
       ) : on ? (
         <>
-          <p className="badge badge--ok">Notifications are on.</p>
-          <button className="btn btn--danger" onClick={disable}>
-            Turn off
-          </button>
+          <p className="badge badge--ok">
+            Notifications are on{background ? ' (delivered even when the app is closed)' : ''}.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn btn--danger" onClick={disable}>
+              Turn off
+            </button>
+            {background && (
+              <button className="btn btn--ghost" onClick={() => void test()}>
+                Send test
+              </button>
+            )}
+          </div>
+          {testMsg && <p className="muted" style={{ marginTop: 8 }}>{testMsg}</p>}
         </>
       ) : (
         <button className="btn" onClick={() => void enable()}>
@@ -77,11 +103,10 @@ export default function NotificationsSettings() {
         </button>
       )}
 
-      {supported && !supportsTriggers() && (
+      {supported && !background && !supportsTriggers() && (
         <p className="muted" style={{ marginTop: 10, fontSize: '0.82rem' }}>
-          Heads-up: on this platform (e.g. iPhone/iPad) web apps can’t schedule notifications in the
-          background, so these only fire while the app is open. On Android/Chrome (installed) they
-          arrive even when it’s closed.
+          Note: these fire while the app is open (including right when you reopen it near air time).
+          Background delivery for a closed app needs the push backend to be configured.
         </p>
       )}
     </section>

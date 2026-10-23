@@ -10,6 +10,7 @@ import {
   syncNotifications,
   type AiringEntry,
 } from '../data/notifications'
+import { pushConfigured, registerPush } from '../data/push'
 import type { EpisodeState } from '../data/types'
 
 const DAY = 1000 * 60 * 60 * 24
@@ -74,7 +75,11 @@ export default function NotificationScheduler() {
 
   useEffect(() => {
     if (!ready) return
-    void syncNotifications(buildNotifyGroups(entries))
+    const groups = buildNotifyGroups(entries)
+    // With a push backend: hand the schedule to the Worker (fires when closed).
+    // Otherwise: in-app timers (only while the app is open).
+    if (pushConfigured()) void registerPush(groups)
+    else void syncNotifications(groups)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, sig])
 
