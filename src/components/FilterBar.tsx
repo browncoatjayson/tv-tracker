@@ -41,20 +41,21 @@ const LEN_OPS: { value: '' | LengthConstraint['op']; label: string }[] = [
 /** The dropdown's working state: free text kept separate from each token group. */
 interface Editor {
   free: string
-  types: Set<'movie' | 'show'>
+  types: Set<'movie' | 'show' | 'sport'>
   statuses: Set<'ended' | 'ongoing'>
   released: Set<'aired' | 'upcoming'>
   genres: Set<string>
   services: Set<string>
   actor: string
   series: string
+  team: string
   lenOp: '' | LengthConstraint['op']
   lenVal: string
   /** Minimum TMDB rating 1–10 (0 = no rating filter). */
   rating: number
 }
 
-const TOKEN_RE = /^(genre|service|actor|series|type|status|released|length|rating):/i
+const TOKEN_RE = /^(genre|service|actor|series|team|type|status|released|length|rating):/i
 
 /** Split a raw query string into the dropdown's structured working state. */
 function parseForEditor(raw: string): Editor {
@@ -75,6 +76,7 @@ function parseForEditor(raw: string): Editor {
     services: new Set(p.services),
     actor: p.actors[0] ?? '',
     series: p.series[0] ?? '',
+    team: p.teams[0] ?? '',
     lenOp: len ? len.op : '',
     lenVal: len ? String(len.value) : '',
     rating: p.rating ?? 0,
@@ -93,6 +95,7 @@ function buildQuery(e: Editor): string {
   for (const s of e.services) parts.push(`service:${s}`)
   if (e.actor.trim()) parts.push(`actor:${e.actor.trim()}`)
   if (e.series.trim()) parts.push(`series:${e.series.trim()}`)
+  if (e.team.trim()) parts.push(`team:${e.team.trim()}`)
   if (e.lenOp && e.lenVal.trim() && Number.isFinite(Number(e.lenVal))) {
     parts.push(`length:${e.lenOp}${Number(e.lenVal)}`)
   }
@@ -111,6 +114,7 @@ function activeCount(raw: string): number {
     p.services.length +
     p.actors.length +
     p.series.length +
+    p.teams.length +
     p.lengths.length +
     (p.rating !== undefined ? 1 : 0)
   )
@@ -238,7 +242,7 @@ export default function FilterBar({
           <div className="filter-pop__group">
             <span className="filter-pop__label">Type</span>
             <div className="chip-row">
-              {(['movie', 'show'] as const).map((t) => (
+              {(['movie', 'show', 'sport'] as const).map((t) => (
                 <button
                   key={t}
                   type="button"
@@ -246,7 +250,7 @@ export default function FilterBar({
                   aria-pressed={ed.types.has(t)}
                   onClick={() => setEd({ ...ed, types: toggleIn(ed.types, t) })}
                 >
-                  {t === 'movie' ? 'Movies' : 'TV Shows'}
+                  {t === 'movie' ? 'Movies' : t === 'show' ? 'TV Shows' : 'Sports'}
                 </button>
               ))}
             </div>
@@ -377,6 +381,20 @@ export default function FilterBar({
               placeholder="e.g. Halloween"
               value={ed.series}
               onChange={(e) => setEd({ ...ed, series: e.target.value })}
+            />
+          </div>
+
+          <div className="filter-pop__group">
+            <label className="filter-pop__label" htmlFor="filter-team">
+              Team <span className="muted">(sports)</span>
+            </label>
+            <input
+              id="filter-team"
+              className="filter-pop__input"
+              type="text"
+              placeholder="e.g. Nebraska"
+              value={ed.team}
+              onChange={(e) => setEd({ ...ed, team: e.target.value })}
             />
           </div>
 

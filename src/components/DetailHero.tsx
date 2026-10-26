@@ -13,6 +13,8 @@ export default function DetailHero({
   tags,
   overview,
   links,
+  heroClass,
+  watermark,
 }: {
   backdrop?: string
   poster?: string
@@ -23,11 +25,20 @@ export default function DetailHero({
   /** Status / type / where-to-watch row under the genres. */
   tags?: ReactNode
   overview?: string
-  links: { imdb?: string; tmdb?: string; trakt?: string }
+  links: { imdb?: string; tmdb?: string; trakt?: string; espn?: string }
+  /** Extra modifier class on the hero section (e.g. a per-sport gradient). */
+  heroClass?: string
+  /** Faint oversized glyph in the corner (used by the sport heroes). */
+  watermark?: ReactNode
 }) {
   return (
-    <section className="hero">
+    <section className={`hero${heroClass ? ` ${heroClass}` : ''}`}>
       {backdrop && <img className="hero__backdrop" src={backdrop} alt="" />}
+      {watermark && (
+        <span className="hero__watermark" aria-hidden="true">
+          {watermark}
+        </span>
+      )}
       <div className="hero__overlay" />
       <ExternalLinks {...links} />
       <div className="hero__body">

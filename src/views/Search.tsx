@@ -33,6 +33,8 @@ import { matchesFilter, parseQuery } from '../utils/filter'
 import { hasDiscoverFilters, newReleasesParams, planDiscover, resolveProviderIds } from '../utils/discover'
 import { useFavoritePeople } from '../data/favorites'
 import { useFavoriteServices } from '../data/services'
+import { searchEspnTeams, type EspnTeamHit } from '../api/espn'
+import { addSportTeam, sportItemId } from '../data/sports'
 import FilterBar from '../components/FilterBar'
 import Recommendations from '../components/Recommendations'
 import type { MediaType } from '../data/types'
@@ -98,10 +100,26 @@ export default function Search() {
   const searchText = parsed.text
   const actorName = parsed.actors[0] // actor: switches to person-credit search
   const seriesName = parsed.series[0] // series: shows a movie franchise
+  const teamName = parsed.teams[0] // team: switches to ESPN sports-team search
 
-  // Filter-only browse: tokens but no free text / actor / series. Runs only once
-  // the user hits the play button (or Enter), since it's a heavier query.
-  const filterOnly = !searchText && !actorName && !seriesName && hasDiscoverFilters(parsed)
+  // Sports mode: a team: token, or the Sports type selected. Searches ESPN teams
+  // instead of TMDB, and replaces the usual TMDB sections.
+  const sportMode =
+    !actorName &&
+    !seriesName &&
+    (parsed.teams.length > 0 || (parsed.types.length === 1 && parsed.types[0] === 'sport'))
+  const sportQuery = teamName ?? searchText
+  const sportSearch = useQuery({
+    queryKey: ['espn-team-search', sportQuery],
+    queryFn: () => searchEspnTeams(sportQuery),
+    enabled: sportMode && sportQuery.length >= 2,
+    staleTime: HOUR,
+  })
+
+  // Filter-only browse: tokens but no free text / actor / series / team. Runs only
+  // once the user hits the play button (or Enter), since it's a heavier query.
+  const filterOnly =
+    !sportMode && !searchText && !actorName && !seriesName && hasDiscoverFilters(parsed)
   const discoverActive = filterOnly && discoverRun === query && query.length > 0
   const runDiscover = () => setDiscoverRun(query)
   // A fresh run (new filters) starts over at page 1 / first dozen.
@@ -538,6 +556,15 @@ export default function Search() {
         )}
       </FilterBar>
 
+      {sportMode ? (
+        <SportTeamResults
+          query={sportQuery}
+          hits={sportSearch.data ?? []}
+          fetching={sportSearch.isFetching}
+          trackedSet={trackedSet}
+        />
+      ) : (
+       <>
       {(isFetching || discoverFetching) && <p className="muted">Searching…</p>}
       {isError && (
         <p className="badge badge--warn">
@@ -693,6 +720,76 @@ export default function Search() {
           )}
         </section>
       )}
+       </>
+      )}
     </div>
+  )
+}
+
+/** Sports mode: ESPN team hits (one per supported league for each matched school),
+ *  linking to the team's detail page with an Add button. */
+function SportTeamResults({
+  query,
+  hits,
+  fetching,
+  trackedSet,
+}: {
+  query: string
+  hits: EspnTeamHit[]
+  fetching: boolean
+  trackedSet: Set<string>
+}) {
+  const [addingId, setAddingId] = useState<string | null>(null)
+  if (query.length < 2) {
+    return <p className="muted">Type a team name to find a team (e.g. Nebraska).</p>
+  }
+  return (
+    <>
+      {fetching && <p className="muted">Searching teams…</p>}
+      {!fetching && hits.length === 0 && <p className="muted">No teams found for “{query}”.</p>}
+      <ul className="result-list">
+        {hits.map((h) => {
+          const id = sportItemId(h.leagueKey, h.teamId)
+          const added = trackedSet.has(id)
+          const addKey = `${h.leagueKey}:${h.teamId}`
+          return (
+            <li key={addKey} className="result-item">
+              <div className="result-row">
+                <Link to={`/item/${encodeURIComponent(id)}`} className="result-row__link">
+                  {h.logo ? (
+                    <img className="result-row__poster" src={h.logo} alt="" loading="lazy" />
+                  ) : (
+                    <div className="result-row__poster result-row__poster--placeholder">
+                      {h.leagueEmoji}
+                    </div>
+                  )}
+                  <div className="result-row__info">
+                    <span className="result-row__title">{h.teamName}</span>
+                    <span className="type-badge">
+                      {h.leagueEmoji} {h.leagueLabel}
+                    </span>
+                  </div>
+                </Link>
+                <button
+                  className="btn btn--small"
+                  disabled={added || addingId === addKey}
+                  onClick={() => {
+                    setAddingId(addKey)
+                    void addSportTeam({
+                      league: h.leagueKey,
+                      teamId: h.teamId,
+                      teamName: h.teamName,
+                      logo: h.logo,
+                    }).finally(() => setAddingId(null))
+                  }}
+                >
+                  {added ? '✓ In library' : addingId === addKey ? 'Adding…' : 'Add'}
+                </button>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </>
   )
 }

@@ -9,8 +9,8 @@
 //    This makes multi-device merge (Phase 5: Google Drive sync) trivial.
 // ---------------------------------------------------------------------------
 
-/** A tracked title is either a movie or a TV show. */
-export type MediaType = 'movie' | 'show'
+/** A tracked title is a movie, a TV show, or a sports team (season of games). */
+export type MediaType = 'movie' | 'show' | 'sport'
 
 /** Where a title sits in your personal pipeline. */
 export type WatchStatus = 'watchlist' | 'watching' | 'completed' | 'dropped'
@@ -65,6 +65,18 @@ export interface TrackedItem {
   /** Set when indexing couldn't fetch TMDB data for this title, so the stats
    *  "needs indexing" prompt stops flagging it. A full rebuild retries it. */
   indexFailed?: boolean
+  /** Sports team metadata — present only when mediaType === 'sport'. Games are
+   *  tracked as "episodes" (season = year, episode = game number), so the whole
+   *  episode-tracking + sync machinery is reused. */
+  sport?: {
+    /** ESPN league key (e.g. "cfb"). */
+    league: string
+    /** ESPN team id (e.g. "158"). */
+    teamId: string
+    teamName: string
+    /** Team logo URL (full URL, not a TMDB path). */
+    logo?: string
+  }
   /** When a movie was watched (editable; supports partial precision). */
   movieWatchedAt?: number
   /** Precision of movieWatchedAt for display. */
@@ -104,6 +116,10 @@ export interface CachedEpisode {
   name: string
   /** YYYY-MM-DD, or null if unknown. */
   airDate: string | null
+  /** Sport games only: ESPN's "game finished" flag. Lets callers tell a real
+   *  upcoming game from one ESPN never marked complete even though its date
+   *  passed (see `sportAirState`). Undefined for TV episodes. */
+  completed?: boolean
 }
 
 /**

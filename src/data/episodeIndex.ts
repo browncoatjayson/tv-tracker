@@ -49,6 +49,8 @@ export interface IndexState {
 /** Whether a title is missing the backfilled stats fields (tmdbRating, and for
  *  shows episodeCount). Used to decide what the indexer should (re)process. */
 function missesStatsFields(i: TrackedItem): boolean {
+  // Sports have no TMDB data to backfill.
+  if (i.mediaType === 'sport') return false
   if (i.tmdbRating === undefined) return true
   return i.mediaType === 'show' ? i.episodeCount == null : false
 }
@@ -82,6 +84,8 @@ export function useIndexProgress(): IndexState {
 
 /** Index one title: backfill genres/providers, and (for shows) cache episodes. */
 async function indexItem(item: TrackedItem): Promise<void> {
+  // Sports carry no TMDB metadata — games are fetched from ESPN on the detail page.
+  if (item.mediaType === 'sport') return
   if (item.mediaType === 'movie') {
     // Fetch through the shared query cache (same key the detail/Upcoming views
     // use) so indexing also warms them — not just the Dexie episode cache.

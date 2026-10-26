@@ -87,10 +87,14 @@ export default function Stats() {
   const itemsById = new Map(items.map((i) => [i.id, i]))
   const shows = items.filter((i) => i.mediaType === 'show')
   const movies = items.filter((i) => i.mediaType === 'movie')
+  const sportTeams = items.filter((i) => i.mediaType === 'sport')
 
   // --- Watched episodes (shows) -------------------------------------------
   const watched = episodeStates.filter((s) => s.watched)
-  const episodesWatched = watched.length // distinct episodes
+  // Games (sport "episodes") are counted separately, not as TV episodes.
+  const isSportState = (itemId: string) => itemsById.get(itemId)?.mediaType === 'sport'
+  const episodesWatched = watched.filter((s) => !isSportState(s.itemId)).length
+  const gamesWatched = watched.filter((s) => isSportState(s.itemId)).length
   const watchedPerShow = new Map<string, number>()
   for (const s of watched) watchedPerShow.set(s.itemId, (watchedPerShow.get(s.itemId) ?? 0) + 1)
 
@@ -234,6 +238,7 @@ export default function Stats() {
           <h2 className="stats__name">{profile?.name ?? 'Your profile'}</h2>
           <p className="muted">
             {items.length} titles tracked · {shows.length} shows · {movies.length} movies
+            {sportTeams.length > 0 && ` · ${sportTeams.length} teams`}
           </p>
         </div>
       </div>
@@ -258,6 +263,9 @@ export default function Stats() {
         <StatTile value={moviesWatched.toLocaleString()} label="Movies watched" />
         <StatTile value={shows.length.toLocaleString()} label="Shows tracked" />
         <StatTile value={`${activeShows} / ${completedShows}`} label="Watching / Completed" />
+        {sportTeams.length > 0 && (
+          <StatTile value={gamesWatched.toLocaleString()} label="Games watched" />
+        )}
       </div>
 
       {/* Completion */}

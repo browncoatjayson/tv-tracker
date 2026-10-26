@@ -14,8 +14,10 @@ export interface ParsedQuery {
   actors: string[]
   /** Movie franchise names to match (e.g. "halloween"). */
   series: string[]
-  /** Normalized media types to keep: 'movie' and/or 'show'. */
-  types: ('movie' | 'show')[]
+  /** Sports team names to match (e.g. "nebraska") — only affects sport items. */
+  teams: string[]
+  /** Normalized media types to keep: 'movie', 'show', and/or 'sport'. */
+  types: ('movie' | 'show' | 'sport')[]
   /** Show airing status to keep: 'ended' and/or 'ongoing'. */
   ended: ('ended' | 'ongoing')[]
   /** Release state to keep: 'aired' (already out) and/or 'upcoming' (future). */
@@ -26,10 +28,11 @@ export interface ParsedQuery {
   rating?: number
 }
 
-function normalizeType(v: string): 'movie' | 'show' | null {
+function normalizeType(v: string): 'movie' | 'show' | 'sport' | null {
   const t = v.toLowerCase()
   if (t === 'movie' || t === 'film') return 'movie'
   if (t === 'tv' || t === 'show' || t === 'series') return 'show'
+  if (t === 'sport' || t === 'sports') return 'sport'
   return null
 }
 
@@ -39,13 +42,14 @@ export function parseQuery(raw: string): ParsedQuery {
   const services: string[] = []
   const actors: string[] = []
   const series: string[] = []
-  const types: ('movie' | 'show')[] = []
+  const teams: string[] = []
+  const types: ('movie' | 'show' | 'sport')[] = []
   const ended: ('ended' | 'ongoing')[] = []
   const released: ('aired' | 'upcoming')[] = []
   const lengths: LengthConstraint[] = []
   let rating: number | undefined
   for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
-    const m = part.match(/^(genre|service|actor|series|type|status|released|length|rating):(.+)$/i)
+    const m = part.match(/^(genre|service|actor|series|team|type|status|released|length|rating):(.+)$/i)
     if (!m) {
       text.push(part.toLowerCase())
       continue
@@ -56,6 +60,7 @@ export function parseQuery(raw: string): ParsedQuery {
     else if (key === 'service') services.push(val.toLowerCase())
     else if (key === 'actor') actors.push(val.toLowerCase())
     else if (key === 'series') series.push(val.toLowerCase())
+    else if (key === 'team') teams.push(val.toLowerCase())
     else if (key === 'type') {
       const t = normalizeType(val)
       if (t) types.push(t)
@@ -83,6 +88,7 @@ export function parseQuery(raw: string): ParsedQuery {
     services,
     actors,
     series,
+    teams,
     types,
     ended,
     released,
@@ -100,7 +106,9 @@ export interface FilterTarget {
   cast?: string[]
   /** Movie franchise / collection name (for the series: filter). */
   series?: string
-  mediaType?: 'movie' | 'show'
+  /** Sports team name (for the team: filter). */
+  team?: string
+  mediaType?: 'movie' | 'show' | 'sport'
   ended?: boolean
   /** Single-state release flag (episodes, movies, search results): has it aired /
    *  released as of today? Undefined = unknown → never filtered out. */
@@ -172,6 +180,13 @@ export function matchesFilter(target: FilterTarget, q: ParsedQuery): boolean {
   }
   for (const s of q.series) {
     if (!(target.series ?? '').toLowerCase().includes(s)) return false
+  }
+  // Team: only applies to sporting events — a team filter excludes non-sport items.
+  if (q.teams.length) {
+    if (target.mediaType !== 'sport') return false
+    for (const t of q.teams) {
+      if (!(target.team ?? '').toLowerCase().includes(t)) return false
+    }
   }
   return true
 }

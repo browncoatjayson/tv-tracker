@@ -14,10 +14,12 @@ import {
   whereToWatch,
 } from '../api/tmdb'
 import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
+import { leagueByKey } from '../api/espn'
 import { getTvDetailsCached } from '../data/episodeCache'
 import { matchesFilter, parseQuery } from '../utils/filter'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import { markMovieWatched, setItemMeta } from '../data/library'
+import { markGameWithCatchUp } from '../data/sports'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
 import { useTrackedItems } from '../hooks/useTrackedItems'
 import type { MediaType } from '../data/types'
@@ -31,6 +33,10 @@ interface FeedEntry {
   date: string // YYYY-MM-DD
   detail: string
   posterPath?: string
+  /** Full logo URL for sports (used instead of a TMDB poster path). */
+  logoUrl?: string
+  /** Sports team name (for the team: filter). */
+  team?: string
   /** Network / streaming service(s), e.g. "CBS / Paramount+". */
   where?: string
   /** Local air time (from TVmaze), e.g. "9:00 PM". */
@@ -76,6 +82,10 @@ export default function Upcoming() {
   const items = useTrackedItems()
   const episodeStates = useLiveQuery(() => db.episodeStates.toArray())
   const watchEvents = useLiveQuery(() => db.watchEvents.toArray())
+  // Cached sport games (populated when a team's season is viewed) for the feed.
+  const sportGames = useLiveQuery(() =>
+    db.episodeCache.filter((e) => e.itemId.startsWith('sport:')).toArray(),
+  )
 
   // Everything except "dropped" — a revived "completed" show still surfaces here.
   const [view, setView] = useState<'list' | 'calendar'>(() => {
@@ -252,6 +262,36 @@ export default function Upcoming() {
     }
   })
 
+  // Sports: games come from the local cache (no TMDB). A game is markable once
+  // its date has passed; we never auto catch-up (you might've missed one).
+  const sportById = new Map(tracked.filter((i) => i.mediaType === 'sport').map((i) => [i.id, i]))
+  for (const g of sportGames ?? []) {
+    if (!g.airDate) continue
+    const item = sportById.get(g.itemId)
+    if (!item) continue
+    const league = leagueByKey(item.sport?.league)
+    const base = {
+      itemId: item.id,
+      title: item.title,
+      mediaType: 'sport' as const,
+      date: g.airDate,
+      detail: g.name,
+      logoUrl: item.sport?.logo,
+      team: item.sport?.teamName,
+      where: league?.label,
+      season: g.season,
+      episode: g.episode,
+    }
+    if (g.airDate >= today) {
+      upcoming.push({ ...base, aired: false })
+    } else if (
+      inAiredWindow(g.airDate) &&
+      !watchedEpisodes.has(`${item.id}:${g.season}:${g.episode}`)
+    ) {
+      aired.push({ ...base, aired: true })
+    }
+  }
+
   upcoming.sort((a, b) => a.date.localeCompare(b.date))
   aired.sort((a, b) => a.date.localeCompare(b.date)) // oldest first, newest nearest "This week"
 
@@ -270,6 +310,7 @@ export default function Upcoming() {
         ended: e.ended,
         aired: e.aired,
         runtime: e.runtime,
+        team: e.team,
       },
       parsed,
     )
@@ -341,6 +382,8 @@ export default function Upcoming() {
   function markAiredWatched(e: FeedEntry) {
     if (e.mediaType === 'show' && e.season != null && e.episode != null) {
       void markWatchedWithCatchUp(e.itemId, e.season, e.episode)
+    } else if (e.mediaType === 'sport' && e.season != null && e.episode != null) {
+      void markGameWithCatchUp(e.itemId, e.season, e.episode)
     } else {
       void markMovieWatched(e.itemId)
     }
@@ -533,12 +576,18 @@ export default function Upcoming() {
 }
 
 function FeedPoster({ entry }: { entry: FeedEntry }) {
-  const poster = imageUrl(entry.posterPath, 'w92')
+  const poster = entry.logoUrl ?? imageUrl(entry.posterPath, 'w92')
+  const isSport = entry.mediaType === 'sport'
   return poster ? (
-    <img className="result-row__poster" src={poster} alt="" loading="lazy" />
+    <img
+      className={`result-row__poster${isSport ? ' result-row__poster--logo' : ''}`}
+      src={poster}
+      alt=""
+      loading="lazy"
+    />
   ) : (
     <div className="result-row__poster result-row__poster--placeholder">
-      {entry.mediaType === 'movie' ? '🎬' : '📺'}
+      {entry.mediaType === 'movie' ? '🎬' : isSport ? '🏅' : '📺'}
     </div>
   )
 }

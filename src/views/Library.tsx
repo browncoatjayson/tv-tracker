@@ -4,6 +4,8 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
 import { hasAired, imageUrl } from '../api/tmdb'
+import { leagueByKey } from '../api/espn'
+import { sportAirState } from '../data/sports'
 import { getTvmazeEpisodesByImdb } from '../api/tvmaze'
 import { airsToday, compactAirTime, hasAiredByTime } from '../utils/airTime'
 import { markEpisode, toggleFavorite } from '../data/library'
@@ -39,6 +41,44 @@ interface Section {
   watching?: boolean
   /** Dropped gets a "Hide" toggle so you can tuck it away. */
   dropped?: boolean
+}
+
+/** Placeholder emoji for a title (sports use their league icon). */
+function mediaEmoji(i: TrackedItem): string {
+  if (i.mediaType === 'sport') return leagueByKey(i.sport?.league)?.emoji ?? '🏅'
+  return i.mediaType === 'movie' ? '🎬' : '📺'
+}
+
+/** Card image: a team logo (full URL) for sports, else the TMDB poster. */
+function cardImg(i: TrackedItem, size?: string): string | undefined {
+  return i.mediaType === 'sport' ? i.sport?.logo : imageUrl(i.posterPath, size)
+}
+
+/** The poster artwork for a library card. Sports show the team logo over a faint
+ *  league-emoji watermark (like the detail hero) so two teams you follow in
+ *  different sports read apart at a glance; everything else is its TMDB poster. */
+function CardArt({ item }: { item: TrackedItem }) {
+  const src = cardImg(item)
+  if (item.mediaType === 'sport') {
+    const emoji = leagueByKey(item.sport?.league)?.emoji ?? '🏅'
+    return (
+      <div className="poster-card__img sport-poster">
+        <span className="sport-poster__mark" aria-hidden="true">
+          {emoji}
+        </span>
+        {src ? (
+          <img className="sport-poster__logo" src={src} alt="" loading="lazy" />
+        ) : (
+          <span className="sport-poster__logo sport-poster__logo--ph">{emoji}</span>
+        )}
+      </div>
+    )
+  }
+  return src ? (
+    <img className="poster-card__img" src={src} alt="" loading="lazy" />
+  ) : (
+    <div className="poster-card__img poster-card__img--placeholder">{mediaEmoji(item)}</div>
+  )
 }
 
 function readFlag(key: string): boolean {
@@ -166,8 +206,17 @@ export default function Library() {
   // For the Watching section's "next episode" card: cached episodes + watched
   // state for the shows currently being watched (scoped, so it stays light).
   const watchingIds = (items ?? [])
-    .filter((i) => i.status === 'watching' && i.mediaType === 'show')
+    .filter(
+      (i) => i.status === 'watching' && (i.mediaType === 'show' || i.mediaType === 'sport'),
+    )
     .map((i) => i.id)
+  // Sport items cache games across every season the user has browsed, but the
+  // Library card should only reflect the current/upcoming season — so a team
+  // whose current season is fully watched surfaces its next game, not a stale
+  // unwatched game left over from a past season.
+  const sportIds = new Set(
+    (items ?? []).filter((i) => i.mediaType === 'sport').map((i) => i.id),
+  )
   const watchingKey = watchingIds.join('|')
   const watchingEpisodes = useLiveQuery<CachedEpisode[]>(
     () =>
@@ -217,12 +266,30 @@ export default function Library() {
     arr.push(e)
     epByItem.set(e.itemId, arr)
   }
-  const sortedEps = (itemId: string): CachedEpisode[] =>
-    (epByItem.get(itemId) ?? []).slice().sort((a, b) => a.season - b.season || a.episode - b.episode)
+  const sortedEps = (itemId: string): CachedEpisode[] => {
+    const eps = (epByItem.get(itemId) ?? [])
+      .slice()
+      .sort((a, b) => a.season - b.season || a.episode - b.episode)
+    // For a team, restrict to its latest cached season (year) only.
+    if (sportIds.has(itemId) && eps.length) {
+      const latest = eps[eps.length - 1].season
+      return eps.filter((e) => e.season === latest)
+    }
+    return eps
+  }
+  // A sport game ESPN left uncompleted after its date passed can't be watched and
+  // isn't really upcoming, so it shouldn't become the "next game" card.
+  const isUnairedSportAnomaly = (itemId: string, e: CachedEpisode): boolean =>
+    sportIds.has(itemId) && sportAirState(e.airDate, e.completed) === 'unaired'
   const nextUnwatched = (itemId: string): CachedEpisode | null =>
-    sortedEps(itemId).find((e) => !watchedEpKeys.has(`${e.itemId}:${e.season}:${e.episode}`)) ?? null
+    sortedEps(itemId).find(
+      (e) =>
+        !watchedEpKeys.has(`${e.itemId}:${e.season}:${e.episode}`) &&
+        !isUnairedSportAnomaly(itemId, e),
+    ) ?? null
   // The next episode still to air — used when filtering to upcoming, so the card
   // answers "when's it back?" instead of pointing at an already-aired episode.
+  // (Past-dated sport anomalies are already excluded: their date has passed.)
   const nextUpcoming = (itemId: string): CachedEpisode | null =>
     sortedEps(itemId).find((e) => !hasAired(e.airDate)) ?? null
 
@@ -261,6 +328,7 @@ export default function Library() {
             mediaType: i.mediaType,
             ended: i.ended,
             series: i.series,
+            team: i.sport?.teamName,
             // A title can be both: a mid-run show has aired episodes (lastAirDate)
             // AND upcoming ones (nextAirDate). Unknown (not indexed) → undefined.
             releasedStates: titleReleasedStates(i),
@@ -471,13 +539,19 @@ function CollapsedList({
 
 /** A small poster + title card for the collapsed view. */
 function LibChip({ item }: { item: TrackedItem }) {
-  const poster = imageUrl(item.posterPath, 'w92')
+  const poster = cardImg(item, 'w92')
+  const isSport = item.mediaType === 'sport'
   return (
     <Link to={`/item/${encodeURIComponent(item.id)}`} className="lib-chip" title={item.title}>
       {poster ? (
-        <img className="lib-chip__img" src={poster} alt="" loading="lazy" />
+        <img
+          className={`lib-chip__img${isSport ? ' lib-chip__img--logo' : ''}`}
+          src={poster}
+          alt=""
+          loading="lazy"
+        />
       ) : (
-        <div className="lib-chip__img lib-chip__img--ph">{item.mediaType === 'movie' ? '🎬' : '📺'}</div>
+        <div className="lib-chip__img lib-chip__img--ph">{mediaEmoji(item)}</div>
       )}
       <span className="lib-chip__title">{item.title}</span>
     </Link>
@@ -597,13 +671,7 @@ function PosterGrid({ items }: { items: TrackedItem[] }) {
             className="poster-card"
             title={item.title}
           >
-            {imageUrl(item.posterPath) ? (
-              <img className="poster-card__img" src={imageUrl(item.posterPath)} alt="" loading="lazy" />
-            ) : (
-              <div className="poster-card__img poster-card__img--placeholder">
-                {item.mediaType === 'movie' ? '🎬' : '📺'}
-              </div>
-            )}
+            <CardArt item={item} />
             <span className="poster-card__title">{item.title}</span>
             {item.userRating !== undefined && (
               <span className="poster-card__rating">★ {item.userRating}</span>
@@ -636,18 +704,13 @@ function WatchingGrid({
   return (
     <ul className="poster-grid">
       {items.map((item) => {
-        const next = item.mediaType === 'show' ? pickNextEp(item.id) : null
+        const next =
+          item.mediaType === 'show' || item.mediaType === 'sport' ? pickNextEp(item.id) : null
         const to = `/item/${encodeURIComponent(item.id)}`
         return (
           <li key={item.id} className="poster-cell watching-cell">
             <Link to={to} className="watching-art" aria-label={item.title} title={item.title}>
-              {imageUrl(item.posterPath) ? (
-                <img className="poster-card__img" src={imageUrl(item.posterPath)} alt="" loading="lazy" />
-              ) : (
-                <div className="poster-card__img poster-card__img--placeholder">
-                  {item.mediaType === 'movie' ? '🎬' : '📺'}
-                </div>
-              )}
+              <CardArt item={item} />
             </Link>
             <button
               className={`fav-star${item.favorite ? ' fav-star--on' : ''}`}
@@ -685,9 +748,15 @@ function NextEpCard({
   ep: CachedEpisode
   airstamp?: string
 }) {
-  // Prefer the precise air time: an episode airing later today hasn't aired yet.
-  const aired = hasAiredByTime(ep.airDate, airstamp)
-  const label = `S${ep.season}E${ep.episode}${ep.name ? ` · ${ep.name}` : ''}`
+  // For a sport, use ESPN's completed flag (a past-dated game ESPN never finished
+  // is "unaired", not watchable); for a show, prefer the precise air time.
+  const isSport = item.mediaType === 'sport'
+  const sportState = isSport ? sportAirState(ep.airDate, ep.completed) : null
+  const aired = isSport ? sportState === 'aired' : hasAiredByTime(ep.airDate, airstamp)
+  const label =
+    isSport
+      ? ep.name || 'Next game'
+      : `S${ep.season}E${ep.episode}${ep.name ? ` · ${ep.name}` : ''}`
   return (
     <div className="next-ep">
       <span className="next-ep__label" title={label}>
@@ -702,6 +771,10 @@ function NextEpCard({
         >
           ✓
         </button>
+      ) : sportState === 'unaired' ? (
+        <span className="next-ep__date next-ep__date--unaired" title="ESPN hasn’t posted a result">
+          Unaired · {ep.airDate}
+        </span>
       ) : (
         <span className="next-ep__date">{formatNextAir(ep.airDate, airstamp)}</span>
       )}
