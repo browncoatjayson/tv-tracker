@@ -5,6 +5,7 @@ import TraktConnect from '../components/TraktConnect'
 import ImportTracker from '../components/ImportTracker'
 import EpisodeIndex from '../components/EpisodeIndex'
 import NotificationsSettings from '../components/NotificationsSettings'
+import FavoriteServicesSettings from '../components/FavoriteServicesSettings'
 import ResetAccount from '../components/ResetAccount'
 
 export default function Settings() {
@@ -46,6 +47,8 @@ export default function Settings() {
       <EpisodeIndex />
 
       <NotificationsSettings />
+
+      <FavoriteServicesSettings />
 
       <section className="card">
         <h2>Backup &amp; restore</h2>

@@ -2,7 +2,9 @@ import { useEffect, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
+import { imageUrl } from '../api/tmdb'
 import { db } from '../data/db'
+import { useFavoritePeople } from '../data/favorites'
 import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
 import { LAST_EXPORT_KEY } from '../data/exportImport'
 import { itemNeedsIndex, startIndexing, useIndexProgress } from '../data/episodeIndex'
@@ -41,6 +43,7 @@ export default function Stats() {
   const items = useLiveQuery(() => db.trackedItems.toArray())
   const episodeStates = useLiveQuery(() => db.episodeStates.toArray())
   const watchEvents = useLiveQuery(() => db.watchEvents.toArray())
+  const favoriteActors = useFavoritePeople()
 
   const [profile, setProfile] = useState<GoogleProfile | null>(getGoogleProfile())
   useEffect(() => {
@@ -318,6 +321,33 @@ export default function Stats() {
               </li>
             ))}
           </ul>
+        </section>
+      )}
+
+      {/* Favorite actors */}
+      {favoriteActors && favoriteActors.length > 0 && (
+        <section className="card">
+          <h3 className="section-title">Favorite actors</h3>
+          <div className="fav-actors">
+            {favoriteActors.map((p) => {
+              const photo = imageUrl(p.profilePath ?? undefined, 'w185')
+              return (
+                <Link
+                  key={p.id}
+                  to={`/search?q=${encodeURIComponent(`actor:${p.name}`)}`}
+                  className="fav-actor"
+                  title={p.name}
+                >
+                  {photo ? (
+                    <img className="fav-actor__photo" src={photo} alt="" loading="lazy" />
+                  ) : (
+                    <span className="fav-actor__photo fav-actor__photo--ph">👤</span>
+                  )}
+                  <span className="fav-actor__name">{p.name}</span>
+                </Link>
+              )
+            })}
+          </div>
         </section>
       )}
 

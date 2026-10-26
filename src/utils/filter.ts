@@ -12,6 +12,8 @@ export interface ParsedQuery {
   genres: string[]
   services: string[]
   actors: string[]
+  /** Movie franchise names to match (e.g. "halloween"). */
+  series: string[]
   /** Normalized media types to keep: 'movie' and/or 'show'. */
   types: ('movie' | 'show')[]
   /** Show airing status to keep: 'ended' and/or 'ongoing'. */
@@ -20,6 +22,8 @@ export interface ParsedQuery {
   released: ('aired' | 'upcoming')[]
   /** Runtime (minutes) constraints, e.g. {op:'<', value:30}. */
   lengths: LengthConstraint[]
+  /** Minimum TMDB rating (0–10) to keep, e.g. 5 keeps ★5 and up. */
+  rating?: number
 }
 
 function normalizeType(v: string): 'movie' | 'show' | null {
@@ -34,12 +38,14 @@ export function parseQuery(raw: string): ParsedQuery {
   const genres: string[] = []
   const services: string[] = []
   const actors: string[] = []
+  const series: string[] = []
   const types: ('movie' | 'show')[] = []
   const ended: ('ended' | 'ongoing')[] = []
   const released: ('aired' | 'upcoming')[] = []
   const lengths: LengthConstraint[] = []
+  let rating: number | undefined
   for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
-    const m = part.match(/^(genre|service|actor|type|status|released|length):(.+)$/i)
+    const m = part.match(/^(genre|service|actor|series|type|status|released|length|rating):(.+)$/i)
     if (!m) {
       text.push(part.toLowerCase())
       continue
@@ -49,6 +55,7 @@ export function parseQuery(raw: string): ParsedQuery {
     if (key === 'genre') genres.push(val.toLowerCase())
     else if (key === 'service') services.push(val.toLowerCase())
     else if (key === 'actor') actors.push(val.toLowerCase())
+    else if (key === 'series') series.push(val.toLowerCase())
     else if (key === 'type') {
       const t = normalizeType(val)
       if (t) types.push(t)
@@ -60,13 +67,28 @@ export function parseQuery(raw: string): ParsedQuery {
       const v = val.toLowerCase()
       if (v === 'aired' || v === 'released' || v === 'out') released.push('aired')
       else if (v === 'upcoming' || v === 'unaired' || v === 'unreleased') released.push('upcoming')
-    } else {
+    } else if (key === 'length') {
       // length: optional operator + number of minutes.
       const lm = val.match(/^(<=|>=|<|>|=)?\s*(\d+)$/)
       if (lm) lengths.push({ op: (lm[1] as LengthConstraint['op']) || '=', value: Number(lm[2]) })
+    } else {
+      // rating: minimum TMDB score (1–10); accepts a decimal like 7.5.
+      const n = Number(val)
+      if (Number.isFinite(n) && n > 0) rating = Math.min(10, n)
     }
   }
-  return { text: text.join(' ').trim(), genres, services, actors, types, ended, released, lengths }
+  return {
+    text: text.join(' ').trim(),
+    genres,
+    services,
+    actors,
+    series,
+    types,
+    ended,
+    released,
+    lengths,
+    rating,
+  }
 }
 
 export interface FilterTarget {
@@ -76,6 +98,8 @@ export interface FilterTarget {
   genres?: string[]
   providers?: string[]
   cast?: string[]
+  /** Movie franchise / collection name (for the series: filter). */
+  series?: string
   mediaType?: 'movie' | 'show'
   ended?: boolean
   /** Single-state release flag (episodes, movies, search results): has it aired /
@@ -86,6 +110,8 @@ export interface FilterTarget {
    *  Undefined = unknown → never filtered out. */
   releasedStates?: ('aired' | 'upcoming')[]
   runtime?: number
+  /** TMDB average score 0–10 (for the rating: filter). Undefined = unknown. */
+  rating?: number
 }
 
 /** The release states a target belongs to, or undefined if unknown. */
@@ -131,6 +157,10 @@ export function matchesFilter(target: FilterTarget, q: ParsedQuery): boolean {
   for (const l of q.lengths) {
     if (target.runtime === undefined || !runtimeSatisfies(target.runtime, l)) return false
   }
+  // Minimum rating: an unknown rating can't be confirmed at/above, so it's hidden.
+  if (q.rating !== undefined && (target.rating === undefined || target.rating < q.rating)) {
+    return false
+  }
   for (const g of q.genres) {
     if (!(target.genres ?? []).some((x) => x.toLowerCase().includes(g))) return false
   }
@@ -139,6 +169,9 @@ export function matchesFilter(target: FilterTarget, q: ParsedQuery): boolean {
   }
   for (const a of q.actors) {
     if (!(target.cast ?? []).some((x) => x.toLowerCase().includes(a))) return false
+  }
+  for (const s of q.series) {
+    if (!(target.series ?? '').toLowerCase().includes(s)) return false
   }
   return true
 }

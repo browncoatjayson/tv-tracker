@@ -34,7 +34,9 @@ self.addEventListener('push', (event) => {
       const url = `${self.registration.scope}#/upcoming`
       const groups = await readPushGroups()
       const now = Date.now()
-      const due = groups.filter((g) => g.fireAt <= now && g.fireAt > now - 20 * 60 * 1000)
+      // Window matches the push TTL so a slightly-delayed delivery still shows the
+      // real content rather than the generic fallback.
+      const due = groups.filter((g) => g.fireAt <= now && g.fireAt > now - 35 * 60 * 1000)
       if (due.length === 0) {
         // Keep the browser's userVisibleOnly promise even if we have no content.
         await self.registration.showNotification('New episodes starting soon', {

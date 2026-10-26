@@ -84,6 +84,12 @@ export interface TmdbSearchResult {
   poster_path?: string | null
   overview?: string
   genre_ids?: number[]
+  /** TMDB average score 0–10. */
+  vote_average?: number
+  /** Number of votes behind vote_average (used to filter out obscure credits). */
+  vote_count?: number
+  /** TMDB popularity score (Discover's default sort). */
+  popularity?: number
   /** Person-credit results only: this specific credit's id (for episode lookups). */
   credit_id?: string
   /** Person-credit results only: how many episodes the person appeared in. */
@@ -124,6 +130,51 @@ export async function searchMulti(query: string): Promise<TmdbMediaResult[]> {
   return data.results.filter(
     (r): r is TmdbMediaResult => r.media_type === 'movie' || r.media_type === 'tv',
   )
+}
+
+// --- Discover (filter-only browsing) -----------------------------------------
+// TMDB's /discover endpoints do the heavy lifting server-side: they filter,
+// sort, and paginate (20 per page), so a filter-only search never has to pull
+// and sort a huge result set on the client — it fetches only the page it shows.
+
+export interface DiscoverResponse {
+  results: TmdbMediaResult[]
+  total_pages: number
+  total_results: number
+}
+
+/** Run /discover/{movie|tv} with raw TMDB params for one page (media_type added). */
+export async function discover(
+  mediaType: 'movie' | 'tv',
+  params: Record<string, string>,
+  page = 1,
+): Promise<DiscoverResponse> {
+  const data = await tmdbGet<{
+    results: TmdbSearchResult[]
+    total_pages: number
+    total_results: number
+  }>(`/discover/${mediaType}`, { ...params, page: String(page), include_adult: 'false' })
+  return {
+    results: data.results.map((r) => ({ ...r, media_type: mediaType })),
+    total_pages: data.total_pages,
+    total_results: data.total_results,
+  }
+}
+
+export interface TmdbProvider {
+  provider_id: number
+  provider_name: string
+}
+
+/** Streaming providers available in a region, for mapping service names -> ids. */
+export async function getWatchProviders(
+  mediaType: 'movie' | 'tv',
+  region = 'US',
+): Promise<TmdbProvider[]> {
+  const data = await tmdbGet<{ results: TmdbProvider[] }>(`/watch/providers/${mediaType}`, {
+    watch_region: region,
+  })
+  return data.results ?? []
 }
 
 /** Find a person by name; returns the best-match TMDB person id, or null. */
@@ -269,7 +320,7 @@ export interface TmdbWatchProviders {
 
 /** The minimal shape {@link whereToWatch} needs (satisfied by TV and movie details). */
 export interface TmdbCredits {
-  cast?: { name: string; character?: string; order?: number; profile_path?: string | null }[]
+  cast?: { id?: number; name: string; character?: string; order?: number; profile_path?: string | null }[]
 }
 
 export interface WatchInfo {
@@ -407,6 +458,18 @@ export async function getRecommendations(
   return data.results ?? []
 }
 
+/** Trending titles for the window (default this week) — TMDB's "Top 10"-style
+ *  list of what's hot right now. */
+export async function getTrending(
+  mediaType: 'movie' | 'tv',
+  timeWindow: 'day' | 'week' = 'week',
+): Promise<TmdbRecommendation[]> {
+  const data = await tmdbGet<{ results?: TmdbRecommendation[] }>(
+    `/trending/${mediaType}/${timeWindow}`,
+  )
+  return (data.results ?? []).map((r) => ({ ...r, media_type: mediaType }))
+}
+
 export async function getTvDetails(tmdbId: number): Promise<TmdbTvDetails> {
   return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, { append_to_response: 'watch/providers,credits' })
 }
@@ -425,10 +488,45 @@ export interface TmdbMovieDetails {
   backdrop_path?: string | null
   credits?: TmdbCredits
   'watch/providers'?: TmdbWatchProviders
+  /** The movie franchise this title belongs to, if any (e.g. "Halloween Collection"). */
+  belongs_to_collection?: { id: number; name: string; poster_path?: string | null } | null
 }
 
 export async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails> {
   return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`, { append_to_response: 'watch/providers,credits' })
+}
+
+/** A single entry in a movie collection (franchise). */
+export interface TmdbCollectionPart {
+  id: number
+  title: string
+  poster_path?: string | null
+  release_date?: string | null
+}
+
+export interface TmdbCollection {
+  id: number
+  name: string
+  parts: TmdbCollectionPart[]
+}
+
+/** A movie franchise's entries, sorted oldest-first by release date. */
+export async function getCollection(collectionId: number): Promise<TmdbCollection> {
+  const data = await tmdbGet<TmdbCollection>(`/collection/${collectionId}`)
+  const parts = [...(data.parts ?? [])].sort((a, b) =>
+    (a.release_date ?? '9999').localeCompare(b.release_date ?? '9999'),
+  )
+  return { id: data.id, name: data.name, parts }
+}
+
+/** Resolve a franchise name (e.g. "Halloween") to its films, release-ordered. */
+export async function getSeriesByName(name: string): Promise<TmdbCollectionPart[]> {
+  const data = await tmdbGet<{ results?: { id: number }[] }>('/search/collection', {
+    query: name.trim(),
+  })
+  const first = data.results?.[0]
+  if (!first) return []
+  return (await getCollection(first.id)).parts
 }
 
 /**
@@ -476,7 +574,7 @@ export interface TmdbEpisode {
   runtime: number | null
   still_path?: string | null
   vote_average?: number
-  guest_stars?: { name: string; character?: string }[]
+  guest_stars?: { id?: number; name: string; character?: string }[]
 }
 
 export async function getSeasonEpisodes(
@@ -488,6 +586,7 @@ export async function getSeasonEpisodes(
 }
 
 export interface TmdbCredit {
+  id?: number
   name: string
   character?: string
   profile_path?: string | null

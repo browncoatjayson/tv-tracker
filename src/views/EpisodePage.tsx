@@ -1,4 +1,3 @@
-import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useParams } from 'react-router-dom'
@@ -19,7 +18,7 @@ import { useShowAirstamps } from '../hooks/useShowAirstamps'
 import ExternalLinks from '../components/ExternalLinks'
 import { WherePills } from '../components/DetailHero'
 import CastRow from '../components/CastRow'
-import RatingStars from '../components/RatingStars'
+import RatingRow from '../components/RatingRow'
 import Reviews from '../components/Reviews'
 
 const HOUR = 1000 * 60 * 60
@@ -41,7 +40,6 @@ export default function EpisodePage() {
     Number.isFinite(seasonNum) &&
     Number.isFinite(episodeNum)
 
-  const [editingRating, setEditingRating] = useState(false)
 
   const epQuery = useQuery({
     queryKey: ['episode', tmdbId, seasonNum, episodeNum],
@@ -179,6 +177,50 @@ export default function EpisodePage() {
         </div>
       </section>
 
+      <section className="detail-actions">
+        {inLibrary && (
+          <div className="episode-watch">
+            <button
+              className="btn"
+              disabled={!aired}
+              onClick={() =>
+                void (watched
+                  ? markEpisode(itemId, seasonNum, episodeNum, false)
+                  : markWatchedWithCatchUp(itemId, seasonNum, episodeNum))
+              }
+            >
+              {watched ? '✓ Watched' : 'Mark as watched'}
+            </button>
+            {watched && (
+              <label className="episode__watched">
+                <span className="muted">Watched on</span>
+                <input
+                  type="date"
+                  value={epState?.watchedAt ? localDate(epState.watchedAt) : ''}
+                  onChange={(e) => {
+                    if (!e.target.value) return
+                    void setEpisodeWatchedDate(
+                      itemId,
+                      seasonNum,
+                      episodeNum,
+                      new Date(`${e.target.value}T12:00:00`).getTime(),
+                    )
+                  }}
+                />
+              </label>
+            )}
+          </div>
+        )}
+        <RatingRow
+          userRating={epState?.userRating}
+          average={average}
+          canRate={inLibrary}
+          emptyLabel="Add the show to rate"
+          onPick={(n) => void setEpisodeRating(itemId, seasonNum, episodeNum, n)}
+          onClear={() => void setEpisodeRating(itemId, seasonNum, episodeNum, undefined)}
+        />
+      </section>
+
       {cast.length > 0 ? (
         <CastRow
           title="Cast"
@@ -192,43 +234,7 @@ export default function EpisodePage() {
       )}
 
       <section className="section">
-        <h3 className="section-title">Ratings &amp; extras</h3>
-        <div className="ratings-row">
-          <div className="rating-col">
-            <span className="rating-col__label">Your rating</span>
-            {!inLibrary ? (
-              <span className="muted">Add the show to rate</span>
-            ) : epState?.userRating !== undefined && !editingRating ? (
-              <span className="rating-value">
-                ★ {epState.userRating}/10{' '}
-                <button className="link-btn" onClick={() => setEditingRating(true)}>
-                  revise
-                </button>
-              </span>
-            ) : (
-              <RatingStars
-                value={epState?.userRating}
-                onPick={(n) => {
-                  void setEpisodeRating(itemId, seasonNum, episodeNum, n)
-                  setEditingRating(false)
-                }}
-                onClear={
-                  epState?.userRating !== undefined
-                    ? () => {
-                        void setEpisodeRating(itemId, seasonNum, episodeNum, undefined)
-                        setEditingRating(false)
-                      }
-                    : undefined
-                }
-              />
-            )}
-          </div>
-          <div className="rating-col">
-            <span className="rating-col__label">Average</span>
-            <span className="rating-value">{average}</span>
-          </div>
-        </div>
-
+        <h3 className="section-title">Extras</h3>
         {gallery.length > 0 && (
           <div className="gallery">
             {gallery.map((img) => (
@@ -259,40 +265,6 @@ export default function EpisodePage() {
           </details>
         )}
       </section>
-
-      {inLibrary && (
-        <section className="episode-watch">
-          <button
-            className="btn"
-            disabled={!aired}
-            onClick={() =>
-              void (watched
-                ? markEpisode(itemId, seasonNum, episodeNum, false)
-                : markWatchedWithCatchUp(itemId, seasonNum, episodeNum))
-            }
-          >
-            {watched ? '✓ Watched' : 'Mark as watched'}
-          </button>
-          {watched && (
-            <label className="episode__watched">
-              <span className="muted">Watched on</span>
-              <input
-                type="date"
-                value={epState?.watchedAt ? localDate(epState.watchedAt) : ''}
-                onChange={(e) => {
-                  if (!e.target.value) return
-                  void setEpisodeWatchedDate(
-                    itemId,
-                    seasonNum,
-                    episodeNum,
-                    new Date(`${e.target.value}T12:00:00`).getTime(),
-                  )
-                }}
-              />
-            </label>
-          )}
-        </section>
-      )}
 
       <Reviews target={{ mediaType: 'show', tmdbId, season: seasonNum, episode: episodeNum }} poweredBy />
     </div>

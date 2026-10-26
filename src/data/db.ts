@@ -1,5 +1,13 @@
 import Dexie, { type Table } from 'dexie'
-import type { CachedEpisode, EpisodeState, TrackedItem, Tombstone, WatchEvent } from './types'
+import type {
+  CachedEpisode,
+  EpisodeState,
+  FavoritePerson,
+  FavoriteService,
+  TrackedItem,
+  Tombstone,
+  WatchEvent,
+} from './types'
 
 // ---------------------------------------------------------------------------
 // IndexedDB (via Dexie) is our source of truth on each device.
@@ -18,6 +26,8 @@ export class TvTrackerDB extends Dexie {
   episodeStates!: Table<EpisodeState, string>
   episodeCache!: Table<CachedEpisode, string>
   tombstones!: Table<Tombstone, string>
+  favoritePeople!: Table<FavoritePerson, number>
+  favoriteServices!: Table<FavoriteService, string>
 
   constructor() {
     super('tvtracker')
@@ -34,6 +44,32 @@ export class TvTrackerDB extends Dexie {
     this.version(3).stores({
       tombstones: 'id, deletedAt',
     })
+    // v4: starred actors (favorite people).
+    this.version(4).stores({
+      favoritePeople: 'id, updatedAt, removed',
+    })
+    // v5: favorite streaming services (synced). Migrate any that were previously
+    // kept in localStorage so the preference isn't lost on upgrade.
+    this.version(5)
+      .stores({
+        favoriteServices: 'id, updatedAt, removed',
+      })
+      .upgrade(async (tx) => {
+        try {
+          const raw = localStorage.getItem('tvtracker.favoriteServices')
+          const vals: unknown = raw ? JSON.parse(raw) : []
+          if (Array.isArray(vals) && vals.length) {
+            const now = Date.now()
+            await tx.table('favoriteServices').bulkPut(
+              vals
+                .filter((v): v is string => typeof v === 'string')
+                .map((v) => ({ id: v, label: v, addedAt: now, updatedAt: now, removed: false })),
+            )
+          }
+        } catch {
+          // best-effort migration; ignore
+        }
+      })
   }
 }
 

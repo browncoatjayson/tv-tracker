@@ -54,13 +54,13 @@ export default function MovieWatch({ item }: { item: TrackedItem }) {
   }
 
   return (
-    <section className="movie-watch">
+    <div className="movie-watch">
       <button className="btn" onClick={() => void markMovieWatched(item.id, count > 0)}>
         {count === 0 ? 'Mark as watched' : 'Log a rewatch'}
       </button>
 
       {count > 0 && (
-        <>
+        <div className="movie-watch__info">
           <p className="muted movie-watch__count">
             Watched {count} {count === 1 ? 'time' : 'times'}
             {item.movieWatchedAt && <> · last on {formatWatched(item.movieWatchedAt, precision)}</>}
@@ -79,8 +79,8 @@ export default function MovieWatch({ item }: { item: TrackedItem }) {
               }}
             />
           </label>
-        </>
+        </div>
       )}
-    </section>
+    </div>
   )
 }

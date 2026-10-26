@@ -22,11 +22,12 @@ const STATUS_LABEL: Record<WatchStatus, string> = {
   dropped: 'Dropped',
 }
 
-type SortKey = 'title' | 'premiere' | 'lastEpisode'
+type SortKey = 'title' | 'premiere' | 'lastEpisode' | 'rating'
 const SORT_LABEL: Record<SortKey, string> = {
   title: 'Title (A–Z)',
   premiere: 'Premiere date (newest)',
   lastEpisode: 'Last episode date (newest)',
+  rating: 'Rating (highest)',
 }
 
 /** One rendered group of titles (a status, or Favorites). */
@@ -101,6 +102,10 @@ function comparator(sort: SortKey): (a: TrackedItem, b: TrackedItem) => number {
         return a.title.localeCompare(b.title)
       }
     }
+    case 'rating':
+      // Highest TMDB rating first; unrated titles sort to the end, alphabetically.
+      return (a, b) =>
+        (b.tmdbRating ?? -Infinity) - (a.tmdbRating ?? -Infinity) || a.title.localeCompare(b.title)
     default:
       return (a, b) => a.title.localeCompare(b.title)
   }
@@ -112,7 +117,7 @@ export default function Library() {
   const [sort, setSort] = useState<SortKey>(() => {
     try {
       const v = localStorage.getItem('tvtracker.librarySort')
-      if (v === 'title' || v === 'premiere' || v === 'lastEpisode') return v
+      if (v === 'title' || v === 'premiere' || v === 'lastEpisode' || v === 'rating') return v
     } catch {
       // ignore
     }
@@ -255,10 +260,12 @@ export default function Library() {
             cast: i.cast,
             mediaType: i.mediaType,
             ended: i.ended,
+            series: i.series,
             // A title can be both: a mid-run show has aired episodes (lastAirDate)
             // AND upcoming ones (nextAirDate). Unknown (not indexed) → undefined.
             releasedStates: titleReleasedStates(i),
             runtime: i.runtime,
+            rating: i.tmdbRating,
           },
           parsed,
         ),
@@ -303,6 +310,7 @@ export default function Library() {
               ended: it.ended,
               aired: hasAired(e.airDate),
               runtime: it.runtime,
+              rating: it.tmdbRating,
             },
             { ...parsed, text: '' },
           )

@@ -3,12 +3,17 @@ import { useQueries, useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useSearchParams } from 'react-router-dom'
 import {
+  discover,
   getCreditEpisodes,
   getGenreMap,
   getImdbId,
   getMovieDetails,
   getPersonCredits,
+  getRecommendations,
+  getSeriesByName,
+  getTrending,
   getTvDetails,
+  getWatchProviders,
   hasTmdbToken,
   imageUrl,
   isEndedStatus,
@@ -18,13 +23,18 @@ import {
   watchNames,
   type CreditEpisode,
   type TmdbMediaResult,
+  type TmdbRecommendation,
 } from '../api/tmdb'
 import { db, itemKey } from '../data/db'
 import { addItem } from '../data/library'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import { matchesFilter, parseQuery } from '../utils/filter'
+import { hasDiscoverFilters, newReleasesParams, planDiscover, resolveProviderIds } from '../utils/discover'
+import { useFavoritePeople } from '../data/favorites'
+import { useFavoriteServices } from '../data/services'
 import FilterBar from '../components/FilterBar'
+import Recommendations from '../components/Recommendations'
 import type { MediaType } from '../data/types'
 
 const HOUR = 1000 * 60 * 60
@@ -61,6 +71,11 @@ export default function Search() {
   const [addingId, setAddingId] = useState<number | null>(null)
   const [visibleCount, setVisibleCount] = useState(PAGE)
   const [loadingMore, setLoadingMore] = useState(false)
+  // Filter-only "discover" browse (no title typed): run on demand via the play
+  // button / Enter. `discoverRun` holds the query that was last run.
+  const [discoverRun, setDiscoverRun] = useState('')
+  const [discoverPages, setDiscoverPages] = useState(1)
+  const [discoverVisible, setDiscoverVisible] = useState(PAGE)
 
   // Prefill from a ?q= link (e.g. the cast links on the detail page).
   const [searchParams] = useSearchParams()
@@ -82,11 +97,23 @@ export default function Search() {
   const parsed = parseQuery(query)
   const searchText = parsed.text
   const actorName = parsed.actors[0] // actor: switches to person-credit search
+  const seriesName = parsed.series[0] // series: shows a movie franchise
+
+  // Filter-only browse: tokens but no free text / actor / series. Runs only once
+  // the user hits the play button (or Enter), since it's a heavier query.
+  const filterOnly = !searchText && !actorName && !seriesName && hasDiscoverFilters(parsed)
+  const discoverActive = filterOnly && discoverRun === query && query.length > 0
+  const runDiscover = () => setDiscoverRun(query)
+  // A fresh run (new filters) starts over at page 1 / first dozen.
+  useEffect(() => {
+    setDiscoverPages(1)
+    setDiscoverVisible(PAGE)
+  }, [discoverRun])
 
   const textQuery = useQuery({
     queryKey: ['search', searchText],
     queryFn: () => searchMulti(searchText),
-    enabled: hasTmdbToken() && !actorName && searchText.length > 0,
+    enabled: hasTmdbToken() && !actorName && !seriesName && searchText.length > 0,
   })
   const actorQuery = useQuery({
     queryKey: ['actor', actorName],
@@ -94,13 +121,29 @@ export default function Search() {
       const personId = await searchPerson(actorName)
       return personId ? getPersonCredits(personId) : []
     },
-    enabled: hasTmdbToken() && !!actorName,
+    enabled: hasTmdbToken() && !!actorName && !seriesName,
+  })
+  const seriesQuery = useQuery({
+    queryKey: ['series-search', seriesName],
+    queryFn: async (): Promise<TmdbMediaResult[]> => {
+      const parts = await getSeriesByName(seriesName)
+      return parts.map((p) => ({
+        id: p.id,
+        media_type: 'movie',
+        title: p.title,
+        poster_path: p.poster_path,
+        release_date: p.release_date ?? undefined,
+      }))
+    },
+    enabled: hasTmdbToken() && !!seriesName,
+    staleTime: HOUR,
   })
 
-  const allResults = actorName ? actorQuery.data : textQuery.data
-  const isFetching = actorName ? actorQuery.isFetching : textQuery.isFetching
-  const isError = actorName ? actorQuery.isError : textQuery.isError
-  const error = actorName ? actorQuery.error : textQuery.error
+  const active = seriesName ? seriesQuery : actorName ? actorQuery : textQuery
+  const allResults = active.data
+  const isFetching = active.isFetching
+  const isError = active.isError
+  const error = active.error
 
   // Genre id -> name maps (so genre: tokens can match search results).
   const { data: genreMap } = useQuery({
@@ -113,6 +156,234 @@ export default function Search() {
     const map = r.media_type === 'tv' ? genreMap?.tv : genreMap?.movie
     return (r.genre_ids ?? []).map((id) => map?.[id]).filter((n): n is string => Boolean(n))
   }
+
+  // --- Top 10 this week -------------------------------------------------------
+  // Shown below the results. A Top list is hidden when its type is filtered out
+  // (e.g. type:movie hides Top Shows). Only the shown lists are fetched.
+  const showMoviesTop = parsed.types.length === 0 || parsed.types.includes('movie')
+  const showShowsTop = parsed.types.length === 0 || parsed.types.includes('show')
+  const SIX_HOURS = HOUR * 6
+  const trendingMovies = useQuery({
+    queryKey: ['trending', 'movie'],
+    queryFn: () => getTrending('movie'),
+    staleTime: SIX_HOURS,
+    enabled: hasTmdbToken() && showMoviesTop,
+  })
+  const trendingShows = useQuery({
+    queryKey: ['trending', 'tv'],
+    queryFn: () => getTrending('tv'),
+    staleTime: SIX_HOURS,
+    enabled: hasTmdbToken() && showShowsTop,
+  })
+
+  // Favorite services drive the "New on Your Services" row (recent releases now
+  // streaming on them). Needs the provider id maps, fetched below.
+  const favServices = useFavoriteServices()
+  const newStreamingOn = favServices.length > 0
+
+  // --- Recommended for you ----------------------------------------------------
+  // Aggregate TMDB "recommendations" from the titles you've rated highly, tally
+  // them (weighted by your rating), drop anything already tracked, and surface
+  // the most-recommended. It needs a few ratings to be meaningful, so it stays
+  // hidden until then — the Top 10 lists cover the cold start.
+  const libraryItems = useLiveQuery(() => db.trackedItems.toArray(), [])
+  const ratedCount = (libraryItems ?? []).filter((i) => i.userRating !== undefined).length
+  const recSeeds = (libraryItems ?? [])
+    .filter((i) => (i.userRating ?? 0) >= 6)
+    .sort((a, b) => (b.userRating ?? 0) - (a.userRating ?? 0))
+    .slice(0, 8)
+  const recommendOn = ratedCount >= 3 && recSeeds.length >= 1
+  const recSeedQueries = useQueries({
+    queries: recSeeds.map((s) => {
+      const apiType = s.mediaType === 'show' ? 'tv' : 'movie'
+      return {
+        queryKey: ['recommendations', apiType, s.tmdbId],
+        queryFn: () => getRecommendations(apiType, s.tmdbId),
+        staleTime: SIX_HOURS,
+        enabled: hasTmdbToken() && recommendOn,
+      }
+    }),
+  })
+  const recommendedForYou: TmdbRecommendation[] = []
+  if (recommendOn) {
+    const scored = new Map<string, { rec: TmdbRecommendation; score: number }>()
+    recSeedQueries.forEach((q, i) => {
+      const weight = recSeeds[i].userRating ?? 6
+      for (const r of q.data ?? []) {
+        if (!r.poster_path) continue
+        const mt = r.media_type ?? (recSeeds[i].mediaType === 'show' ? 'tv' : 'movie')
+        // Respect the page's type filter (same as the Top 10 lists).
+        if (mt === 'movie' && !showMoviesTop) continue
+        if (mt === 'tv' && !showShowsTop) continue
+        // Skip anything already in the library.
+        if (trackedSet.has(itemKey(mt === 'tv' ? 'show' : 'movie', r.id))) continue
+        const key = `${mt}:${r.id}`
+        const prev = scored.get(key)
+        if (prev) prev.score += weight
+        else scored.set(key, { rec: { ...r, media_type: mt }, score: weight })
+      }
+    })
+    recommendedForYou.push(
+      ...[...scored.values()].sort((a, b) => b.score - a.score).map((e) => e.rec),
+    )
+  }
+  const hasRecommended = recommendOn && recommendedForYou.length > 0
+
+  // --- Starring your favorites ------------------------------------------------
+  // Titles featuring your starred actors that you haven't finished (completed)
+  // or abandoned (dropped). Hidden while searching a specific actor — that view
+  // already shows that actor's titles. Sorted by rating.
+  const favoritePeople = useFavoritePeople()
+  const starringOn = !actorName && (favoritePeople?.length ?? 0) > 0
+  const favoriteCreditQueries = useQueries({
+    queries: (starringOn ? (favoritePeople ?? []) : []).map((p) => ({
+      queryKey: ['person-credits', p.id],
+      queryFn: () => getPersonCredits(p.id),
+      staleTime: SIX_HOURS,
+      enabled: hasTmdbToken() && starringOn,
+    })),
+  })
+  const starringForYou: TmdbMediaResult[] = []
+  if (starringOn) {
+    const excluded = new Set(
+      (libraryItems ?? [])
+        .filter((i) => i.status === 'completed' || i.status === 'dropped')
+        .map((i) => i.id),
+    )
+    const seen = new Set<string>()
+    for (const q of favoriteCreditQueries) {
+      for (const r of q.data ?? []) {
+        if (!r.poster_path) continue
+        // Skip obscure credits (featurettes, making-ofs, self-appearances) that
+        // rank high only because a handful of votes inflate their average.
+        if ((r.vote_count ?? 0) < 50) continue
+        const mt = r.media_type
+        if (mt === 'movie' && !showMoviesTop) continue
+        if (mt === 'tv' && !showShowsTop) continue
+        if (excluded.has(itemKey(mt === 'tv' ? 'show' : 'movie', r.id))) continue
+        const key = `${mt}:${r.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        starringForYou.push(r)
+      }
+    }
+    starringForYou.sort((a, b) => (b.vote_average ?? -Infinity) - (a.vote_average ?? -Infinity))
+  }
+  const hasStarring = starringOn && starringForYou.length > 0
+
+  // --- Filter-only discover ---------------------------------------------------
+  // Provider lists (service name -> id) are only needed when a service filter is
+  // part of the run, and are cached indefinitely.
+  const parsedRun = parseQuery(discoverRun)
+  const needProviders = discoverActive && parsedRun.services.length > 0
+  const { data: movieProviders } = useQuery({
+    queryKey: ['providers', 'movie'],
+    queryFn: () => getWatchProviders('movie'),
+    staleTime: Infinity,
+    enabled: hasTmdbToken() && (needProviders || newStreamingOn),
+  })
+  const { data: tvProviders } = useQuery({
+    queryKey: ['providers', 'tv'],
+    queryFn: () => getWatchProviders('tv'),
+    staleTime: Infinity,
+    enabled: hasTmdbToken() && (needProviders || newStreamingOn),
+  })
+  // Hold off planning until the maps a run needs are loaded.
+  const discoverReady =
+    discoverActive &&
+    !!genreMap &&
+    (parsedRun.services.length === 0 || (!!movieProviders && !!tvProviders))
+  const discoverPlans = discoverReady
+    ? planDiscover(parsedRun, genreMap, {
+        movie: movieProviders ?? [],
+        tv: tvProviders ?? [],
+      })
+    : []
+  // One query per (media type × page). Discover returns 20/page already sorted;
+  // we fetch only as many pages as the user has paged into.
+  const pageList = Array.from({ length: discoverPages }, (_, i) => i + 1)
+  const discoverQueries = useQueries({
+    queries: discoverPlans.flatMap((pl) =>
+      pageList.map((pg) => ({
+        queryKey: ['discover', pl.mediaType, discoverRun, pg],
+        queryFn: () => discover(pl.mediaType, pl.params, pg),
+        staleTime: HOUR,
+      })),
+    ),
+  })
+  // Merge the types, dedupe, and sort by the active key (rating or popularity).
+  const discoverMerged: TmdbMediaResult[] = []
+  if (discoverActive) {
+    const seen = new Set<string>()
+    for (const q of discoverQueries) {
+      for (const r of q.data?.results ?? []) {
+        const k = `${r.media_type}:${r.id}`
+        if (seen.has(k)) continue
+        seen.add(k)
+        discoverMerged.push(r)
+      }
+    }
+    discoverMerged.sort(
+      parsedRun.rating !== undefined
+        ? (a, b) => (b.vote_average ?? -Infinity) - (a.vote_average ?? -Infinity)
+        : (a, b) => (b.popularity ?? -Infinity) - (a.popularity ?? -Infinity),
+    )
+  }
+  const discoverTotalPages = discoverQueries.reduce(
+    (max, q) => Math.max(max, q.data?.total_pages ?? 0),
+    0,
+  )
+  const discoverFetching = discoverActive && discoverQueries.some((q) => q.isFetching)
+  const discoverErrored = discoverActive && discoverQueries.some((q) => q.isError)
+
+  // --- New on Your Services ---------------------------------------------------
+  // Recent releases now streaming on your favorite services (type filter applied).
+  const favKey = favServices.join(',')
+  const nowMovieIds =
+    newStreamingOn && showMoviesTop && movieProviders
+      ? resolveProviderIds(favServices, movieProviders)
+      : []
+  const nowTvIds =
+    newStreamingOn && showShowsTop && tvProviders
+      ? resolveProviderIds(favServices, tvProviders)
+      : []
+  const nowStreamingQueries = useQueries({
+    queries: [
+      ...(nowMovieIds.length
+        ? [
+            {
+              queryKey: ['now-streaming', 'movie', favKey],
+              queryFn: () => discover('movie', newReleasesParams('movie', nowMovieIds), 1),
+              staleTime: SIX_HOURS,
+            },
+          ]
+        : []),
+      ...(nowTvIds.length
+        ? [
+            {
+              queryKey: ['now-streaming', 'tv', favKey],
+              queryFn: () => discover('tv', newReleasesParams('tv', nowTvIds), 1),
+              staleTime: SIX_HOURS,
+            },
+          ]
+        : []),
+    ],
+  })
+  const nowStreaming: TmdbMediaResult[] = []
+  if (newStreamingOn) {
+    const seen = new Set<string>()
+    for (const q of nowStreamingQueries) {
+      for (const r of q.data?.results ?? []) {
+        if (!r.poster_path) continue
+        const key = `${r.media_type}:${r.id}`
+        if (seen.has(key)) continue
+        seen.add(key)
+        nowStreaming.push(r)
+      }
+    }
+    nowStreaming.sort((a, b) => (b.popularity ?? -Infinity) - (a.popularity ?? -Infinity))
+  }
+  const hasNowStreaming = newStreamingOn && nowStreaming.length > 0
 
   // service:, length:, and status: filtering need per-result details, so fetch
   // them for the shown results — but only when one of those tokens is in use.
@@ -127,7 +398,7 @@ export default function Search() {
     })),
   })
 
-  const results = (allResults ?? []).filter((r, i) => {
+  const filtered = (allResults ?? []).filter((r, i) => {
     const d = needDetails ? detailQueries[i]?.data : undefined
     const providers = parsed.services.length ? (d ? watchNames(d) : []) : []
     const runtime = parsed.lengths.length ? (d ? runtimeOf(d) : undefined) : undefined
@@ -148,13 +419,28 @@ export default function Search() {
         ended,
         aired: releaseState(r),
         mediaType: toMediaType(r),
+        rating: r.vote_average,
       },
-      { ...parsed, actors: [], text: actorName ? parsed.text : '' },
+      { ...parsed, actors: [], series: [], text: actorName || seriesName ? parsed.text : '' },
     )
   })
 
-  const visibleResults = results.slice(0, visibleCount)
-  const hasMore = results.length > visibleResults.length
+  // With a rating filter active, surface the best-scored results first.
+  const searchResults =
+    parsed.rating !== undefined
+      ? [...filtered].sort(
+          (a, b) =>
+            (b.vote_average ?? -Infinity) - (a.vote_average ?? -Infinity) ||
+            resultTitle(a).localeCompare(resultTitle(b)),
+        )
+      : filtered
+
+  // Discover (filter-only) and text/actor/series search feed the same list.
+  const results = discoverActive ? discoverMerged : searchResults
+  const visibleResults = results.slice(0, discoverActive ? discoverVisible : visibleCount)
+  const hasMore = discoverActive
+    ? discoverVisible < discoverMerged.length || discoverPages < discoverTotalPages
+    : results.length > visibleResults.length
 
   // In actor mode, pull each shown TV credit's specific episodes so guest /
   // recurring appearances can be listed. TMDB returns episodes only for guests;
@@ -179,6 +465,16 @@ export default function Search() {
   // Reveal the next page after a brief beat, so the new rows' credit lookups
   // don't all fire the instant the button is pressed.
   function showMore() {
+    if (discoverActive) {
+      // Fetch another page of each type only when we're about to run past what's
+      // already loaded; otherwise just reveal more of what we have.
+      const next = discoverVisible + PAGE
+      if (next > discoverMerged.length && discoverPages < discoverTotalPages) {
+        setDiscoverPages((p) => p + 1)
+      }
+      setDiscoverVisible(next)
+      return
+    }
     setLoadingMore(true)
     window.setTimeout(() => {
       setVisibleCount((n) => n + PAGE)
@@ -222,18 +518,41 @@ export default function Search() {
       <FilterBar
         value={input}
         onChange={setInput}
-        placeholder="Search for a title"
+        placeholder="Search for a title, or filter and press ▶"
         autoFocus
-      />
+        onSubmit={() => filterOnly && runDiscover()}
+      >
+        {filterOnly && (
+          <button
+            type="button"
+            className="run-btn"
+            title="Run filter search"
+            aria-label="Run filter search"
+            onClick={runDiscover}
+            disabled={discoverActive && discoverFetching}
+          >
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+              <path d="M8 5v14l11-7z" />
+            </svg>
+          </button>
+        )}
+      </FilterBar>
 
-      {isFetching && <p className="muted">Searching…</p>}
+      {(isFetching || discoverFetching) && <p className="muted">Searching…</p>}
       {isError && (
         <p className="badge badge--warn">
           {error instanceof Error ? error.message : 'Search failed.'}
         </p>
       )}
-      {results.length === 0 && searchText && !isFetching && (
-        <p className="muted">No results for “{searchText}”.</p>
+      {discoverErrored && <p className="badge badge--warn">Couldn’t load those results.</p>}
+      {filterOnly && !discoverActive && (
+        <p className="muted">Press ▶ to browse everything matching these filters.</p>
+      )}
+      {results.length === 0 && (searchText || seriesName) && !isFetching && (
+        <p className="muted">No results for “{seriesName ? `series: ${seriesName}` : searchText}”.</p>
+      )}
+      {discoverActive && !discoverFetching && results.length === 0 && (
+        <p className="muted">No titles match those filters.</p>
       )}
 
       <ul className="result-list">
@@ -309,10 +628,70 @@ export default function Search() {
 
       {hasMore && (
         <div className="show-more">
-          <button className="btn btn--ghost" onClick={showMore} disabled={loadingMore}>
-            {loadingMore ? 'Loading…' : `Show more (${results.length - visibleResults.length})`}
+          <button
+            className="btn btn--ghost"
+            onClick={showMore}
+            disabled={loadingMore || discoverFetching}
+          >
+            {discoverActive
+              ? discoverFetching
+                ? 'Loading…'
+                : 'Show more'
+              : loadingMore
+                ? 'Loading…'
+                : `Show more (${results.length - visibleResults.length})`}
           </button>
         </div>
+      )}
+
+      {(hasRecommended || hasStarring || hasNowStreaming || showMoviesTop || showShowsTop) && (
+        <section className="search__top">
+          {hasRecommended && (
+            <Recommendations
+              recs={recommendedForYou}
+              mediaType="movie"
+              title="Recommended for You"
+              limit={12}
+              defaultOpen
+            />
+          )}
+          {hasStarring && (
+            <Recommendations
+              recs={starringForYou}
+              mediaType="movie"
+              title="Starring Your Favorites"
+              limit={12}
+              defaultOpen
+            />
+          )}
+          {hasNowStreaming && (
+            <Recommendations
+              recs={nowStreaming}
+              mediaType="movie"
+              title="Now Streaming"
+              limit={12}
+              defaultOpen
+            />
+          )}
+          {showMoviesTop && (
+            <Recommendations
+              recs={trendingMovies.data ?? []}
+              mediaType="movie"
+              title="Top 10 Movies This Week"
+              limit={10}
+              defaultOpen
+            />
+          )}
+          {showShowsTop && (
+            <Recommendations
+              recs={trendingShows.data ?? []}
+              mediaType="tv"
+              title="Top 10 Shows This Week"
+              limit={10}
+              defaultOpen
+            />
+          )}
+        </section>
       )}
     </div>
   )

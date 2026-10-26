@@ -28,10 +28,10 @@ import {
   setRating,
   setStatus,
 } from '../data/library'
-import type { EpisodeState, TrackedItem, WatchStatus } from '../data/types'
+import type { EpisodeState, WatchStatus } from '../data/types'
 import DetailHero, { WherePills } from '../components/DetailHero'
 import CastRow from '../components/CastRow'
-import RatingStars from '../components/RatingStars'
+import RatingRow from '../components/RatingRow'
 import Reviews from '../components/Reviews'
 import Gallery from '../components/Gallery'
 import Recommendations from '../components/Recommendations'
@@ -72,7 +72,6 @@ function pickDefaultSeason(seasons: TmdbSeasonSummary[], stateMap: Map<string, E
 export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId: number }) {
   const navigate = useNavigate()
   const item = useLiveQuery(() => db.trackedItems.get(itemId).then((r) => r ?? null), [itemId])
-  const [editingRating, setEditingRating] = useState(false)
   // While true, episode checks track a fresh pass (so you can tick them off as
   // you rewatch) instead of just showing "ever watched".
   const [rewatching, setRewatching] = useState(false)
@@ -218,9 +217,6 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
   if (d.status) facts.push({ label: 'Status', value: d.status })
   if (akas.data?.length) facts.push({ label: 'Also known as', value: akas.data.slice(0, 8).join(' · ') })
 
-  const stub: TrackedItem = { id: itemId, tmdbId, mediaType: 'show', title, status: 'watchlist', addedAt: 0, updatedAt: 0 }
-  const activeItem = item ?? stub
-
   // Rewatch-pass bookkeeping: watchCount tracks how many times each episode was
   // seen, so a fully-watched show can be rewatched without losing history.
   let watchedCount = 0
@@ -277,40 +273,51 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
         links={links}
       />
 
-      {readOnly ? (
-        <button
-          className="btn show-detail__add"
-          onClick={() => void addItem({ tmdbId, mediaType: 'show', title, posterPath: poster, year: firstYear ? Number(firstYear) : undefined })}
-        >
-          + Add to library
-        </button>
-      ) : (
-        <div className="show-detail__controls">
-          <label className="field show-detail__status">
-            <span>Status</span>
-            <select value={item.status} onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}>
-              {STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-          {fullyWatched &&
-            (rewatching ? (
-              <span className="badge badge--ok show-detail__rewatching">
-                Rewatching · pass {completedPasses + 1}
-                <button className="link-btn" onClick={() => setRewatching(false)}>
-                  done
-                </button>
-              </span>
-            ) : (
-              <button className="btn btn--small btn--ghost" onClick={() => setRewatching(true)}>
-                ↻ Start a rewatch
-              </button>
-            ))}
+      <section className="detail-actions">
+        <div className="detail-actions__controls">
+          {readOnly ? (
+            <button
+              className="btn show-detail__add"
+              onClick={() => void addItem({ tmdbId, mediaType: 'show', title, posterPath: poster, year: firstYear ? Number(firstYear) : undefined })}
+            >
+              + Add to library
+            </button>
+          ) : (
+            <>
+              <label className="field show-detail__status">
+                <span>Status</span>
+                <select value={item.status} onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}>
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              {fullyWatched &&
+                (rewatching ? (
+                  <span className="badge badge--ok show-detail__rewatching">
+                    Rewatching · pass {completedPasses + 1}
+                    <button className="link-btn" onClick={() => setRewatching(false)}>
+                      done
+                    </button>
+                  </span>
+                ) : (
+                  <button className="btn btn--small btn--ghost" onClick={() => setRewatching(true)}>
+                    ↻ Start a rewatch
+                  </button>
+                ))}
+            </>
+          )}
         </div>
-      )}
+        <RatingRow
+          userRating={item?.userRating}
+          average={average}
+          canRate={!readOnly}
+          onPick={(n) => item && void setRating(item.id, n)}
+          onClear={() => item && void setRating(item.id, undefined)}
+        />
+      </section>
 
       <CastRow title="Cast" people={cast} />
 
@@ -429,43 +436,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
       )}
 
       <section className="section">
-        <h3 className="section-title">Ratings &amp; extras</h3>
-        <div className="ratings-row">
-          <div className="rating-col">
-            <span className="rating-col__label">Your rating</span>
-            {readOnly ? (
-              <span className="muted">Add to library to rate</span>
-            ) : item.userRating !== undefined && !editingRating ? (
-              <span className="rating-value">
-                ★ {item.userRating}/10{' '}
-                <button className="link-btn" onClick={() => setEditingRating(true)}>
-                  revise
-                </button>
-              </span>
-            ) : (
-              <RatingStars
-                value={item?.userRating}
-                onPick={(n) => {
-                  void setRating(activeItem.id, n)
-                  setEditingRating(false)
-                }}
-                onClear={
-                  item?.userRating !== undefined
-                    ? () => {
-                        void setRating(item.id, undefined)
-                        setEditingRating(false)
-                      }
-                    : undefined
-                }
-              />
-            )}
-          </div>
-          <div className="rating-col">
-            <span className="rating-col__label">Average</span>
-            <span className="rating-value">{average}</span>
-          </div>
-        </div>
-
+        <h3 className="section-title">Extras</h3>
         <Gallery videos={videos.data ?? []} images={images.data ?? []} />
 
         {facts.length > 0 && (

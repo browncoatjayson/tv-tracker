@@ -2,23 +2,32 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { imageUrl, type TmdbRecommendation } from '../api/tmdb'
 
-/** A collapsible poster grid of "you might also like" titles, linking to their
- *  preview detail pages. `mediaType` is the parent title's type and seeds the
- *  link when a recommendation doesn't carry its own. */
+/** A collapsible poster grid of titles (e.g. "you might also like" or a Top 10),
+ *  linking to their preview detail pages. `mediaType` is the parent title's type
+ *  and seeds the link when a recommendation doesn't carry its own. */
 export default function Recommendations({
   recs,
   mediaType,
+  title = 'You might also like',
+  defaultOpen = false,
+  limit = 18,
 }: {
   recs: TmdbRecommendation[]
   mediaType: 'tv' | 'movie'
+  /** Section heading shown in the summary. */
+  title?: string
+  /** Start expanded (used for the Search Top 10 lists). */
+  defaultOpen?: boolean
+  /** Max titles to show. */
+  limit?: number
 }) {
-  const [open, setOpen] = useState(false)
-  const items = recs.filter((r) => r.poster_path).slice(0, 18)
+  const [open, setOpen] = useState(defaultOpen)
+  const items = recs.filter((r) => r.poster_path).slice(0, limit)
   if (items.length === 0) return null
   return (
     <details className="reviews reviews--recs" open={open} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
       <summary className="reviews__summary">
-        <span>You might also like</span>
+        <span>{title}</span>
         <span className="reviews__powered">Powered by TMDB</span>
       </summary>
       <div className="reviews__body">

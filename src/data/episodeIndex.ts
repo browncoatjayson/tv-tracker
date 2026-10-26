@@ -101,6 +101,7 @@ async function indexItem(item: TrackedItem): Promise<void> {
       tmdbRating: details.vote_average,
       lastAirDate: release && release <= today() ? release : undefined,
       nextAirDate: release && release > today() ? release : undefined,
+      series: details.belongs_to_collection?.name,
     })
     return
   }

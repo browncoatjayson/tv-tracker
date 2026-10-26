@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { parseQuery, type LengthConstraint } from '../utils/filter'
+import { SERVICES } from '../data/services'
+import RatingStars from './RatingStars'
 
 // Curated quick-pick lists. Matching is case-insensitive substring (see
 // matchesFilter), so e.g. "apple tv" matches TMDB's "Apple TV+". Any value
@@ -27,18 +29,6 @@ const GENRES = [
   'Kids',
 ]
 
-const SERVICES: { label: string; value: string }[] = [
-  { label: 'Netflix', value: 'netflix' },
-  { label: 'Hulu', value: 'hulu' },
-  { label: 'Max', value: 'max' },
-  { label: 'Disney+', value: 'disney plus' },
-  { label: 'Apple TV+', value: 'apple tv' },
-  { label: 'Prime Video', value: 'prime video' },
-  { label: 'Paramount+', value: 'paramount plus' },
-  { label: 'Peacock', value: 'peacock' },
-  { label: 'Crunchyroll', value: 'crunchyroll' },
-]
-
 const LEN_OPS: { value: '' | LengthConstraint['op']; label: string }[] = [
   { value: '', label: 'Any length' },
   { value: '<', label: 'under' },
@@ -57,11 +47,14 @@ interface Editor {
   genres: Set<string>
   services: Set<string>
   actor: string
+  series: string
   lenOp: '' | LengthConstraint['op']
   lenVal: string
+  /** Minimum TMDB rating 1–10 (0 = no rating filter). */
+  rating: number
 }
 
-const TOKEN_RE = /^(genre|service|actor|type|status|released|length):/i
+const TOKEN_RE = /^(genre|service|actor|series|type|status|released|length|rating):/i
 
 /** Split a raw query string into the dropdown's structured working state. */
 function parseForEditor(raw: string): Editor {
@@ -81,8 +74,10 @@ function parseForEditor(raw: string): Editor {
     genres: new Set(p.genres),
     services: new Set(p.services),
     actor: p.actors[0] ?? '',
+    series: p.series[0] ?? '',
     lenOp: len ? len.op : '',
     lenVal: len ? String(len.value) : '',
+    rating: p.rating ?? 0,
   }
 }
 
@@ -97,9 +92,11 @@ function buildQuery(e: Editor): string {
   for (const g of e.genres) parts.push(`genre:${g}`)
   for (const s of e.services) parts.push(`service:${s}`)
   if (e.actor.trim()) parts.push(`actor:${e.actor.trim()}`)
+  if (e.series.trim()) parts.push(`series:${e.series.trim()}`)
   if (e.lenOp && e.lenVal.trim() && Number.isFinite(Number(e.lenVal))) {
     parts.push(`length:${e.lenOp}${Number(e.lenVal)}`)
   }
+  if (e.rating > 0) parts.push(`rating:${e.rating}`)
   return parts.join(', ')
 }
 
@@ -113,7 +110,9 @@ function activeCount(raw: string): number {
     p.genres.length +
     p.services.length +
     p.actors.length +
-    p.lengths.length
+    p.series.length +
+    p.lengths.length +
+    (p.rating !== undefined ? 1 : 0)
   )
 }
 
@@ -131,12 +130,15 @@ export default function FilterBar({
   onChange,
   placeholder,
   autoFocus,
+  onSubmit,
   children,
 }: {
   value: string
   onChange: (q: string) => void
   placeholder?: string
   autoFocus?: boolean
+  /** Fired when Enter is pressed in the box (e.g. to run a filter-only search). */
+  onSubmit?: () => void
   children?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -200,6 +202,9 @@ export default function FilterBar({
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onSubmit?.()
+          }}
           autoFocus={autoFocus}
         />
         <button
@@ -362,6 +367,20 @@ export default function FilterBar({
           </div>
 
           <div className="filter-pop__group">
+            <label className="filter-pop__label" htmlFor="filter-series">
+              Series
+            </label>
+            <input
+              id="filter-series"
+              className="filter-pop__input"
+              type="text"
+              placeholder="e.g. Halloween"
+              value={ed.series}
+              onChange={(e) => setEd({ ...ed, series: e.target.value })}
+            />
+          </div>
+
+          <div className="filter-pop__group">
             <span className="filter-pop__label">Length</span>
             <div className="filter-len">
               <select
@@ -389,6 +408,17 @@ export default function FilterBar({
               />
               <span className="muted">min</span>
             </div>
+          </div>
+
+          <div className="filter-pop__group">
+            <span className="filter-pop__label">
+              Rating{ed.rating > 0 ? ` (★${ed.rating} and up)` : ' (any)'}
+            </span>
+            <RatingStars
+              value={ed.rating || undefined}
+              onPick={(n) => setEd({ ...ed, rating: n })}
+              onClear={ed.rating > 0 ? () => setEd({ ...ed, rating: 0 }) : undefined}
+            />
           </div>
 
           <div className="filter-pop__foot">

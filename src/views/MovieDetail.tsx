@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../data/db'
 import {
   castNames,
   genreNames,
+  getCollection,
   getImages,
   getImdbId,
   getMovieDetails,
@@ -20,10 +21,11 @@ import type { WatchStatus } from '../data/types'
 import DetailHero, { WherePills } from '../components/DetailHero'
 import CastRow from '../components/CastRow'
 import MovieWatch from '../components/MovieWatch'
-import RatingStars from '../components/RatingStars'
+import RatingRow from '../components/RatingRow'
 import Reviews from '../components/Reviews'
 import Gallery from '../components/Gallery'
 import Recommendations from '../components/Recommendations'
+import Related from '../components/Related'
 import { appConfirm } from '../utils/confirm'
 
 const HOUR = 1000 * 60 * 60
@@ -31,7 +33,6 @@ const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped'
 
 export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId: number }) {
   const item = useLiveQuery(() => db.trackedItems.get(itemId).then((r) => r ?? null), [itemId])
-  const [editingRating, setEditingRating] = useState(false)
 
   const detailsQuery = useQuery({
     queryKey: ['movie', tmdbId],
@@ -61,6 +62,13 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
     queryFn: () => getRecommendations('movie', tmdbId),
     staleTime: HOUR,
   })
+  const collectionId = detailsQuery.data?.belongs_to_collection?.id
+  const collection = useQuery({
+    queryKey: ['collection', collectionId],
+    queryFn: () => getCollection(collectionId as number),
+    enabled: !!collectionId,
+    staleTime: Infinity,
+  })
 
   useEffect(() => {
     if (!item || item.imdbId) return
@@ -84,6 +92,8 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
         lastAirDate: release && release <= todayStr ? release : undefined,
         // A not-yet-released movie is "upcoming".
         nextAirDate: release && release > todayStr ? release : undefined,
+        // Franchise name (for the Related section + the series: filter).
+        series: d.belongs_to_collection?.name,
       })
     }
   }, [item?.id, d])
@@ -138,66 +148,44 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
         links={links}
       />
 
-      {readOnly ? (
-        <button
-          className="btn show-detail__add"
-          onClick={() => void addItem({ tmdbId, mediaType: 'movie', title, posterPath: poster, year })}
-        >
-          + Add to library
-        </button>
-      ) : (
-        <label className="field show-detail__status">
-          <span>Status</span>
-          <select value={item.status} onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}>
-            {STATUSES.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
-          </select>
-        </label>
-      )}
+      <section className="detail-actions">
+        <div className="detail-actions__controls">
+          {readOnly ? (
+            <button
+              className="btn show-detail__add"
+              onClick={() => void addItem({ tmdbId, mediaType: 'movie', title, posterPath: poster, year })}
+            >
+              + Add to library
+            </button>
+          ) : (
+            <>
+              <label className="field show-detail__status">
+                <span>Status</span>
+                <select value={item.status} onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}>
+                  {STATUSES.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <MovieWatch item={item} />
+            </>
+          )}
+        </div>
+        <RatingRow
+          userRating={item?.userRating}
+          average={average}
+          canRate={!readOnly}
+          onPick={(n) => item && void setRating(item.id, n)}
+          onClear={() => item && void setRating(item.id, undefined)}
+        />
+      </section>
 
       <CastRow title="Cast" people={cast} />
 
       <section className="section">
-        <h3 className="section-title">Ratings &amp; extras</h3>
-        <div className="ratings-row">
-          <div className="rating-col">
-            <span className="rating-col__label">Your rating</span>
-            {readOnly ? (
-              <span className="muted">Add to library to rate</span>
-            ) : item.userRating !== undefined && !editingRating ? (
-              <span className="rating-value">
-                ★ {item.userRating}/10{' '}
-                <button className="link-btn" onClick={() => setEditingRating(true)}>
-                  revise
-                </button>
-              </span>
-            ) : (
-              <RatingStars
-                value={item?.userRating}
-                onPick={(n) => {
-                  if (item) void setRating(item.id, n)
-                  setEditingRating(false)
-                }}
-                onClear={
-                  item?.userRating !== undefined
-                    ? () => {
-                        void setRating(item.id, undefined)
-                        setEditingRating(false)
-                      }
-                    : undefined
-                }
-              />
-            )}
-          </div>
-          <div className="rating-col">
-            <span className="rating-col__label">Average</span>
-            <span className="rating-value">{average}</span>
-          </div>
-        </div>
-
+        <h3 className="section-title">Extras</h3>
         <Gallery videos={videos.data ?? []} images={images.data ?? []} />
 
         {facts.length > 0 && (
@@ -215,7 +203,13 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
         )}
       </section>
 
-      {item && <MovieWatch item={item} />}
+      {collection.data && (
+        <Related
+          seriesName={collection.data.name.replace(/\s+Collection$/i, '')}
+          parts={collection.data.parts}
+          currentId={tmdbId}
+        />
+      )}
 
       <Reviews target={{ mediaType: 'movie', tmdbId }} poweredBy />
 

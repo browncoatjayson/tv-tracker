@@ -1,30 +1,48 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { imageUrl } from '../api/tmdb'
+import { setFavoritePerson, useFavoritePersonIds } from '../data/favorites'
 import SectionDivider from './SectionDivider'
 
 export interface CastMember {
+  /** TMDB person id (enables the "star" button when present). */
+  id?: number
   name: string
   character?: string
   profile_path?: string | null
 }
 
-function Card({ c, keyPrefix }: { c: CastMember; keyPrefix: string }) {
+function Card({ c, favorite }: { c: CastMember; favorite: boolean }) {
   const photo = imageUrl(c.profile_path ?? undefined, 'w185')
   return (
-    <Link
-      key={`${keyPrefix}-${c.name}`}
-      to={`/search?q=${encodeURIComponent(`actor:${c.name}`)}`}
-      className="cast-card"
-    >
-      {photo ? (
-        <img className="cast-card__photo" src={photo} alt="" loading="lazy" />
-      ) : (
-        <span className="cast-card__photo cast-card__photo--ph">👤</span>
+    <div className="cast-card-wrap">
+      <Link to={`/search?q=${encodeURIComponent(`actor:${c.name}`)}`} className="cast-card">
+        {photo ? (
+          <img className="cast-card__photo" src={photo} alt="" loading="lazy" />
+        ) : (
+          <span className="cast-card__photo cast-card__photo--ph">👤</span>
+        )}
+        {c.character && <span className="cast-card__char">{c.character}</span>}
+        <span className="cast-card__name">{c.name}</span>
+      </Link>
+      {c.id !== undefined && (
+        <button
+          type="button"
+          className={`cast-star${favorite ? ' cast-star--on' : ''}`}
+          title={favorite ? `Unstar ${c.name}` : `Star ${c.name}`}
+          aria-label={favorite ? `Unstar ${c.name}` : `Star ${c.name}`}
+          aria-pressed={favorite}
+          onClick={() =>
+            void setFavoritePerson(
+              { id: c.id as number, name: c.name, profilePath: c.profile_path },
+              !favorite,
+            )
+          }
+        >
+          {favorite ? '★' : '☆'}
+        </button>
       )}
-      {c.character && <span className="cast-card__char">{c.character}</span>}
-      <span className="cast-card__name">{c.name}</span>
-    </Link>
+    </div>
   )
 }
 
@@ -47,6 +65,7 @@ export default function CastRow({
   extra?: CastMember[]
   extraLabel?: string
 }) {
+  const favoriteIds = useFavoritePersonIds()
   // Collapse a labelled group when its Hide box is checked (session-local).
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const toggle = (key: string, v: boolean) =>
@@ -75,7 +94,10 @@ export default function CastRow({
             onToggleHide={(v) => toggle('lead', v)}
           />
         )}
-        {!leadHidden && people.map((c, i) => <Card key={`c-${i}`} c={c} keyPrefix="c" />)}
+        {!leadHidden &&
+          people.map((c, i) => (
+            <Card key={`c-${i}`} c={c} favorite={c.id !== undefined && favoriteIds.has(c.id)} />
+          ))}
         {people.length > 0 && hasExtra && extraLabel && (
           <SectionDivider
             className="section-divider--cast"
@@ -86,7 +108,10 @@ export default function CastRow({
             onToggleHide={(v) => toggle('extra', v)}
           />
         )}
-        {!extraHidden && extra?.map((c, i) => <Card key={`g-${i}`} c={c} keyPrefix="g" />)}
+        {!extraHidden &&
+          extra?.map((c, i) => (
+            <Card key={`g-${i}`} c={c} favorite={c.id !== undefined && favoriteIds.has(c.id)} />
+          ))}
       </div>
     </section>
   )

@@ -61,14 +61,18 @@ async function vapidJwt(endpoint, env) {
   return `${unsigned}.${bytesToB64url(sig)}`
 }
 
-/** Send a payload-less push (a "wake up and check" signal). Returns the status. */
+/** Send a payload-less push (a "wake up and check" signal). Returns the status.
+ *  Urgency:high asks the push service to deliver promptly even when the device is
+ *  in Doze/battery-saver; the short TTL drops it rather than arriving long after
+ *  the show has started. */
 async function sendWake(subscription, env) {
   const jwt = await vapidJwt(subscription.endpoint, env)
   const res = await fetch(subscription.endpoint, {
     method: 'POST',
     headers: {
       Authorization: `vapid t=${jwt}, k=${env.VAPID_PUBLIC}`,
-      TTL: '3600',
+      TTL: '1800',
+      Urgency: 'high',
     },
   })
   return res.status
@@ -139,9 +143,15 @@ export default {
   async scheduled(_event, env) {
     const now = Date.now()
     const list = await env.SUBS.list({ prefix: 'sub:' })
+    console.log(`[cron] ${new Date(now).toISOString()} subs=${list.keys.length}`)
     for (const { name } of list.keys) {
       const rec = await env.SUBS.get(name, 'json')
       if (!rec) continue
+      // Visibility: the next few upcoming fire times for this device.
+      const soon = (rec.fireAts || [])
+        .filter((t) => t > now - 3600_000 && t < now + 86_400_000)
+        .map((t) => new Date(t).toISOString())
+      console.log(`[cron] ${name} fireAts(±24h)=[${soon.join(', ')}]`)
       const sent = new Set(rec.sent || [])
       let changed = false
       let dead = false
@@ -150,6 +160,9 @@ export default {
         // and we haven't already pushed for this exact time.
         if (fa <= now && fa > now - 6 * 60 * 1000 && !sent.has(fa)) {
           const status = await sendWake(rec.subscription, env)
+          console.log(
+            `[cron] ${name} DUE fireAt=${new Date(fa).toISOString()} -> push status ${status}`,
+          )
           if (status === 404 || status === 410) {
             dead = true
             break

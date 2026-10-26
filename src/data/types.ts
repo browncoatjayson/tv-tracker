@@ -59,6 +59,9 @@ export interface TrackedItem {
   episodeCount?: number
   /** TMDB's average score 0–10 — backfilled for the stats "critic profile". */
   tmdbRating?: number
+  /** Movie franchise / collection name (e.g. "Halloween Collection") — backfilled
+   *  for the Related section and the series: filter. Movies only. */
+  series?: string
   /** Set when indexing couldn't fetch TMDB data for this title, so the stats
    *  "needs indexing" prompt stops flagging it. A full rebuild retries it. */
   indexFailed?: boolean
@@ -132,4 +135,35 @@ export interface Tombstone {
   /** The deleted {@link TrackedItem.id}. */
   id: string
   deletedAt: number
+}
+
+/**
+ * A "starred" actor (IMDb-style). Drives the Search "Starring Your Favorites"
+ * section and the Stats "Favorite Actors" list. `removed` is a soft-delete so an
+ * un-favorite propagates on sync (merge is last-write-wins by `updatedAt`).
+ */
+export interface FavoritePerson {
+  /** TMDB person id. */
+  id: number
+  name: string
+  /** TMDB profile photo path fragment (e.g. "/abc.jpg"). */
+  profilePath?: string | null
+  favoritedAt: number
+  updatedAt: number
+  /** Soft-delete flag (kept in the record so un-favoriting syncs). */
+  removed?: boolean
+}
+
+/**
+ * A streaming service the user subscribes to (drives the Search "Now Streaming"
+ * section). `id` is the service key (e.g. "netflix"). `removed` is a soft-delete
+ * so an un-favorite propagates on sync (merge is last-write-wins by updatedAt).
+ */
+export interface FavoriteService {
+  /** Service key, e.g. "netflix" / "disney plus". */
+  id: string
+  label: string
+  addedAt: number
+  updatedAt: number
+  removed?: boolean
 }

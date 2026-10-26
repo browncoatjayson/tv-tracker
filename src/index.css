@@ -227,7 +227,8 @@ a:hover {
 /* Icon-only square controls that sit beside the search box and match its height.
    A fixed height keeps the List/Calendar toggle identical across both views. */
 .filter-btn,
-.sort-btn {
+.sort-btn,
+.run-btn {
   position: relative;
   flex-shrink: 0;
   display: inline-flex;
@@ -241,6 +242,17 @@ a:hover {
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
+}
+/* The filter-only "run" action is the primary way to launch a discover browse,
+   so it reads as a filled accent button rather than a plain icon control. */
+.run-btn {
+  border-color: var(--accent);
+  background: var(--accent);
+  color: #06283a;
+}
+.run-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
 }
 .sort {
   position: relative;
@@ -429,6 +441,14 @@ a:hover {
 .poster-card:hover {
   text-decoration: none;
 }
+/* The title you're currently viewing, within its own franchise list. */
+.poster-card--current .poster-card__img {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.poster-card--current .poster-card__title {
+  color: var(--accent);
+}
 .poster-card__img {
   width: 100%;
   aspect-ratio: 2 / 3;
@@ -542,11 +562,16 @@ a:hover {
   color: var(--warn);
 }
 
-.movie-watch__count {
-  margin: 10px 0 4px;
+.movie-watch__info .movie-watch__count {
+  margin: 0;
+  font-size: 0.82rem;
+}
+.movie-watch__info .movie-watch__date {
+  margin: 0;
+  gap: 2px;
 }
 .movie-watch__date input {
-  max-width: 260px;
+  max-width: 220px;
 }
 
 /* ---- Forms / detail ------------------------------------------------------ */
@@ -663,6 +688,13 @@ input[type='file'] {
   display: flex;
   justify-content: center;
   margin: 12px 0 4px;
+}
+/* Top 10 lists below the search results. */
+.search__top {
+  margin-top: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 .result-row__link {
   display: flex;
@@ -1346,6 +1378,34 @@ input[type='file'] {
 .show-detail__status {
   max-width: 260px;
 }
+
+/* Consolidated actions block at the top of a detail page: status / watch
+   controls on one row, then the rating row. */
+.detail-actions {
+  margin: 14px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.detail-actions__controls {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.detail-actions__controls .field {
+  margin: 0;
+}
+/* Align the small rewatch control with the select, not its bottom edge. */
+.detail-actions__controls > .btn,
+.detail-actions__controls .show-detail__rewatching {
+  margin: 0 0 6px;
+}
+.detail-actions .ratings-row,
+.detail-actions .episode-watch,
+.detail-actions__controls .movie-watch {
+  margin: 0;
+}
 .show-detail .episodes__rewatch {
   margin: -4px 0 0;
 }
@@ -1386,6 +1446,72 @@ input[type='file'] {
   flex-wrap: wrap;
   gap: 12px 10px;
   align-items: flex-start;
+}
+/* Favorite-actor grid on the Stats page. */
+.fav-actors {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 10px;
+}
+.fav-actor {
+  width: 84px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text);
+}
+.fav-actor__photo {
+  width: 84px;
+  height: 112px;
+  object-fit: cover;
+  border-radius: 10px;
+  background: var(--surface-2);
+}
+.fav-actor__photo--ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.8rem;
+}
+.fav-actor__name {
+  font-size: 0.78rem;
+  line-height: 1.2;
+}
+/* Wraps a cast card so the "star" can sit over the photo (IMDb-style favourite). */
+.cast-card-wrap {
+  position: relative;
+  width: 96px;
+  flex-shrink: 0;
+}
+.cast-star {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 26px;
+  height: 26px;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.72);
+  color: #fbbf24;
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.55;
+  transition: opacity 0.12s ease, background 0.12s ease;
+  z-index: 2;
+}
+.cast-card-wrap:hover .cast-star,
+.cast-star--on,
+.cast-star:focus-visible {
+  opacity: 1;
+}
+.cast-star:hover {
+  background: rgba(15, 23, 42, 0.92);
 }
 .cast-card {
   width: 96px;
@@ -1973,7 +2099,15 @@ input[type='file'] {
 }
 
 .movie-watch {
-  margin: 20px 0;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+}
+/* When watched: the count + date sit to the right of the button, not below it. */
+.movie-watch__info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
 /* ---- Header user button -------------------------------------------------- */

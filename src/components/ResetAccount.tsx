@@ -41,11 +41,15 @@ export default function ResetAccount() {
 
       await db.transaction(
         'rw',
-        db.trackedItems,
-        db.watchEvents,
-        db.episodeStates,
-        db.episodeCache,
-        db.tombstones,
+        [
+          db.trackedItems,
+          db.watchEvents,
+          db.episodeStates,
+          db.episodeCache,
+          db.tombstones,
+          db.favoritePeople,
+          db.favoriteServices,
+        ],
         async () => {
           await Promise.all([
             db.trackedItems.clear(),
@@ -53,6 +57,8 @@ export default function ResetAccount() {
             db.episodeStates.clear(),
             db.episodeCache.clear(),
             db.tombstones.clear(),
+            db.favoritePeople.clear(),
+            db.favoriteServices.clear(),
           ])
         },
       )

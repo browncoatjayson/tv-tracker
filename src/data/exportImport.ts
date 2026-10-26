@@ -1,5 +1,12 @@
 import { db } from './db'
-import type { EpisodeState, TrackedItem, Tombstone, WatchEvent } from './types'
+import type {
+  EpisodeState,
+  FavoritePerson,
+  FavoriteService,
+  TrackedItem,
+  Tombstone,
+  WatchEvent,
+} from './types'
 
 // ---------------------------------------------------------------------------
 // JSON backup / restore. This is the always-available safety net (and the same
@@ -7,9 +14,10 @@ import type { EpisodeState, TrackedItem, Tombstone, WatchEvent } from './types'
 // the shape changes so future imports can migrate old files.
 // ---------------------------------------------------------------------------
 
-// v2 adds `tombstones` (delete markers). v1 files still import — tombstones
-// default to [] — so this bump is backward compatible.
-export const BACKUP_VERSION = 2 as const
+// v2 adds `tombstones` (delete markers). v3 adds `favoritePeople` (starred
+// actors). v4 adds `favoriteServices`. Older files still import — the newer
+// arrays default to [] — so these bumps are backward compatible.
+export const BACKUP_VERSION = 4 as const
 
 export interface BackupData {
   app: 'tv-tracker'
@@ -20,16 +28,23 @@ export interface BackupData {
   episodeStates: EpisodeState[]
   /** Delete markers so removals propagate on sync (absent in v1 backups). */
   tombstones?: Tombstone[]
+  /** Starred actors (absent in pre-v3 backups). */
+  favoritePeople?: FavoritePerson[]
+  /** Favorite streaming services (absent in pre-v4 backups). */
+  favoriteServices?: FavoriteService[]
 }
 
 /** Read the entire user dataset out of IndexedDB. */
 export async function buildBackup(): Promise<BackupData> {
-  const [trackedItems, watchEvents, episodeStates, tombstones] = await Promise.all([
-    db.trackedItems.toArray(),
-    db.watchEvents.toArray(),
-    db.episodeStates.toArray(),
-    db.tombstones.toArray(),
-  ])
+  const [trackedItems, watchEvents, episodeStates, tombstones, favoritePeople, favoriteServices] =
+    await Promise.all([
+      db.trackedItems.toArray(),
+      db.watchEvents.toArray(),
+      db.episodeStates.toArray(),
+      db.tombstones.toArray(),
+      db.favoritePeople.toArray(),
+      db.favoriteServices.toArray(),
+    ])
   return {
     app: 'tv-tracker',
     version: BACKUP_VERSION,
@@ -38,6 +53,8 @@ export async function buildBackup(): Promise<BackupData> {
     watchEvents,
     episodeStates,
     tombstones,
+    favoritePeople,
+    favoriteServices,
   }
 }
 
@@ -84,12 +101,18 @@ export type ImportMode =
 /** Write a (already-parsed) backup into the local DB. */
 export async function applyBackup(data: BackupData, mode: ImportMode): Promise<void> {
   const tombstones = data.tombstones ?? []
+  const favoritePeople = data.favoritePeople ?? []
+  const favoriteServices = data.favoriteServices ?? []
   await db.transaction(
     'rw',
-    db.trackedItems,
-    db.watchEvents,
-    db.episodeStates,
-    db.tombstones,
+    [
+      db.trackedItems,
+      db.watchEvents,
+      db.episodeStates,
+      db.tombstones,
+      db.favoritePeople,
+      db.favoriteServices,
+    ],
     async () => {
       if (mode === 'replace') {
         await Promise.all([
@@ -97,11 +120,15 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
           db.watchEvents.clear(),
           db.episodeStates.clear(),
           db.tombstones.clear(),
+          db.favoritePeople.clear(),
+          db.favoriteServices.clear(),
         ])
       }
       // `bulkPut` upserts by primary key — safe for both modes.
       await db.trackedItems.bulkPut(data.trackedItems)
       await db.episodeStates.bulkPut(data.episodeStates)
+      await db.favoritePeople.bulkPut(favoritePeople)
+      await db.favoriteServices.bulkPut(favoriteServices)
       // Watch events use auto-increment ids; drop them so the local log assigns
       // fresh ones (the append-only log only ever grows).
       const events =
@@ -227,6 +254,21 @@ export function mergeBackups(a: BackupData, b: BackupData): BackupData {
     events.set(eventSignature(ev), rest)
   }
 
+  // Starred actors: last-write-wins by updatedAt, keyed by person id. A soft-
+  // deleted (removed) record carries across so an un-favorite propagates.
+  const people = new Map<number, FavoritePerson>()
+  for (const p of [...(a.favoritePeople ?? []), ...(b.favoritePeople ?? [])]) {
+    const prev = people.get(p.id)
+    if (!prev || (p.updatedAt ?? 0) >= (prev.updatedAt ?? 0)) people.set(p.id, p)
+  }
+
+  // Favorite services: same last-write-wins by updatedAt, keyed by service id.
+  const services = new Map<string, FavoriteService>()
+  for (const s of [...(a.favoriteServices ?? []), ...(b.favoriteServices ?? [])]) {
+    const prev = services.get(s.id)
+    if (!prev || (s.updatedAt ?? 0) >= (prev.updatedAt ?? 0)) services.set(s.id, s)
+  }
+
   return {
     app: 'tv-tracker',
     version: BACKUP_VERSION,
@@ -235,5 +277,7 @@ export function mergeBackups(a: BackupData, b: BackupData): BackupData {
     episodeStates: [...episodes.values()],
     watchEvents: [...events.values()],
     tombstones: [...tombstones.entries()].map(([id, deletedAt]) => ({ id, deletedAt })),
+    favoritePeople: [...people.values()],
+    favoriteServices: [...services.values()],
   }
 }
