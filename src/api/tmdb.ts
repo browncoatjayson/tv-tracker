@@ -418,15 +418,21 @@ export interface TmdbTvDetails {
   /** The next episode scheduled to air, or null if none is scheduled. */
   next_episode_to_air: TmdbEpisodePointer | null
   last_episode_to_air: TmdbEpisodePointer | null
-  // Folded in via append_to_response so the detail page needs one call, not four.
-  images?: { backdrops?: TmdbImage[] }
-  videos?: { results?: TmdbVideo[] }
-  recommendations?: { results?: TmdbRecommendation[] }
 }
 
 /** A TMDB image reference (backdrop / still) for the screencap gallery. */
 export interface TmdbImage {
   file_path: string
+}
+
+/** Backdrop images for a title, for the screencap gallery. Kept a separate,
+ *  non-blocking request (not folded into the details call) so a large image set
+ *  can't fail the whole detail page — a real problem for TV in a mobile PWA. */
+export async function getImages(mediaType: 'tv' | 'movie', tmdbId: number): Promise<TmdbImage[]> {
+  const data = await tmdbGet<{ backdrops?: TmdbImage[] }>(`/${mediaType}/${tmdbId}/images`, {
+    include_image_language: 'en,null',
+  })
+  return data.backdrops ?? []
 }
 
 /** Still frames for a single episode, for the screencap gallery. */
@@ -448,6 +454,12 @@ export interface TmdbVideo {
   type: string
   name: string
   official?: boolean
+}
+
+/** Trailers / teasers / clips etc. for a title (YouTube only). */
+export async function getVideos(mediaType: 'tv' | 'movie', tmdbId: number): Promise<TmdbVideo[]> {
+  const data = await tmdbGet<{ results?: TmdbVideo[] }>(`/${mediaType}/${tmdbId}/videos`)
+  return (data.results ?? []).filter((v) => v.site === 'YouTube' && v.key)
 }
 
 /** A recommended / similar title. */
@@ -483,28 +495,7 @@ export async function getTrending(
 }
 
 export async function getTvDetails(tmdbId: number): Promise<TmdbTvDetails> {
-  return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, {
-    append_to_response: 'watch/providers,credits,images,videos,recommendations',
-    include_image_language: 'en,null',
-  })
-}
-
-// Extract the appended extras from a details response (same shaping as the
-// standalone getImages/getVideos/getRecommendations), so a detail page can read
-// them from the single details call instead of making three more requests.
-interface WithExtras {
-  images?: { backdrops?: TmdbImage[] }
-  videos?: { results?: TmdbVideo[] }
-  recommendations?: { results?: TmdbRecommendation[] }
-}
-export function backdropsOf(d: WithExtras | undefined): TmdbImage[] {
-  return d?.images?.backdrops ?? []
-}
-export function videosOf(d: WithExtras | undefined): TmdbVideo[] {
-  return (d?.videos?.results ?? []).filter((v) => v.site === 'YouTube' && v.key)
-}
-export function recommendationsOf(d: WithExtras | undefined): TmdbRecommendation[] {
-  return d?.recommendations?.results ?? []
+  return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, { append_to_response: 'watch/providers,credits' })
 }
 
 export interface TmdbMovieDetails {
@@ -525,16 +516,11 @@ export interface TmdbMovieDetails {
   'watch/providers'?: TmdbWatchProviders
   /** The movie franchise this title belongs to, if any (e.g. "Halloween Collection"). */
   belongs_to_collection?: { id: number; name: string; poster_path?: string | null } | null
-  // Folded in via append_to_response so the detail page needs one call, not four.
-  images?: { backdrops?: TmdbImage[] }
-  videos?: { results?: TmdbVideo[] }
-  recommendations?: { results?: TmdbRecommendation[] }
 }
 
 export async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails> {
   return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`, {
-    append_to_response: 'watch/providers,credits,images,videos,recommendations',
-    include_image_language: 'en,null',
+    append_to_response: 'watch/providers,credits',
   })
 }
 

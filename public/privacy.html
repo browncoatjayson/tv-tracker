@@ -5,37 +5,84 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Privacy Policy — TV Tracker</title>
     <meta name="robots" content="index,follow" />
+    <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <style>
       :root {
         color-scheme: dark;
-        --bg: #0f172a;
-        --surface: #1e293b;
-        --text: #e2e8f0;
-        --muted: #94a3b8;
+        --bg: #0b1222;
+        --bg-2: #0f172a;
+        --surface: #16233b;
+        --surface-2: #1e2d49;
+        --text: #e8eefb;
+        --muted: #9fb0cd;
         --accent: #38bdf8;
+        --accent-2: #818cf8;
+        --ring: rgba(56, 189, 248, 0.35);
+        --radius: 16px;
       }
       * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
       body {
         margin: 0;
-        background: var(--bg);
+        background:
+          radial-gradient(1100px 500px at 80% -10%, rgba(129, 140, 248, 0.18), transparent 60%),
+          radial-gradient(900px 500px at 0% 0%, rgba(56, 189, 248, 0.16), transparent 55%),
+          var(--bg);
         color: var(--text);
-        font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-        padding: 32px 16px 64px;
+        font: 17px/1.65 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
       }
-      main { max-width: 760px; margin: 0 auto; }
-      h1 { font-size: 1.8rem; margin: 0 0 4px; }
-      h2 { font-size: 1.2rem; margin: 32px 0 8px; }
-      a { color: var(--accent); }
-      .muted { color: var(--muted); }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px 40px; }
+
+      /* Nav (shared frame) */
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        backdrop-filter: blur(10px);
+        background: rgba(11, 18, 34, 0.7);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; padding-bottom: 0; }
+      .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; color: var(--text); }
+      .brand:hover { text-decoration: none; }
+      .brand img { width: 30px; height: 30px; border-radius: 8px; }
+      .btn {
+        display: inline-flex; align-items: center; gap: 8px; font-weight: 600;
+        padding: 11px 18px; border-radius: 999px; border: 1px solid transparent; cursor: pointer;
+      }
+      .btn--primary { color: #04121f; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+      .btn--primary:hover { text-decoration: none; filter: brightness(1.05); }
+
+      /* Article */
+      .page { max-width: 760px; margin: 0 auto; padding: 40px 20px 8px; }
+      h1 { font-size: 1.9rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+      .page h2 { font-size: 1.2rem; margin: 32px 0 8px; }
       .updated { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
-      ul { padding-left: 20px; }
-      li { margin: 6px 0; }
+      .muted { color: var(--muted); }
+      .page ul { padding-left: 20px; }
+      .page li { margin: 6px 0; }
       code { background: var(--surface); padding: 1px 6px; border-radius: 6px; }
-      .back { display: inline-block; margin-top: 32px; }
+
+      /* Footer (shared frame) */
+      footer { border-top: 1px solid rgba(255, 255, 255, 0.07); padding: 32px 0 56px; color: var(--muted); }
+      .foot { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; justify-content: space-between; }
+      .foot .links { display: flex; gap: 18px; flex-wrap: wrap; }
+      .foot small { display: block; margin-top: 16px; font-size: 0.82rem; line-height: 1.5; }
     </style>
   </head>
   <body>
-    <main>
+    <header>
+      <div class="wrap nav">
+        <a class="brand" href="/tvtracker.html"><img src="/app-icon.svg" alt="" /> TV Tracker</a>
+        <a class="btn btn--primary" href="/">Open app</a>
+      </div>
+    </header>
+
+    <main class="page">
       <h1>Privacy Policy</h1>
       <p class="updated">TV Tracker · Last updated 27 October 2026</p>
 
@@ -117,8 +164,26 @@
         Questions about this policy? Contact
         <a href="mailto:browncoatjayson@alteriorfantasy.com">browncoatjayson@alteriorfantasy.com</a>.
       </p>
-
-      <a class="back" href="/">← Back to TV Tracker</a>
     </main>
+
+    <footer>
+      <div class="wrap">
+        <div class="foot">
+          <a class="brand" href="/tvtracker.html"><img src="/app-icon.svg" alt="" style="width:24px;height:24px;border-radius:6px" /> TV Tracker</a>
+          <nav class="links">
+            <a href="/">Open app</a>
+            <a href="/tvtracker.html#features">Features</a>
+            <a href="/tvtracker.html#install">Install</a>
+            <a href="/privacy.html">Privacy</a>
+            <a href="/attributions.html">Attributions</a>
+          </nav>
+        </div>
+        <small>
+          TV Tracker is an independent project and is not affiliated with, endorsed by, or certified
+          by the services it links to. This product uses the TMDB API but is not endorsed or certified
+          by TMDB.
+        </small>
+      </div>
+    </footer>
   </body>
 </html>
