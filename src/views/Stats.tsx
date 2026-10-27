@@ -5,6 +5,8 @@ import { Link } from 'react-router-dom'
 import { imageUrl } from '../api/tmdb'
 import { db } from '../data/db'
 import { useFavoritePeople } from '../data/favorites'
+import { BADGES, useEarnedBadges } from '../data/badges'
+import { reviewBadgeToast } from '../utils/badgeToast'
 import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
 import { LAST_EXPORT_KEY } from '../data/exportImport'
 import { itemNeedsIndex, startIndexing, useIndexProgress } from '../data/episodeIndex'
@@ -44,6 +46,7 @@ export default function Stats() {
   const episodeStates = useLiveQuery(() => db.episodeStates.toArray())
   const watchEvents = useLiveQuery(() => db.watchEvents.toArray())
   const favoriteActors = useFavoritePeople()
+  const earnedBadges = useEarnedBadges()
 
   const [profile, setProfile] = useState<GoogleProfile | null>(getGoogleProfile())
   useEffect(() => {
@@ -200,6 +203,10 @@ export default function Stats() {
     void startIndexing()
   }
 
+  // --- Badges --------------------------------------------------------------
+  const earnedAt = new Map((earnedBadges ?? []).map((b) => [b.id, b.earnedAt]))
+  const badgeGroups = [...new Set(BADGES.map((b) => b.group))]
+
   return (
     <div className="stats">
       {showIndexPrompt && (
@@ -267,6 +274,67 @@ export default function Stats() {
           <StatTile value={gamesWatched.toLocaleString()} label="Games watched" />
         )}
       </div>
+
+      {/* Timeline entry point */}
+      <Link to="/timeline" className="card tl-entry">
+        <span className="tl-entry__icon" aria-hidden="true">
+          🗓️
+        </span>
+        <span className="tl-entry__text">
+          <strong className="tl-entry__name">Timeline</strong>
+          <span className="muted">See what you watched, day by day</span>
+        </span>
+        <span className="tl-entry__chev" aria-hidden="true">
+          ›
+        </span>
+      </Link>
+
+      {/* Badges */}
+      <section className="card">
+        <h3 className="section-title">
+          Badges <span className="muted section-title__count">{earnedAt.size} / {BADGES.length}</span>
+        </h3>
+        {badgeGroups.map((group) => (
+          <div key={group} className="badge-group">
+            <h4 className="badge-group__title">{group}</h4>
+            <div className="badge-grid">
+              {BADGES.filter((b) => b.group === group).map((b) => {
+                const at = earnedAt.get(b.id)
+                const on = at !== undefined
+                const inner = (
+                  <>
+                    <span className="badge-chip__icon" aria-hidden="true">
+                      {b.emoji}
+                    </span>
+                    <span className="badge-chip__name">{b.name}</span>
+                    <span className="badge-chip__desc muted">
+                      {on ? 'Earned' : b.description}
+                    </span>
+                  </>
+                )
+                // Earned badges hide their requirement, so a tap re-shows the
+                // toast to remind you how you earned it; locked ones aren't
+                // clickable (they already show what's needed).
+                return on ? (
+                  <button
+                    key={b.id}
+                    type="button"
+                    className="badge-chip badge-chip--on badge-chip--tap"
+                    title={`${b.name} — see how you earned it`}
+                    onClick={() => reviewBadgeToast(b, at)}
+                  >
+                    {inner}
+                  </button>
+                ) : (
+                  <div key={b.id} className="badge-chip" title={`Locked — ${b.description}`}>
+                    {inner}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        ))}
+      </section>
 
       {/* Completion */}
       <section className="card">

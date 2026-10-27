@@ -6,6 +6,7 @@ import Upcoming from './views/Upcoming'
 import ItemDetail from './views/ItemDetail'
 import EpisodePage from './views/EpisodePage'
 import Stats from './views/Stats'
+import Timeline from './views/Timeline'
 import Settings from './views/Settings'
 
 export default function App() {
@@ -18,6 +19,7 @@ export default function App() {
         <Route path="/search" element={<Search />} />
         <Route path="/upcoming" element={<Upcoming />} />
         <Route path="/stats" element={<Stats />} />
+        <Route path="/timeline" element={<Timeline />} />
         <Route path="/item/:id" element={<ItemDetail />} />
         <Route path="/item/:id/episode/:season/:episode" element={<EpisodePage />} />
         <Route path="/settings" element={<Settings />} />

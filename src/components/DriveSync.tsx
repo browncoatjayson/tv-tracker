@@ -19,6 +19,8 @@ function readLastSynced(): number | null {
 function writeLastSynced(t: number): void {
   try {
     localStorage.setItem(LAST_KEY, String(t))
+    // Nudge the badge watcher (the "In the Cloud" badge).
+    window.dispatchEvent(new Event('tvtracker:badgecheck'))
   } catch {
     // ignore
   }

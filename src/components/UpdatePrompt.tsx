@@ -1,4 +1,5 @@
 import { useRegisterSW } from 'virtual:pwa-register/react'
+import ToastOverlay from './ToastOverlay'
 
 /**
  * Shows a small toast when a new app version has been deployed, letting the user
@@ -13,14 +14,16 @@ export default function UpdatePrompt() {
   if (!needRefresh) return null
 
   return (
-    <div className="update-toast" role="status">
-      <span>A new version is available.</span>
-      <button className="btn btn--small" onClick={() => void updateServiceWorker(true)}>
-        Reload
-      </button>
-      <button className="btn btn--small btn--ghost" onClick={() => setNeedRefresh(false)}>
-        Later
-      </button>
-    </div>
+    <ToastOverlay onBackdrop={() => setNeedRefresh(false)}>
+      <div className="update-toast" role="status">
+        <span>A new version is available.</span>
+        <button className="btn btn--small" onClick={() => void updateServiceWorker(true)}>
+          Reload
+        </button>
+        <button className="btn btn--small btn--ghost" onClick={() => setNeedRefresh(false)}>
+          Later
+        </button>
+      </div>
+    </ToastOverlay>
   )
 }

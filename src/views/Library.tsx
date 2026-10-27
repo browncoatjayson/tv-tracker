@@ -3,12 +3,12 @@ import { useQueries } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
-import { hasAired, imageUrl } from '../api/tmdb'
+import { hasAired, imageUrl, languageKind } from '../api/tmdb'
 import { leagueByKey } from '../api/espn'
 import { sportAirState } from '../data/sports'
 import { getTvmazeEpisodesByImdb } from '../api/tvmaze'
 import { airsToday, compactAirTime, hasAiredByTime } from '../utils/airTime'
-import { markEpisode, toggleFavorite } from '../data/library'
+import { markEpisode, seenState, toggleFavorite } from '../data/library'
 import type { CachedEpisode, EpisodeState, TrackedItem, WatchStatus } from '../data/types'
 import { matchesFilter, parseQuery } from '../utils/filter'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
@@ -327,8 +327,14 @@ export default function Library() {
             cast: i.cast,
             mediaType: i.mediaType,
             ended: i.ended,
+            seen: seenState(i.status),
+            language: languageKind(i.language),
+            year: i.year,
             series: i.series,
+            universe: i.universe,
             team: i.sport?.teamName,
+            league: i.sport?.league,
+            leagueLabel: leagueByKey(i.sport?.league)?.label,
             // A title can be both: a mid-run show has aired episodes (lastAirDate)
             // AND upcoming ones (nextAirDate). Unknown (not indexed) → undefined.
             releasedStates: titleReleasedStates(i),

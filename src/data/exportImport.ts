@@ -1,5 +1,6 @@
 import { db } from './db'
 import type {
+  EarnedBadge,
   EpisodeState,
   FavoritePerson,
   FavoriteService,
@@ -15,9 +16,10 @@ import type {
 // ---------------------------------------------------------------------------
 
 // v2 adds `tombstones` (delete markers). v3 adds `favoritePeople` (starred
-// actors). v4 adds `favoriteServices`. Older files still import — the newer
-// arrays default to [] — so these bumps are backward compatible.
-export const BACKUP_VERSION = 4 as const
+// actors). v4 adds `favoriteServices`. v5 adds `badges` (earned achievements).
+// Older files still import — the newer arrays default to [] — so these bumps are
+// backward compatible.
+export const BACKUP_VERSION = 5 as const
 
 export interface BackupData {
   app: 'tv-tracker'
@@ -32,19 +34,29 @@ export interface BackupData {
   favoritePeople?: FavoritePerson[]
   /** Favorite streaming services (absent in pre-v4 backups). */
   favoriteServices?: FavoriteService[]
+  /** Earned gamification badges (absent in pre-v5 backups). */
+  badges?: EarnedBadge[]
 }
 
 /** Read the entire user dataset out of IndexedDB. */
 export async function buildBackup(): Promise<BackupData> {
-  const [trackedItems, watchEvents, episodeStates, tombstones, favoritePeople, favoriteServices] =
-    await Promise.all([
-      db.trackedItems.toArray(),
-      db.watchEvents.toArray(),
-      db.episodeStates.toArray(),
-      db.tombstones.toArray(),
-      db.favoritePeople.toArray(),
-      db.favoriteServices.toArray(),
-    ])
+  const [
+    trackedItems,
+    watchEvents,
+    episodeStates,
+    tombstones,
+    favoritePeople,
+    favoriteServices,
+    badges,
+  ] = await Promise.all([
+    db.trackedItems.toArray(),
+    db.watchEvents.toArray(),
+    db.episodeStates.toArray(),
+    db.tombstones.toArray(),
+    db.favoritePeople.toArray(),
+    db.favoriteServices.toArray(),
+    db.badges.toArray(),
+  ])
   return {
     app: 'tv-tracker',
     version: BACKUP_VERSION,
@@ -55,6 +67,7 @@ export async function buildBackup(): Promise<BackupData> {
     tombstones,
     favoritePeople,
     favoriteServices,
+    badges,
   }
 }
 
@@ -74,6 +87,9 @@ export async function downloadBackup(): Promise<void> {
   URL.revokeObjectURL(url)
   try {
     localStorage.setItem(LAST_EXPORT_KEY, String(Date.now()))
+    // Let the badge watcher re-check (the "Safekeeper" badge). A localStorage
+    // write isn't observed by Dexie live queries or same-tab `storage` events.
+    window.dispatchEvent(new Event('tvtracker:badgecheck'))
   } catch {
     // ignore storage errors
   }
@@ -103,6 +119,7 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
   const tombstones = data.tombstones ?? []
   const favoritePeople = data.favoritePeople ?? []
   const favoriteServices = data.favoriteServices ?? []
+  const badges = data.badges ?? []
   await db.transaction(
     'rw',
     [
@@ -112,6 +129,7 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
       db.tombstones,
       db.favoritePeople,
       db.favoriteServices,
+      db.badges,
     ],
     async () => {
       if (mode === 'replace') {
@@ -122,6 +140,7 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
           db.tombstones.clear(),
           db.favoritePeople.clear(),
           db.favoriteServices.clear(),
+          db.badges.clear(),
         ])
       }
       // `bulkPut` upserts by primary key — safe for both modes.
@@ -129,6 +148,7 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
       await db.episodeStates.bulkPut(data.episodeStates)
       await db.favoritePeople.bulkPut(favoritePeople)
       await db.favoriteServices.bulkPut(favoriteServices)
+      await db.badges.bulkPut(badges)
       // Watch events use auto-increment ids; drop them so the local log assigns
       // fresh ones (the append-only log only ever grows).
       const events =
@@ -269,6 +289,15 @@ export function mergeBackups(a: BackupData, b: BackupData): BackupData {
     if (!prev || (s.updatedAt ?? 0) >= (prev.updatedAt ?? 0)) services.set(s.id, s)
   }
 
+  // Badges: union by id, keeping the earliest earnedAt (append-only; a badge is
+  // never un-earned, so there's nothing to delete — just converge on when it
+  // was first achieved across devices).
+  const badges = new Map<string, EarnedBadge>()
+  for (const bd of [...(a.badges ?? []), ...(b.badges ?? [])]) {
+    const prev = badges.get(bd.id)
+    if (!prev || bd.earnedAt < prev.earnedAt) badges.set(bd.id, bd)
+  }
+
   return {
     app: 'tv-tracker',
     version: BACKUP_VERSION,
@@ -279,5 +308,6 @@ export function mergeBackups(a: BackupData, b: BackupData): BackupData {
     tombstones: [...tombstones.entries()].map(([id, deletedAt]) => ({ id, deletedAt })),
     favoritePeople: [...people.values()],
     favoriteServices: [...services.values()],
+    badges: [...badges.values()],
   }
 }

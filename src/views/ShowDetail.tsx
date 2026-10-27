@@ -35,6 +35,7 @@ import RatingRow from '../components/RatingRow'
 import Reviews from '../components/Reviews'
 import Gallery from '../components/Gallery'
 import Recommendations from '../components/Recommendations'
+import Related from '../components/Related'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
 import { appConfirm } from '../utils/confirm'
 import { airTimeOrDate, hasAiredByTime } from '../utils/airTime'
@@ -132,6 +133,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
     if (item && d) {
       void setItemMeta(item.id, {
         genres: genreNames(d),
+        language: d.original_language,
         providers: watchNames(d),
         cast: castNames(d),
         runtime: runtimeOf(d),
@@ -453,6 +455,8 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
           </details>
         )}
       </section>
+
+      <Related itemId={item?.id} mediaType="show" tmdbId={tmdbId} />
 
       <Reviews target={{ mediaType: 'show', tmdbId }} poweredBy />
 

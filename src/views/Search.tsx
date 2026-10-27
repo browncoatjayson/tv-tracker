@@ -11,12 +11,14 @@ import {
   getPersonCredits,
   getRecommendations,
   getSeriesByName,
+  getTitleBrief,
   getTrending,
   getTvDetails,
   getWatchProviders,
   hasTmdbToken,
   imageUrl,
   isEndedStatus,
+  languageKind,
   runtimeOf,
   searchMulti,
   searchPerson,
@@ -26,15 +28,25 @@ import {
   type TmdbRecommendation,
 } from '../api/tmdb'
 import { db, itemKey } from '../data/db'
-import { addItem } from '../data/library'
+import { addItem, seenState } from '../data/library'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import { matchesFilter, parseQuery } from '../utils/filter'
 import { hasDiscoverFilters, newReleasesParams, planDiscover, resolveProviderIds } from '../utils/discover'
 import { useFavoritePeople } from '../data/favorites'
 import { useFavoriteServices } from '../data/services'
-import { searchEspnTeams, type EspnTeamHit } from '../api/espn'
+import {
+  ESPN_LEAGUES,
+  espnGameUrl,
+  getEspnScoreboard,
+  leaguesForKeys,
+  searchEspnTeams,
+  type EspnScoreGame,
+  type EspnTeamHit,
+} from '../api/espn'
+import { getUniverseByName } from '../api/wikidata'
 import { addSportTeam, sportItemId } from '../data/sports'
+import { useEnabledLeagues } from '../data/sportPrefs'
 import FilterBar from '../components/FilterBar'
 import Recommendations from '../components/Recommendations'
 import type { MediaType } from '../data/types'
@@ -78,6 +90,8 @@ export default function Search() {
   const [discoverRun, setDiscoverRun] = useState('')
   const [discoverPages, setDiscoverPages] = useState(1)
   const [discoverVisible, setDiscoverVisible] = useState(PAGE)
+  // Today (YYYY-MM-DD), computed once — lazy init keeps Date out of render.
+  const [today] = useState(() => new Date().toISOString().slice(0, 10))
 
   // Prefill from a ?q= link (e.g. the cast links on the detail page).
   const [searchParams] = useSearchParams()
@@ -102,19 +116,68 @@ export default function Search() {
   const seriesName = parsed.series[0] // series: shows a movie franchise
   const teamName = parsed.teams[0] // team: switches to ESPN sports-team search
 
-  // Sports mode: a team: token, or the Sports type selected. Searches ESPN teams
-  // instead of TMDB, and replaces the usual TMDB sections.
+  const enabledLeagues = useEnabledLeagues()
+
+  // Sports mode: a team: or game: token, or the Sports type selected. Searches
+  // ESPN instead of TMDB, and replaces the usual TMDB sections.
   const sportMode =
     !actorName &&
     !seriesName &&
-    (parsed.teams.length > 0 || (parsed.types.length === 1 && parsed.types[0] === 'sport'))
+    (parsed.teams.length > 0 ||
+      parsed.games.length > 0 ||
+      (parsed.types.length === 1 && parsed.types[0] === 'sport'))
+  // A game: filter (with no specific team typed) browses those leagues' games;
+  // otherwise sport mode finds teams to add.
+  const gameBrowse = sportMode && parsed.games.length > 0 && !teamName
+  // The enabled leagues the game: filter resolves to (by key or label). Empty
+  // when no game: token is set.
+  const gameLeagueKeys = ESPN_LEAGUES.filter(
+    (l) =>
+      enabledLeagues.includes(l.key) &&
+      parsed.games.some((g) => g === l.key || l.label.toLowerCase().includes(g)),
+  ).map((l) => l.key)
+  // Team search honors the game: filter — a league picked there limits which
+  // leagues are searched (so "Nebraska" + College Football excludes volleyball).
+  const teamSearchKeys = parsed.games.length ? gameLeagueKeys : enabledLeagues
   const sportQuery = teamName ?? searchText
   const sportSearch = useQuery({
-    queryKey: ['espn-team-search', sportQuery],
-    queryFn: () => searchEspnTeams(sportQuery),
-    enabled: sportMode && sportQuery.length >= 2,
+    queryKey: ['espn-team-search', sportQuery, teamSearchKeys.join(',')],
+    queryFn: () => searchEspnTeams(sportQuery, teamSearchKeys),
+    enabled: sportMode && !gameBrowse && sportQuery.length >= 2,
     staleTime: HOUR,
   })
+
+  // Game browse: pull each selected league's current scoreboard. The released:
+  // filter keeps aired / upcoming.
+  const browseLeagues = gameBrowse ? leaguesForKeys(gameLeagueKeys) : []
+  const scoreboardQueries = useQueries({
+    queries: browseLeagues.map((l) => ({
+      queryKey: ['espn-scoreboard', l.key],
+      queryFn: () => getEspnScoreboard(l.key),
+      staleTime: HOUR,
+    })),
+  })
+  const browseGames: EspnScoreGame[] = []
+  if (gameBrowse) {
+    for (const q of scoreboardQueries) {
+      for (const g of q.data ?? []) {
+        const aired = g.completed || g.date.slice(0, 10) < today
+        // released: filter (single pick restricts; both/none = all).
+        if (parsed.released.length === 1) {
+          if (parsed.released[0] === 'aired' && !aired) continue
+          if (parsed.released[0] === 'upcoming' && aired) continue
+        }
+        // Free text filters by either team's name.
+        if (searchText) {
+          const hay = `${g.name} ${g.home?.name ?? ''} ${g.away?.name ?? ''}`.toLowerCase()
+          if (!hay.includes(searchText)) continue
+        }
+        browseGames.push(g)
+      }
+    }
+    browseGames.sort((a, b) => a.date.localeCompare(b.date))
+  }
+  const browseFetching = gameBrowse && scoreboardQueries.some((q) => q.isFetching)
 
   // Filter-only browse: tokens but no free text / actor / series / team. Runs only
   // once the user hits the play button (or Enter), since it's a heavier query.
@@ -145,13 +208,33 @@ export default function Search() {
     queryKey: ['series-search', seriesName],
     queryFn: async (): Promise<TmdbMediaResult[]> => {
       const parts = await getSeriesByName(seriesName)
-      return parts.map((p) => ({
+      const results: TmdbMediaResult[] = parts.map((p) => ({
         id: p.id,
         media_type: 'movie',
         title: p.title,
         poster_path: p.poster_path,
         release_date: p.release_date ?? undefined,
       }))
+      // Broaden with Wikidata shared-universe siblings (brings in TV + any films
+      // outside the TMDB collection — e.g. the Chucky series for Child's Play).
+      const seen = new Set(results.map((r) => `movie:${r.id}`))
+      const extras = (await getUniverseByName(seriesName)).filter(
+        (m) => !seen.has(`${m.mediaType}:${m.tmdbId}`),
+      )
+      const briefs = await Promise.all(
+        extras.map((m) => getTitleBrief(m.mediaType === 'show' ? 'tv' : 'movie', m.tmdbId)),
+      )
+      extras.forEach((m, i) => {
+        const b = briefs[i]
+        if (!b) return
+        const year = b.year ? String(b.year) : undefined
+        results.push(
+          m.mediaType === 'show'
+            ? { id: m.tmdbId, media_type: 'tv', name: b.title, poster_path: b.posterPath ?? null, first_air_date: year }
+            : { id: m.tmdbId, media_type: 'movie', title: b.title, poster_path: b.posterPath ?? null, release_date: year },
+        )
+      })
+      return results
     },
     enabled: hasTmdbToken() && !!seriesName,
     staleTime: HOUR,
@@ -205,6 +288,13 @@ export default function Search() {
   // the most-recommended. It needs a few ratings to be meaningful, so it stays
   // hidden until then — the Top 10 lists cover the cold start.
   const libraryItems = useLiveQuery(() => db.trackedItems.toArray(), [])
+  // Watch state for the seen: filter — a tracked result uses its status, an
+  // untracked one counts as unwatched (you haven't seen it).
+  const statusById = new Map((libraryItems ?? []).map((i) => [i.id, i.status]))
+  const seenFor = (r: TmdbMediaResult): 'watched' | 'unwatched' | 'dropped' => {
+    const st = statusById.get(itemKey(toMediaType(r), r.id))
+    return st ? seenState(st) : 'unwatched'
+  }
   const ratedCount = (libraryItems ?? []).filter((i) => i.userRating !== undefined).length
   const recSeeds = (libraryItems ?? [])
     .filter((i) => (i.userRating ?? 0) >= 6)
@@ -337,6 +427,15 @@ export default function Search() {
       for (const r of q.data?.results ?? []) {
         const k = `${r.media_type}:${r.id}`
         if (seen.has(k)) continue
+        // Language ("Foreign") and Seen can't be discover params, so apply them
+        // here against each result's language / your watch state.
+        if (parsedRun.languages.length === 1 && languageKind(r.original_language) !== parsedRun.languages[0]) {
+          continue
+        }
+        if (parsedRun.seen.length) {
+          const s = seenFor(r)
+          if (s === 'dropped' || (parsedRun.seen.length === 1 && s !== parsedRun.seen[0])) continue
+        }
         seen.add(k)
         discoverMerged.push(r)
       }
@@ -406,7 +505,10 @@ export default function Search() {
   // service:, length:, and status: filtering need per-result details, so fetch
   // them for the shown results — but only when one of those tokens is in use.
   const needDetails =
-    parsed.services.length > 0 || parsed.lengths.length > 0 || parsed.ended.length > 0
+    parsed.services.length > 0 ||
+    parsed.servicesExclude.length > 0 ||
+    parsed.lengths.length > 0 ||
+    parsed.ended.length > 0
   const detailQueries = useQueries({
     queries: (allResults ?? []).map((r) => ({
       queryKey: [r.media_type === 'tv' ? 'tv' : 'movie', r.id],
@@ -418,7 +520,8 @@ export default function Search() {
 
   const filtered = (allResults ?? []).filter((r, i) => {
     const d = needDetails ? detailQueries[i]?.data : undefined
-    const providers = parsed.services.length ? (d ? watchNames(d) : []) : []
+    const providers =
+      parsed.services.length || parsed.servicesExclude.length ? (d ? watchNames(d) : []) : []
     const runtime = parsed.lengths.length ? (d ? runtimeOf(d) : undefined) : undefined
     const ended =
       parsed.ended.length && r.media_type === 'tv'
@@ -437,6 +540,9 @@ export default function Search() {
         ended,
         aired: releaseState(r),
         mediaType: toMediaType(r),
+        seen: seenFor(r),
+        language: languageKind(r.original_language),
+        year: resultYear(r),
         rating: r.vote_average,
       },
       { ...parsed, actors: [], series: [], text: actorName || seriesName ? parsed.text : '' },
@@ -538,6 +644,7 @@ export default function Search() {
         onChange={setInput}
         placeholder="Search for a title, or filter and press ▶"
         autoFocus
+        sportsOptIn
         onSubmit={() => filterOnly && runDiscover()}
       >
         {filterOnly && (
@@ -556,7 +663,9 @@ export default function Search() {
         )}
       </FilterBar>
 
-      {sportMode ? (
+      {gameBrowse ? (
+        <SportGameResults games={browseGames} fetching={browseFetching} noLeagues={browseLeagues.length === 0} />
+      ) : sportMode ? (
         <SportTeamResults
           query={sportQuery}
           hits={sportSearch.data ?? []}
@@ -785,6 +894,71 @@ function SportTeamResults({
                 >
                   {added ? '✓ In library' : addingId === addKey ? 'Adding…' : 'Add'}
                 </button>
+              </div>
+            </li>
+          )
+        })}
+      </ul>
+    </>
+  )
+}
+
+/** Game browse (game: filter): a league's current scoreboard, each game linking
+ *  to its ESPN page. Informational — teams are what get tracked, not games. */
+function SportGameResults({
+  games,
+  fetching,
+  noLeagues,
+}: {
+  games: EspnScoreGame[]
+  fetching: boolean
+  noLeagues: boolean
+}) {
+  if (noLeagues) {
+    return (
+      <p className="muted">
+        None of those leagues are enabled. Turn them on in Settings → Sports, then try again.
+      </p>
+    )
+  }
+  const leagueEmoji = (key: string) => ESPN_LEAGUES.find((l) => l.key === key)?.emoji ?? '🏅'
+  return (
+    <>
+      {fetching && <p className="muted">Loading games…</p>}
+      {!fetching && games.length === 0 && (
+        <p className="muted">No games match those filters right now.</p>
+      )}
+      <ul className="result-list">
+        {games.map((g) => {
+          const url = espnGameUrl(g.leagueKey, g.id, g.date)
+          const when = g.date.slice(0, 10)
+          const aired = g.completed
+          const score = aired && g.away?.score != null && g.home?.score != null
+            ? ` · ${g.away.abbrev ?? 'Away'} ${g.away.score}–${g.home.score} ${g.home.abbrev ?? 'Home'}`
+            : ''
+          return (
+            <li key={`${g.leagueKey}:${g.id}`} className="result-item">
+              <div className="result-row">
+                <a
+                  className="result-row__link"
+                  href={url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  <div className="result-row__poster result-row__poster--placeholder">
+                    {leagueEmoji(g.leagueKey)}
+                  </div>
+                  <div className="result-row__info">
+                    <span className="result-row__title">
+                      {g.away?.name ?? 'Away'} <span className="muted">at</span> {g.home?.name ?? 'Home'}
+                    </span>
+                    <span className="type-badge">
+                      {aired ? 'Final' : 'Upcoming'} · {when}
+                      {g.week ? ` · ${g.week}` : ''}
+                      {score}
+                    </span>
+                  </div>
+                </a>
               </div>
             </li>
           )

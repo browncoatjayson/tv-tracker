@@ -6,6 +6,7 @@ import ImportTracker from '../components/ImportTracker'
 import EpisodeIndex from '../components/EpisodeIndex'
 import NotificationsSettings from '../components/NotificationsSettings'
 import FavoriteServicesSettings from '../components/FavoriteServicesSettings'
+import SportLeaguesSettings from '../components/SportLeaguesSettings'
 import ResetAccount from '../components/ResetAccount'
 
 export default function Settings() {
@@ -49,6 +50,8 @@ export default function Settings() {
       <NotificationsSettings />
 
       <FavoriteServicesSettings />
+
+      <SportLeaguesSettings />
 
       <section className="card">
         <h2>Backup &amp; restore</h2>

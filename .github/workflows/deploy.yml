@@ -31,8 +31,10 @@ jobs:
 
       - name: Build
         env:
-          # Serve assets under /<repo-name>/ on the Pages subpath.
-          VITE_BASE: /${{ github.event.repository.name }}/
+          # Custom domain (tvtracker.alteriorfantasy.com) serves at the root, so
+          # assets load from '/'. (On the bare Pages subpath it would be
+          # /${{ github.event.repository.name }}/ instead — see public/CNAME.)
+          VITE_BASE: /
           # TMDB token — add this in repo Settings -> Secrets and variables ->
           # Actions -> New repository secret (name: VITE_TMDB_TOKEN).
           VITE_TMDB_TOKEN: ${{ secrets.VITE_TMDB_TOKEN }}

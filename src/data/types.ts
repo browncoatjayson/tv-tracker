@@ -45,8 +45,12 @@ export interface TrackedItem {
    *  currently-airing show has both this and lastAirDate). Cleared once nothing
    *  is scheduled. */
   nextAirDate?: string
-  /** Broad genres (e.g. ["Drama","Crime"]) — backfilled for filtering. */
+  /** Broad genres (e.g. ["Drama","Crime"]) — backfilled for filtering (also
+   *  drives the Style filter: an "Animation" genre = animated, else live action). */
   genres?: string[]
+  /** ISO 639-1 original-language code (e.g. "en") — backfilled for the language
+   *  filter (English vs foreign). */
+  language?: string
   /** Where to watch (networks + streaming names) — backfilled for filtering. */
   providers?: string[]
   /** Top-billed cast names — backfilled for the actor filter. */
@@ -62,6 +66,10 @@ export interface TrackedItem {
   /** Movie franchise / collection name (e.g. "Halloween Collection") — backfilled
    *  for the Related section and the series: filter. Movies only. */
   series?: string
+  /** Wikidata shared-universe / franchise name (e.g. "Child's Play"), spanning
+   *  movies and shows. Backfilled from the detail page; broadens the series:
+   *  filter across media. */
+  universe?: string
   /** Set when indexing couldn't fetch TMDB data for this title, so the stats
    *  "needs indexing" prompt stops flagging it. A full rebuild retries it. */
   indexFailed?: boolean
@@ -182,4 +190,13 @@ export interface FavoriteService {
   addedAt: number
   updatedAt: number
   removed?: boolean
+}
+
+/** A gamification badge the user has earned. Append-only — a badge is never
+ *  un-earned (deleting titles can't take it back), so merges keep the earliest
+ *  earnedAt and there are no tombstones. */
+export interface EarnedBadge {
+  /** Matches a {@link BadgeDef} id in data/badges.ts. */
+  id: string
+  earnedAt: number
 }

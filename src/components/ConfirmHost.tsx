@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { _setConfirmListener, type ConfirmRequest } from '../utils/confirm'
+import ToastOverlay from './ToastOverlay'
 
 /**
  * Renders the in-app confirm toast for {@link appConfirm}. Mounted once (in
@@ -33,16 +34,18 @@ export default function ConfirmHost() {
   }
 
   return (
-    <div className="update-toast confirm-toast" role="alertdialog" aria-live="assertive">
-      <span>{req.message}</span>
-      <div className="confirm-toast__actions">
-        <button className="btn btn--small btn--ghost" onClick={() => done(false)}>
-          {req.cancelLabel}
-        </button>
-        <button className="btn btn--small" onClick={() => done(true)}>
-          {req.confirmLabel}
-        </button>
+    <ToastOverlay onBackdrop={() => done(false)}>
+      <div className="update-toast confirm-toast" role="alertdialog" aria-live="assertive">
+        <span>{req.message}</span>
+        <div className="confirm-toast__actions">
+          <button className="btn btn--small btn--ghost" onClick={() => done(false)}>
+            {req.cancelLabel}
+          </button>
+          <button className="btn btn--small" onClick={() => done(true)}>
+            {req.confirmLabel}
+          </button>
+        </div>
       </div>
-    </div>
+    </ToastOverlay>
   )
 }

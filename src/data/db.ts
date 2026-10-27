@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type {
   CachedEpisode,
+  EarnedBadge,
   EpisodeState,
   FavoritePerson,
   FavoriteService,
@@ -28,6 +29,7 @@ export class TvTrackerDB extends Dexie {
   tombstones!: Table<Tombstone, string>
   favoritePeople!: Table<FavoritePerson, number>
   favoriteServices!: Table<FavoriteService, string>
+  badges!: Table<EarnedBadge, string>
 
   constructor() {
     super('tvtracker')
@@ -70,6 +72,10 @@ export class TvTrackerDB extends Dexie {
           // best-effort migration; ignore
         }
       })
+    // v6: earned gamification badges (synced).
+    this.version(6).stores({
+      badges: 'id, earnedAt',
+    })
   }
 }
 

@@ -84,6 +84,8 @@ export interface TmdbSearchResult {
   poster_path?: string | null
   overview?: string
   genre_ids?: number[]
+  /** ISO 639-1 original-language code (e.g. "en", "ja") — for the language filter. */
+  original_language?: string
   /** TMDB average score 0–10. */
   vote_average?: number
   /** Number of votes behind vote_average (used to filter out obscure credits). */
@@ -360,6 +362,14 @@ export function isEndedStatus(status: string | undefined): boolean {
   return status === 'Ended' || status === 'Canceled' || status === 'Cancelled'
 }
 
+/** Classify an original-language code for the language filter: English vs any
+ *  other (foreign). Undefined when the language is unknown. TMDB doesn't expose
+ *  per-title subtitle/dub availability, so those aren't offered. */
+export function languageKind(code: string | undefined): 'english' | 'foreign' | undefined {
+  if (!code) return undefined
+  return code.toLowerCase() === 'en' ? 'english' : 'foreign'
+}
+
 /** Top-billed cast names (ordered), limited to `limit`. */
 export function castNames(details: WatchInfo, limit = 12): string[] {
   const cast = details.credits?.cast ?? []
@@ -375,6 +385,8 @@ export interface TmdbTvDetails {
   number_of_episodes: number
   number_of_seasons: number
   status: string
+  /** ISO 639-1 original-language code (e.g. "en"). */
+  original_language?: string
   /** TMDB average score 0–10. */
   vote_average?: number
   overview?: string
@@ -479,6 +491,8 @@ export interface TmdbMovieDetails {
   title: string
   release_date: string | null
   status: string
+  /** ISO 639-1 original-language code (e.g. "en"). */
+  original_language?: string
   runtime?: number
   /** TMDB average score 0–10. */
   vote_average?: number

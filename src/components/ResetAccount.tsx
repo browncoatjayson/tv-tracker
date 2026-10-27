@@ -49,6 +49,7 @@ export default function ResetAccount() {
           db.tombstones,
           db.favoritePeople,
           db.favoriteServices,
+          db.badges,
         ],
         async () => {
           await Promise.all([
@@ -59,6 +60,7 @@ export default function ResetAccount() {
             db.tombstones.clear(),
             db.favoritePeople.clear(),
             db.favoriteServices.clear(),
+            db.badges.clear(),
           ])
         },
       )
@@ -67,6 +69,8 @@ export default function ResetAccount() {
       try {
         localStorage.removeItem(LAST_SYNCED_KEY)
         localStorage.removeItem('tvtracker.indexedShows')
+        // Re-prime the badge watcher so it adopts the now-empty state silently.
+        localStorage.removeItem('tvtracker.badges.primed')
       } catch {
         // ignore storage errors
       }

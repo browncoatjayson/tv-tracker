@@ -84,6 +84,7 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
       const todayStr = new Date().toISOString().slice(0, 10)
       void setItemMeta(item.id, {
         genres: genreNames(d),
+        language: d.original_language,
         providers: watchNames(d),
         cast: castNames(d),
         runtime: runtimeOf(d),
@@ -203,13 +204,12 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
         )}
       </section>
 
-      {collection.data && (
-        <Related
-          seriesName={collection.data.name.replace(/\s+Collection$/i, '')}
-          parts={collection.data.parts}
-          currentId={tmdbId}
-        />
-      )}
+      <Related
+        itemId={item?.id}
+        mediaType="movie"
+        tmdbId={tmdbId}
+        collection={collection.data ? { name: collection.data.name, parts: collection.data.parts } : null}
+      />
 
       <Reviews target={{ mediaType: 'movie', tmdbId }} poweredBy />
 

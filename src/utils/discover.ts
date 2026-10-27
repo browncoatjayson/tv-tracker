@@ -15,11 +15,15 @@ const RATING_VOTE_FLOOR = '100'
 export function hasDiscoverFilters(q: ParsedQuery): boolean {
   return (
     q.genres.length > 0 ||
+    q.genresExclude.length > 0 ||
     q.services.length > 0 ||
     q.types.length > 0 ||
+    q.typesExclude.length > 0 ||
     q.ended.length > 0 ||
     q.released.length === 1 ||
     q.lengths.length > 0 ||
+    q.years.length > 0 ||
+    q.languages.length === 1 ||
     q.rating !== undefined
   )
 }
@@ -103,11 +107,17 @@ export function buildDiscoverParams(
     p['vote_count.gte'] = RATING_VOTE_FLOOR
   }
 
+  const map = mediaType === 'tv' ? genreMap.tv : genreMap.movie
   // Genres must resolve to at least one id, or this media type can't match.
   if (q.genres.length) {
-    const ids = genreIds(q.genres, mediaType === 'tv' ? genreMap.tv : genreMap.movie)
+    const ids = genreIds(q.genres, map)
     if (!ids.length) return null
     p.with_genres = ids.join(',')
+  }
+  // Excluded genres that resolve are dropped server-side (no match = nothing to do).
+  if (q.genresExclude.length) {
+    const ids = genreIds(q.genresExclude, map)
+    if (ids.length) p.without_genres = ids.join(',')
   }
 
   // Streaming (flatrate) on any of the chosen providers.
@@ -124,6 +134,29 @@ export function buildDiscoverParams(
     const dateKey = mediaType === 'tv' ? 'first_air_date' : 'release_date'
     if (q.released[0] === 'aired') p[`${dateKey}.lte`] = today
     else p[`${dateKey}.gte`] = tomorrow
+  }
+
+  // Release year (applied after released: so a specific year wins the date range).
+  for (const y of q.years) {
+    const dateKey = mediaType === 'tv' ? 'first_air_date' : 'release_date'
+    if (y.op === '=') {
+      p[`${dateKey}.gte`] = `${y.value}-01-01`
+      p[`${dateKey}.lte`] = `${y.value}-12-31`
+    } else if (y.op === '~') {
+      const d = Math.floor(y.value / 10) * 10
+      p[`${dateKey}.gte`] = `${d}-01-01`
+      p[`${dateKey}.lte`] = `${d + 9}-12-31`
+    } else if (y.op === '<') {
+      p[`${dateKey}.lte`] = `${y.value - 1}-12-31`
+    } else {
+      p[`${dateKey}.gte`] = `${y.value + 1}-01-01`
+    }
+  }
+
+  // Language: English maps to a single original-language param. "Foreign" (not
+  // English) can't be a discover param, so it's applied client-side instead.
+  if (q.languages.length === 1 && q.languages[0] === 'english') {
+    p.with_original_language = 'en'
   }
 
   // Runtime.
@@ -168,9 +201,12 @@ export function planDiscover(
   genreMap: GenreMaps,
   providersByType: { movie: TmdbProvider[]; tv: TmdbProvider[] },
 ): DiscoverQueryPlan[] {
-  const types: ('movie' | 'tv')[] = q.types.length
+  const base: ('movie' | 'tv')[] = q.types.length
     ? q.types.map((t) => (t === 'show' ? 'tv' : 'movie'))
     : ['movie', 'tv']
+  // Excluded types are dropped from the browse (e.g. type:-show → movies only).
+  const excluded = new Set(q.typesExclude.map((t) => (t === 'show' ? 'tv' : t)))
+  const types = base.filter((t) => !excluded.has(t))
   const plans: DiscoverQueryPlan[] = []
   for (const t of types) {
     const params = buildDiscoverParams(t, q, genreMap, providersByType[t])

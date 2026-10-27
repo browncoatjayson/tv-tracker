@@ -99,6 +99,7 @@ async function indexItem(item: TrackedItem): Promise<void> {
     const release = details.release_date
     await setItemMeta(item.id, {
       genres: genreNames(details),
+      language: details.original_language,
       providers: watchNames(details),
       cast: castNames(details),
       runtime: runtimeOf(details),
@@ -117,6 +118,7 @@ async function indexItem(item: TrackedItem): Promise<void> {
   let runtime = runtimeOf(details)
   await setItemMeta(item.id, {
     genres: genreNames(details),
+    language: details.original_language,
     providers: watchNames(details),
     cast: castNames(details),
     ended: isEndedStatus(details.status),

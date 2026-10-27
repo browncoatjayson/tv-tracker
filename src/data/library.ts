@@ -62,6 +62,8 @@ export async function setItemMeta(
   id: string,
   meta: {
     genres?: string[]
+    /** ISO 639-1 original-language code (e.g. "en") — for the language filter. */
+    language?: string
     providers?: string[]
     cast?: string[]
     ended?: boolean
@@ -74,9 +76,17 @@ export async function setItemMeta(
     nextAirDate?: string
     /** Movie franchise / collection name (for the series: filter). */
     series?: string
+    /** Wikidata shared-universe name (cross-media series: matching). */
+    universe?: string
   },
 ): Promise<void> {
   await db.trackedItems.update(id, meta)
+}
+
+/** Watch state for the seen: filter — completed = watched, dropped stays its own
+ *  (always-excluded) state, everything else (watchlist / watching) = unwatched. */
+export function seenState(status: WatchStatus): 'watched' | 'unwatched' | 'dropped' {
+  return status === 'completed' ? 'watched' : status === 'dropped' ? 'dropped' : 'unwatched'
 }
 
 /** Toggle a title's Favorite flag. */

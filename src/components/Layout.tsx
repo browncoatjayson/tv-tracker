@@ -4,7 +4,9 @@ import { startIndexing, useIndexProgress } from '../data/episodeIndex'
 import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
 import UpdatePrompt from './UpdatePrompt'
 import ConfirmHost from './ConfirmHost'
+import BadgeToastHost from './BadgeToastHost'
 import NotificationScheduler from './NotificationScheduler'
+import { useBadgeWatcher } from '../hooks/useBadgeWatcher'
 import { UserGlyph } from '../views/Stats'
 
 // Tabs shown in the nav bar. A single source of truth keeps the markup tidy.
@@ -23,6 +25,9 @@ export default function Layout() {
     void startIndexing()
   }, [])
 
+  // Award gamification badges as milestones are hit (confetti toast on earn).
+  useBadgeWatcher()
+
   return (
     <div className="app-shell">
       <header className="app-header">
@@ -40,6 +45,7 @@ export default function Layout() {
 
       <UpdatePrompt />
       <ConfirmHost />
+      <BadgeToastHost />
       <NotificationScheduler />
 
       {/* Bottom tab bar — the mobile-app feel, also works fine on desktop. */}
