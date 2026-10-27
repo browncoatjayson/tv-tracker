@@ -65,7 +65,7 @@ function corsHeaders(env, origin) {
 function json(obj, status, headers) {
   return new Response(JSON.stringify(obj), {
     status,
-    headers: { 'Content-Type': 'application/json', ...headers },
+    headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...headers },
   })
 }
 
@@ -100,21 +100,27 @@ export default {
       } catch (e) {
         return json({ error: 'upstream fetch failed', detail: String(e) }, 502, cors)
       }
-      const body = await upstreamRes.arrayBuffer()
-      cached = new Response(body, {
-        status: upstreamRes.status,
-        headers: {
-          'Content-Type': upstreamRes.headers.get('Content-Type') || 'application/json',
-          // Only cache successful responses; let errors pass through uncached.
-          'Cache-Control': upstreamRes.ok ? `public, max-age=${ttlFor(url.pathname)}` : 'no-store',
-        },
+      // Stream the body through instead of buffering the whole response into
+      // memory — buffering + cloning large responses (e.g. a show with many
+      // seasons) can trip the Worker's CPU/memory limits and fail intermittently.
+      const headers = new Headers({
+        'Content-Type': upstreamRes.headers.get('Content-Type') || 'application/json',
+        // Only cache successful responses; let errors pass through uncached.
+        'Cache-Control': upstreamRes.ok ? `public, max-age=${ttlFor(url.pathname)}` : 'no-store',
       })
+      cached = new Response(upstreamRes.body, { status: upstreamRes.status, headers })
+      // clone() tees the stream, so caching doesn't block sending the response.
       if (upstreamRes.ok) ctx.waitUntil(cache.put(cacheKey, cached.clone()))
     }
 
     // Re-emit with this request's CORS headers (not stored in the shared entry).
     const out = new Response(cached.body, cached)
     for (const [k, v] of Object.entries(cors)) out.headers.set(k, v)
+    // Only Cloudflare's edge cache (populated above) should persist responses —
+    // never the browser. Chrome partitions its HTTP cache by top-level site, so a
+    // stale/partial entry for the app's cross-site fetch was being replayed
+    // without ever reaching the worker, breaking some shows. no-store stops that.
+    out.headers.set('Cache-Control', 'no-store')
     return out
   },
 }

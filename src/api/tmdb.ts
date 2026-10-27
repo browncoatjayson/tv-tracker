@@ -62,7 +62,11 @@ async function tmdbGet<T>(
   for (let attempt = 0; ; attempt++) {
     let res: Response
     try {
-      res = await fetch(url, { headers })
+      // Bypass the browser's HTTP cache — TanStack Query handles caching/dedup in
+      // memory (and persists it), and a flaky mobile connection can otherwise leave
+      // a *partial* response stuck in the HTTP cache, which then replays forever and
+      // fails to parse (seen as "Couldn't load this show").
+      res = await fetch(url, { headers, cache: 'no-store' })
     } catch (err) {
       // Network error (connection reset under load, offline, etc.) — retry.
       if (attempt >= retries) throw err
