@@ -3,9 +3,14 @@
 // multi-search so the plumbing is proven; Phase 2 expands this (details,
 // episodes, air dates, IMDb ids).
 //
-// Auth: TMDB v4 "Read Access Token" sent as a Bearer header. The token lives in
-// .env as VITE_TMDB_TOKEN and is embedded in the client bundle at build time —
-// that's expected for a static app (it's a read-only key). Never commit .env.
+// Auth: two modes.
+//  - Proxy (preferred for public deploys): set VITE_TMDB_PROXY to the TMDB proxy
+//    worker's base URL. The token stays a server-side secret on the worker and is
+//    never shipped to the browser; the worker also edge-caches responses.
+//  - Direct (simplest for local dev): set VITE_TMDB_TOKEN (a v4 Read Access
+//    Token) and we send it as a Bearer header. It's embedded in the bundle, so
+//    only use this where that's acceptable. Never commit .env.
+// When the proxy is set it takes precedence and no token is used.
 // ---------------------------------------------------------------------------
 
 const BASE_URL = 'https://api.themoviedb.org/3'
@@ -13,9 +18,12 @@ const IMAGE_BASE = 'https://image.tmdb.org/t/p'
 
 // .trim() guards against a stray newline/space in the .env value or repo secret.
 const token = import.meta.env.VITE_TMDB_TOKEN?.trim()
+// Proxy worker base URL (no trailing path), e.g. https://tvtracker-tmdb.x.workers.dev
+const proxy = import.meta.env.VITE_TMDB_PROXY?.trim()?.replace(/\/$/, '')
 
+/** True when TMDB is reachable — via the proxy worker or a direct token. */
 export function hasTmdbToken(): boolean {
-  return typeof token === 'string' && token.length > 0
+  return !!proxy || (typeof token === 'string' && token.length > 0)
 }
 
 /** Build a TMDB poster/backdrop URL from a path fragment, or undefined if none. */
@@ -42,17 +50,19 @@ async function tmdbGet<T>(
   retries = 5,
 ): Promise<T> {
   if (!hasTmdbToken()) {
-    throw new Error('Missing TMDB token. Add VITE_TMDB_TOKEN to your .env file.')
+    throw new Error('Missing TMDB config. Set VITE_TMDB_PROXY or VITE_TMDB_TOKEN.')
   }
-  const url = new URL(`${BASE_URL}${path}`)
+  // Via the proxy worker (token added server-side) or direct to TMDB with the token.
+  const url = new URL(`${proxy ?? BASE_URL}${path}`)
   for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v)
+  const headers: Record<string, string> = proxy
+    ? { accept: 'application/json' }
+    : { Authorization: `Bearer ${token}`, accept: 'application/json' }
 
   for (let attempt = 0; ; attempt++) {
     let res: Response
     try {
-      res = await fetch(url, {
-        headers: { Authorization: `Bearer ${token}`, accept: 'application/json' },
-      })
+      res = await fetch(url, { headers })
     } catch (err) {
       // Network error (connection reset under load, offline, etc.) — retry.
       if (attempt >= retries) throw err
@@ -408,19 +418,15 @@ export interface TmdbTvDetails {
   /** The next episode scheduled to air, or null if none is scheduled. */
   next_episode_to_air: TmdbEpisodePointer | null
   last_episode_to_air: TmdbEpisodePointer | null
+  // Folded in via append_to_response so the detail page needs one call, not four.
+  images?: { backdrops?: TmdbImage[] }
+  videos?: { results?: TmdbVideo[] }
+  recommendations?: { results?: TmdbRecommendation[] }
 }
 
 /** A TMDB image reference (backdrop / still) for the screencap gallery. */
 export interface TmdbImage {
   file_path: string
-}
-
-/** Backdrop images for a title, for the screencap gallery. */
-export async function getImages(mediaType: 'tv' | 'movie', tmdbId: number): Promise<TmdbImage[]> {
-  const data = await tmdbGet<{ backdrops?: TmdbImage[] }>(`/${mediaType}/${tmdbId}/images`, {
-    include_image_language: 'en,null',
-  })
-  return data.backdrops ?? []
 }
 
 /** Still frames for a single episode, for the screencap gallery. */
@@ -442,12 +448,6 @@ export interface TmdbVideo {
   type: string
   name: string
   official?: boolean
-}
-
-/** Trailers / teasers / clips etc. for a title (YouTube only). */
-export async function getVideos(mediaType: 'tv' | 'movie', tmdbId: number): Promise<TmdbVideo[]> {
-  const data = await tmdbGet<{ results?: TmdbVideo[] }>(`/${mediaType}/${tmdbId}/videos`)
-  return (data.results ?? []).filter((v) => v.site === 'YouTube' && v.key)
 }
 
 /** A recommended / similar title. */
@@ -483,7 +483,28 @@ export async function getTrending(
 }
 
 export async function getTvDetails(tmdbId: number): Promise<TmdbTvDetails> {
-  return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, { append_to_response: 'watch/providers,credits' })
+  return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, {
+    append_to_response: 'watch/providers,credits,images,videos,recommendations',
+    include_image_language: 'en,null',
+  })
+}
+
+// Extract the appended extras from a details response (same shaping as the
+// standalone getImages/getVideos/getRecommendations), so a detail page can read
+// them from the single details call instead of making three more requests.
+interface WithExtras {
+  images?: { backdrops?: TmdbImage[] }
+  videos?: { results?: TmdbVideo[] }
+  recommendations?: { results?: TmdbRecommendation[] }
+}
+export function backdropsOf(d: WithExtras | undefined): TmdbImage[] {
+  return d?.images?.backdrops ?? []
+}
+export function videosOf(d: WithExtras | undefined): TmdbVideo[] {
+  return (d?.videos?.results ?? []).filter((v) => v.site === 'YouTube' && v.key)
+}
+export function recommendationsOf(d: WithExtras | undefined): TmdbRecommendation[] {
+  return d?.recommendations?.results ?? []
 }
 
 export interface TmdbMovieDetails {
@@ -504,10 +525,17 @@ export interface TmdbMovieDetails {
   'watch/providers'?: TmdbWatchProviders
   /** The movie franchise this title belongs to, if any (e.g. "Halloween Collection"). */
   belongs_to_collection?: { id: number; name: string; poster_path?: string | null } | null
+  // Folded in via append_to_response so the detail page needs one call, not four.
+  images?: { backdrops?: TmdbImage[] }
+  videos?: { results?: TmdbVideo[] }
+  recommendations?: { results?: TmdbRecommendation[] }
 }
 
 export async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails> {
-  return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`, { append_to_response: 'watch/providers,credits' })
+  return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`, {
+    append_to_response: 'watch/providers,credits,images,videos,recommendations',
+    include_image_language: 'en,null',
+  })
 }
 
 /** A single entry in a movie collection (franchise). */

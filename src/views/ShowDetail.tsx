@@ -4,15 +4,15 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useNavigate } from 'react-router-dom'
 import { db } from '../data/db'
 import {
+  backdropsOf,
   castNames,
   genreNames,
-  getImages,
   getImdbId,
-  getRecommendations,
-  getVideos,
   imageUrl,
   isEndedStatus,
+  recommendationsOf,
   runtimeOf,
+  videosOf,
   watchNames,
   type TmdbSeasonSummary,
 } from '../api/tmdb'
@@ -97,21 +97,8 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
     enabled: hasTraktClientId(),
     staleTime: Infinity,
   })
-  const images = useQuery({
-    queryKey: ['images', 'tv', tmdbId],
-    queryFn: () => getImages('tv', tmdbId),
-    staleTime: HOUR,
-  })
-  const videos = useQuery({
-    queryKey: ['videos', 'tv', tmdbId],
-    queryFn: () => getVideos('tv', tmdbId),
-    staleTime: HOUR,
-  })
-  const recommendations = useQuery({
-    queryKey: ['recommendations', 'tv', tmdbId],
-    queryFn: () => getRecommendations('tv', tmdbId),
-    staleTime: HOUR,
-  })
+  // Backdrops, videos, and recommendations ride along on the details call
+  // (append_to_response), so no separate requests are needed.
   const akas = useQuery({
     queryKey: ['akas', item?.imdbId],
     queryFn: () => getShowAkas(item!.imdbId!),
@@ -439,7 +426,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
 
       <section className="section">
         <h3 className="section-title">Extras</h3>
-        <Gallery videos={videos.data ?? []} images={images.data ?? []} />
+        <Gallery videos={videosOf(d)} images={backdropsOf(d)} />
 
         {facts.length > 0 && (
           <details className="facts">
@@ -460,7 +447,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
 
       <Reviews target={{ mediaType: 'show', tmdbId }} poweredBy />
 
-      <Recommendations recs={recommendations.data ?? []} mediaType="tv" />
+      <Recommendations recs={recommendationsOf(d)} mediaType="tv" />
 
       {item && (
         <button

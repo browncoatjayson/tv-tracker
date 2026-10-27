@@ -3,16 +3,16 @@ import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../data/db'
 import {
+  backdropsOf,
   castNames,
   genreNames,
   getCollection,
-  getImages,
   getImdbId,
   getMovieDetails,
-  getRecommendations,
-  getVideos,
   imageUrl,
+  recommendationsOf,
   runtimeOf,
+  videosOf,
   watchNames,
 } from '../api/tmdb'
 import { hasTraktClientId, resolveTraktId } from '../api/trakt'
@@ -47,21 +47,8 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
     enabled: hasTraktClientId(),
     staleTime: Infinity,
   })
-  const images = useQuery({
-    queryKey: ['images', 'movie', tmdbId],
-    queryFn: () => getImages('movie', tmdbId),
-    staleTime: HOUR,
-  })
-  const videos = useQuery({
-    queryKey: ['videos', 'movie', tmdbId],
-    queryFn: () => getVideos('movie', tmdbId),
-    staleTime: HOUR,
-  })
-  const recommendations = useQuery({
-    queryKey: ['recommendations', 'movie', tmdbId],
-    queryFn: () => getRecommendations('movie', tmdbId),
-    staleTime: HOUR,
-  })
+  // Backdrops, videos, and recommendations now ride along on the details call
+  // (append_to_response), so no separate requests are needed.
   const collectionId = detailsQuery.data?.belongs_to_collection?.id
   const collection = useQuery({
     queryKey: ['collection', collectionId],
@@ -187,7 +174,7 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
 
       <section className="section">
         <h3 className="section-title">Extras</h3>
-        <Gallery videos={videos.data ?? []} images={images.data ?? []} />
+        <Gallery videos={videosOf(d)} images={backdropsOf(d)} />
 
         {facts.length > 0 && (
           <details className="facts">
@@ -213,7 +200,7 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
 
       <Reviews target={{ mediaType: 'movie', tmdbId }} poweredBy />
 
-      <Recommendations recs={recommendations.data ?? []} mediaType="movie" />
+      <Recommendations recs={recommendationsOf(d)} mediaType="movie" />
 
       {item && (
         <button

@@ -35,8 +35,11 @@ jobs:
           # assets load from '/'. (On the bare Pages subpath it would be
           # /${{ github.event.repository.name }}/ instead — see public/CNAME.)
           VITE_BASE: /
-          # TMDB token — add this in repo Settings -> Secrets and variables ->
-          # Actions -> New repository secret (name: VITE_TMDB_TOKEN).
+          # TMDB access. Prefer the proxy worker (keeps the token server-side):
+          # set VITE_TMDB_PROXY to the worker URL and you can drop VITE_TMDB_TOKEN.
+          # VITE_TMDB_TOKEN is the direct-call fallback (token ships in the bundle).
+          # Add either as a repo secret under Settings -> Secrets and variables.
+          VITE_TMDB_PROXY: ${{ secrets.VITE_TMDB_PROXY }}
           VITE_TMDB_TOKEN: ${{ secrets.VITE_TMDB_TOKEN }}
           # Google OAuth client ID for Drive sync (public value; stored as a
           # secret only for consistency). Add as repo secret VITE_GOOGLE_CLIENT_ID.

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Privacy Policy — TV Tracker</title>
+    <meta name="robots" content="index,follow" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0f172a;
+        --surface: #1e293b;
+        --text: #e2e8f0;
+        --muted: #94a3b8;
+        --accent: #38bdf8;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--text);
+        font: 16px/1.6 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        padding: 32px 16px 64px;
+      }
+      main { max-width: 760px; margin: 0 auto; }
+      h1 { font-size: 1.8rem; margin: 0 0 4px; }
+      h2 { font-size: 1.2rem; margin: 32px 0 8px; }
+      a { color: var(--accent); }
+      .muted { color: var(--muted); }
+      .updated { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
+      ul { padding-left: 20px; }
+      li { margin: 6px 0; }
+      code { background: var(--surface); padding: 1px 6px; border-radius: 6px; }
+      .back { display: inline-block; margin-top: 32px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Privacy Policy</h1>
+      <p class="updated">TV Tracker · Last updated 27 October 2026</p>
+
+      <p>
+        TV Tracker is a personal, offline-first app for tracking the shows, movies, and sports you
+        watch. It is built to keep your data on your own device. This policy explains what is stored,
+        where, and when anything leaves your browser.
+      </p>
+
+      <h2>What we store, and where</h2>
+      <ul>
+        <li>
+          <strong>Your library and activity</strong> — the titles you track, watch history, ratings,
+          favorites, badges, and settings — are stored <strong>locally in your browser</strong>
+          (IndexedDB). They never touch our servers. Clearing your browser data or site storage
+          deletes them.
+        </li>
+        <li>
+          <strong>We have no accounts and no server database.</strong> There is nothing to sign up
+          for, and we do not collect, sell, or share personal information.
+        </li>
+        <li><strong>No analytics, advertising, or third-party trackers</strong> are used.</li>
+      </ul>
+
+      <h2>Optional Google Drive sync</h2>
+      <p>
+        If you choose to connect Google Drive, the app saves a single backup file to your own
+        Google Drive using the <code>drive.appdata</code> scope. That scope restricts the app to a
+        private, app-specific folder — it <strong>cannot see or access any of your other Drive
+        files</strong>. Your backup stays in your Google account; we never receive or store it. Your
+        Google display name and profile picture are shown in the app only and are not transmitted
+        elsewhere. You can disconnect at any time, and you can revoke access from your
+        <a href="https://myaccount.google.com/permissions" rel="noopener">Google account
+        permissions</a>.
+      </p>
+
+      <h2>Optional notifications</h2>
+      <p>
+        If you enable push notifications for upcoming episodes, your browser's push subscription (an
+        anonymous endpoint, not your identity) and the next reminder times are stored by a
+        self-hosted Cloudflare Worker so it can send “airing soon” reminders. No watch history or
+        personal data is sent. Disabling notifications removes the subscription.
+      </p>
+
+      <h2>Third-party services</h2>
+      <p>
+        To show metadata, air times, reviews, and scores, your browser makes requests directly to
+        the services below. Each receives your IP address and the specific request (for example, a
+        title id) as part of normal operation, under its own privacy policy. TV Tracker sends them no
+        account or identifying information.
+      </p>
+      <ul>
+        <li><a href="https://www.themoviedb.org/privacy-policy" rel="noopener">TMDB</a> — movie &amp; TV metadata (served through our proxy, which adds no personal data).</li>
+        <li><a href="https://www.tvmaze.com/privacy" rel="noopener">TVmaze</a> — episode air times.</li>
+        <li><a href="https://trakt.tv/privacy" rel="noopener">Trakt</a> — community reviews and optional sync (only if you connect it).</li>
+        <li><a href="https://disneyprivacy.com/" rel="noopener">ESPN</a> — sports schedules and scores.</li>
+        <li><a href="https://foundation.wikimedia.org/wiki/Policy:Privacy_policy" rel="noopener">Wikidata</a> — related-title / franchise links.</li>
+        <li>IMDb — outbound links only; no data is sent unless you click through.</li>
+      </ul>
+      <p class="muted">
+        For more on the data and APIs these services provide, see
+        <a href="/attributions.html">Attributions</a>.
+      </p>
+
+      <h2>Children's privacy</h2>
+      <p>
+        TV Tracker is a general-audience tool and is not directed to children under 13, and does not
+        knowingly collect information from them.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        This policy may be updated as the app changes; the “last updated” date above will reflect
+        any revision.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions about this policy? Contact
+        <a href="mailto:browncoatjayson@alteriorfantasy.com">browncoatjayson@alteriorfantasy.com</a>.
+      </p>
+
+      <a class="back" href="/">← Back to TV Tracker</a>
+    </main>
+  </body>
+</html>

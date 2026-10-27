@@ -1,0 +1,10 @@
+name = "tvtracker-tmdb"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Public, non-secret config (set with `wrangler deploy` or in the dashboard).
+# The TMDB Read Access Token is a SECRET — set it with:
+#   wrangler secret put TMDB_TOKEN
+[vars]
+# Comma-separated origins allowed to call this proxy (your app URL + localhost).
+ALLOWED_ORIGINS = "https://tvtracker.alteriorfantasy.com,https://browncoatjayson.github.io,http://localhost:5173,http://localhost:5174"
