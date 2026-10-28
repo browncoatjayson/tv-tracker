@@ -18,8 +18,24 @@ const IMAGE_BASE = 'https://image.tmdb.org/t/p'
 
 // .trim() guards against a stray newline/space in the .env value or repo secret.
 const token = import.meta.env.VITE_TMDB_TOKEN?.trim()
-// Proxy worker base URL (no trailing path), e.g. https://tvtracker-tmdb.x.workers.dev
-const proxy = import.meta.env.VITE_TMDB_PROXY?.trim()?.replace(/\/$/, '')
+// Proxy worker base URL (no trailing path), e.g. https://tvtracker-tmdb.x.workers.dev.
+// Normalize so a misconfigured value can never break the app: drop a trailing
+// slash, treat empty/whitespace as unset, add a missing scheme (e.g. the common
+// "foo.workers.dev" without https://), and fall back to direct TMDB if it still
+// isn't a valid URL. (A scheme-less value otherwise makes new URL() throw
+// "Invalid URL" before any request is even sent.)
+function normalizeProxy(raw: string | undefined): string | undefined {
+  const v = raw?.trim()?.replace(/\/+$/, '')
+  if (!v) return undefined
+  const full = /^https?:\/\//i.test(v) ? v : `https://${v}`
+  try {
+    new URL(full)
+    return full
+  } catch {
+    return undefined
+  }
+}
+const proxy = normalizeProxy(import.meta.env.VITE_TMDB_PROXY)
 
 /** True when TMDB is reachable — via the proxy worker or a direct token. */
 export function hasTmdbToken(): boolean {
