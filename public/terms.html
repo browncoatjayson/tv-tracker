@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Terms of Service — TV Tracker</title>
+    <meta name="robots" content="index,follow" />
+    <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1222;
+        --bg-2: #0f172a;
+        --surface: #16233b;
+        --surface-2: #1e2d49;
+        --text: #e8eefb;
+        --muted: #9fb0cd;
+        --accent: #38bdf8;
+        --accent-2: #818cf8;
+        --ring: rgba(56, 189, 248, 0.35);
+        --radius: 16px;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        background:
+          radial-gradient(1100px 500px at 80% -10%, rgba(129, 140, 248, 0.18), transparent 60%),
+          radial-gradient(900px 500px at 0% 0%, rgba(56, 189, 248, 0.16), transparent 55%),
+          var(--bg);
+        color: var(--text);
+        font: 17px/1.65 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+      a { color: var(--accent); text-decoration: none; }
+      a:hover { text-decoration: underline; }
+      .wrap { max-width: 1040px; margin: 0 auto; padding: 0 20px 40px; }
+
+      /* Nav (shared frame) */
+      header {
+        position: sticky;
+        top: 0;
+        z-index: 10;
+        backdrop-filter: blur(10px);
+        background: rgba(11, 18, 34, 0.7);
+        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      }
+      .nav { display: flex; align-items: center; justify-content: space-between; height: 64px; padding-bottom: 0; }
+      .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; color: var(--text); }
+      .brand:hover { text-decoration: none; }
+      .brand img { width: 30px; height: 30px; border-radius: 8px; }
+      .btn {
+        display: inline-flex; align-items: center; gap: 8px; font-weight: 600;
+        padding: 11px 18px; border-radius: 999px; border: 1px solid transparent; cursor: pointer;
+      }
+      .btn--primary { color: #04121f; background: linear-gradient(135deg, var(--accent), var(--accent-2)); }
+      .btn--primary:hover { text-decoration: none; filter: brightness(1.05); }
+
+      /* Article */
+      .page { max-width: 760px; margin: 0 auto; padding: 40px 20px 8px; }
+      h1 { font-size: 1.9rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+      .page h2 { font-size: 1.2rem; margin: 32px 0 8px; }
+      .updated { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
+      .muted { color: var(--muted); }
+      .page ul { padding-left: 20px; }
+      .page li { margin: 6px 0; }
+      .tldr {
+        background: linear-gradient(135deg, rgba(56, 189, 248, 0.08), rgba(129, 140, 248, 0.08));
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        border-radius: var(--radius);
+        padding: 18px 20px;
+        margin: 20px 0 8px;
+      }
+      .tldr p { margin: 0; }
+
+      /* Footer (shared frame) */
+      footer { border-top: 1px solid rgba(255, 255, 255, 0.07); padding: 32px 0 56px; color: var(--muted); }
+      .foot { display: flex; flex-wrap: wrap; gap: 14px 24px; align-items: center; justify-content: space-between; }
+      .foot .links { display: flex; gap: 18px; flex-wrap: wrap; }
+      .foot small { display: block; margin-top: 16px; font-size: 0.82rem; line-height: 1.5; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="wrap nav">
+        <a class="brand" href="/about.html"><img src="/app-icon.svg" alt="" /> TV Tracker</a>
+        <a class="btn btn--primary" href="/">Open app</a>
+      </div>
+    </header>
+
+    <main class="page">
+      <h1>Terms of Service</h1>
+      <p class="updated">TV Tracker · Last updated 27 October 2026</p>
+
+      <div class="tldr">
+        <p>
+          <strong>In plain English:</strong> TV Tracker is a free, open-source hobby project. Use it
+          however you like — it comes with no cost, no ads, and no warranty. The code is on
+          <a href="https://github.com/browncoatjayson/tv-tracker" rel="noopener">GitHub</a> if you'd
+          rather run your own copy.
+        </p>
+      </div>
+
+      <p>
+        These terms cover your use of the TV Tracker web app and website
+        (<a href="https://tvtracker.alteriorfantasy.com/">tvtracker.alteriorfantasy.com</a>). By using
+        it, you agree to them. If you don't, please don't use the app.
+      </p>
+
+      <h2>What TV Tracker is</h2>
+      <p>
+        TV Tracker is a personal, offline-first app for tracking the shows, movies, and sports you
+        watch. It's provided free of charge, for personal use, with no account required. It's an
+        independent hobby project — not a commercial service.
+      </p>
+
+      <h2>Open source</h2>
+      <p>
+        The source code is published on
+        <a href="https://github.com/browncoatjayson/tv-tracker" rel="noopener">GitHub</a>. You're
+        welcome to read it, modify it, and host your own copy, subject to the license in the
+        repository. Contributions and bug reports are welcome there too.
+      </p>
+
+      <h2>Provided "as is"</h2>
+      <p>
+        TV Tracker is provided <strong>“as is” and “as available,” without warranties of any kind</strong>,
+        express or implied. We don't guarantee it will be accurate, uninterrupted, error-free, or
+        available at any particular time. Metadata and schedules come from third parties and may be
+        wrong or incomplete.
+      </p>
+      <p>
+        To the fullest extent permitted by law, we aren't liable for any loss or damage arising from
+        your use of the app — including lost or corrupted data. Your library lives in your browser
+        and (optionally) your own Google Drive, so <strong>keep your own backups</strong> (Settings →
+        Export backup).
+      </p>
+
+      <h2>Acceptable use</h2>
+      <ul>
+        <li>Use the app lawfully and for personal, non-commercial purposes.</li>
+        <li>Don't attempt to disrupt the app, abuse the third-party APIs it relies on, or overload the services behind it.</li>
+        <li>Don't misrepresent the app as an official product of any of the services it links to.</li>
+      </ul>
+
+      <h2>Third-party services</h2>
+      <p>
+        TV Tracker pulls data from third-party services (TMDB, TVmaze, Trakt, ESPN, Wikidata) and
+        links out to others (IMDb, Google). Your use of those is governed by their own terms and
+        privacy policies — see
+        <a href="/attributions.html">Attributions</a> and our
+        <a href="/privacy.html">Privacy Policy</a>. TV Tracker is not affiliated with, endorsed by, or
+        certified by any of them.
+      </p>
+
+      <h2>Changes</h2>
+      <p>
+        We may update these terms or the app at any time, and may change or discontinue features. The
+        “last updated” date above reflects the latest revision; continued use after a change means you
+        accept it.
+      </p>
+
+      <h2>Contact</h2>
+      <p>
+        Questions? Contact
+        <a href="mailto:browncoatjayson@alteriorfantasy.com">browncoatjayson@alteriorfantasy.com</a>.
+      </p>
+    </main>
+
+    <footer>
+      <div class="wrap">
+        <div class="foot">
+          <a class="brand" href="/about.html"><img src="/app-icon.svg" alt="" style="width:24px;height:24px;border-radius:6px" /> TV Tracker</a>
+          <nav class="links">
+            <a href="/">Open app</a>
+            <a href="/about.html#features">Features</a>
+            <a href="/about.html#install">Install</a>
+            <a href="/privacy.html">Privacy</a>
+            <a href="/terms.html">Terms</a>
+            <a href="/attributions.html">Attributions</a>
+          </nav>
+        </div>
+        <small>
+          TV Tracker is an independent project and is not affiliated with, endorsed by, or certified
+          by the services it links to. This product uses the TMDB API but is not endorsed or certified
+          by TMDB.
+        </small>
+      </div>
+    </footer>
+  </body>
+</html>
