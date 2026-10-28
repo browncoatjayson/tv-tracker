@@ -14,6 +14,7 @@ import {
   isEndedStatus,
   runtimeOf,
   watchNames,
+  type TmdbEpisode,
   type TmdbSeasonSummary,
 } from '../api/tmdb'
 import { getShowAkas } from '../api/tvmaze'
@@ -44,30 +45,101 @@ import { useShowAirstamps } from '../hooks/useShowAirstamps'
 const HOUR = 1000 * 60 * 60
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
 
-function sortSeasons(seasons: TmdbSeasonSummary[]): TmdbSeasonSummary[] {
-  return [...seasons]
-    .filter((s) => s.episode_count > 0)
-    .sort((a, b) => {
-      if (a.season_number === 0) return 1
-      if (b.season_number === 0) return -1
-      return a.season_number - b.season_number
-    })
+/** A tab in the episode browser: a regular season, or a group of specials. */
+interface SeasonTab {
+  id: string
+  label: string
+  /** TMDB season number this tab's episodes live under (0 for specials). */
+  seasonNumber: number
+  episodeCount: number
+  /** Specials groups only: which season-0 episode numbers this tab shows. */
+  episodeNumbers?: Set<number>
+  /** Average rating 0–10 for the season (for the season-rating pill). */
+  rating?: number
 }
 
 function seasonLabel(s: TmdbSeasonSummary): string {
   return s.season_number === 0 ? 'Specials' : s.name || `Season ${s.season_number}`
 }
 
-/** The season holding the first unwatched episode (so you resume where you left
- *  off); the last season once everything's watched. */
-function pickDefaultSeason(seasons: TmdbSeasonSummary[], stateMap: Map<string, EpisodeState>): number | null {
-  const regular = seasons.filter((s) => s.season_number > 0)
-  for (const s of regular) {
-    let watched = 0
-    for (const st of stateMap.values()) if (st.season === s.season_number && st.watched) watched++
-    if (watched < s.episode_count) return s.season_number
+/**
+ * Build the episode-browser tabs. Regular seasons in order; the Specials season
+ * (0) is split by each special's air date and inserted between the seasons it
+ * aired between, so between-season specials (Doctor Who, Euphoria, Invincible…)
+ * are watchable in order instead of lumped after everything. Until the specials'
+ * episodes (and thus their dates) have loaded, they appear as one tab at the end.
+ */
+function buildSeasonTabs(
+  seasons: TmdbSeasonSummary[],
+  specialEps: TmdbEpisode[] | undefined,
+): SeasonTab[] {
+  const withEps = seasons.filter((s) => s.episode_count > 0)
+  const regular = withEps
+    .filter((s) => s.season_number > 0)
+    .sort((a, b) => a.season_number - b.season_number)
+  const specials = withEps.find((s) => s.season_number === 0)
+  const regularTabs: SeasonTab[] = regular.map((s) => ({
+    id: `s${s.season_number}`,
+    label: seasonLabel(s),
+    seasonNumber: s.season_number,
+    episodeCount: s.episode_count,
+    rating: s.vote_average,
+  }))
+  if (!specials) return regularTabs
+
+  const spTab = (key: string, eps: number[]): SeasonTab => ({
+    id: `sp-${key}`,
+    label: 'Specials',
+    seasonNumber: 0,
+    episodeCount: eps.length,
+    episodeNumbers: new Set(eps),
+    rating: specials.vote_average,
+  })
+  // Before the specials' dates are known, keep a single Specials tab at the end.
+  if (!specialEps || specialEps.length === 0) {
+    return [
+      ...regularTabs,
+      { id: 'sp', label: 'Specials', seasonNumber: 0, episodeCount: specials.episode_count, rating: specials.vote_average },
+    ]
   }
-  return regular[regular.length - 1]?.season_number ?? seasons[0]?.season_number ?? null
+  // Bucket each special by the regular season it aired after (0 = before season 1).
+  const groups = new Map<number, number[]>()
+  const undated: number[] = []
+  for (const ep of specialEps) {
+    if (!ep.air_date) {
+      undated.push(ep.episode_number)
+      continue
+    }
+    let after = 0
+    for (const s of regular) if (s.air_date && s.air_date <= ep.air_date) after = s.season_number
+    const list = groups.get(after) ?? []
+    list.push(ep.episode_number)
+    groups.set(after, list)
+  }
+  const out: SeasonTab[] = []
+  if (groups.has(0)) out.push(spTab('0', groups.get(0)!)) // specials before season 1
+  for (const t of regularTabs) {
+    out.push(t)
+    const g = groups.get(t.seasonNumber)
+    if (g) out.push(spTab(String(t.seasonNumber), g))
+  }
+  if (undated.length) out.push(spTab('x', undated)) // undated specials go last
+  return out
+}
+
+/** The tab holding the first unwatched episode (resume where you left off); the
+ *  last tab once everything's watched. */
+function pickDefaultTab(tabs: SeasonTab[], stateMap: Map<string, EpisodeState>): string | null {
+  for (const t of tabs) {
+    let watched = 0
+    if (t.episodeNumbers) {
+      for (const ep of t.episodeNumbers) if (stateMap.get(`0:${ep}`)?.watched) watched++
+    } else {
+      for (const st of stateMap.values()) if (st.season === t.seasonNumber && st.watched) watched++
+    }
+    if (watched < t.episodeCount) return t.id
+  }
+  return tabs[tabs.length - 1]?.id ?? null
 }
 
 export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId: number }) {
@@ -161,10 +233,28 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
     }
   }, [item?.id, item?.status, d, states])
 
-  const seasons = useMemo(() => sortSeasons(d?.seasons ?? []), [d])
-  // Default to the season with the first unwatched episode; the user's pick wins.
-  const [picked, setPicked] = useState<number | null>(null)
-  const season = picked ?? pickDefaultSeason(seasons, stateMap)
+  // Load the specials (season 0) episodes up front when the show has any, so we
+  // know their air dates and can slot them between the right seasons.
+  const hasSpecials = useMemo(
+    () => (d?.seasons ?? []).some((s) => s.season_number === 0 && s.episode_count > 0),
+    [d],
+  )
+  const specialsQuery = useQuery({
+    queryKey: ['season', tmdbId, 0],
+    queryFn: () => getSeasonEpisodesCached(itemId, tmdbId, 0),
+    enabled: hasSpecials,
+    staleTime: HOUR,
+  })
+  const tabs = useMemo(
+    () => buildSeasonTabs(d?.seasons ?? [], specialsQuery.data),
+    [d, specialsQuery.data],
+  )
+
+  // Default to the tab with the first unwatched episode; the user's pick wins.
+  const [picked, setPicked] = useState<string | null>(null)
+  const activeTabId = picked ?? pickDefaultTab(tabs, stateMap)
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? null
+  const season = activeTab?.seasonNumber ?? null
 
   const episodesQuery = useQuery({
     queryKey: ['season', tmdbId, season],
@@ -172,6 +262,13 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
     enabled: season !== null,
     staleTime: HOUR,
   })
+  // A specials tab shows only its slice of the season-0 episodes.
+  const visibleEpisodes = useMemo(() => {
+    const eps = episodesQuery.data ?? []
+    return activeTab?.episodeNumbers
+      ? eps.filter((e) => activeTab.episodeNumbers!.has(e.episode_number))
+      : eps
+  }, [episodesQuery.data, activeTab])
 
   if (detailsQuery.isError && !d) {
     return (
@@ -237,13 +334,12 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
   const fullyWatched = totalEpisodes > 0 && watchedCount >= totalEpisodes
   const completedPasses = fullyWatched && minWatchCount !== Infinity ? minWatchCount : 0
 
-  const selectedSeason = seasons.find((s) => s.season_number === season)
-  const seasonRatingPct = selectedSeason?.vote_average ? Math.round(selectedSeason.vote_average * 10) : 0
+  const seasonRatingPct = activeTab?.rating ? Math.round(activeTab.rating * 10) : 0
 
   // Mark the selected season's aired episodes watched for the current pass.
   async function markSeasonWatched() {
     if (!item) return
-    for (const ep of episodesQuery.data ?? []) {
+    for (const ep of visibleEpisodes) {
       if (!hasAiredByTime(ep.air_date, airstampOf(ep.season_number, ep.episode_number))) continue
       const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
       const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
@@ -325,7 +421,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
 
       <CastRow title="Cast" people={cast} />
 
-      {seasons.length > 0 && (
+      {tabs.length > 0 && (
         <section className="section">
           <h3 className="section-title">Episodes</h3>
           {completedPasses >= 1 && (
@@ -335,13 +431,13 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
             </p>
           )}
           <div className="hscroll season-tabs">
-            {seasons.map((s) => (
+            {tabs.map((t) => (
               <button
-                key={s.season_number}
-                className={`season-tab${s.season_number === season ? ' season-tab--on' : ''}`}
-                onClick={() => setPicked(s.season_number)}
+                key={t.id}
+                className={`season-tab${t.id === activeTabId ? ' season-tab--on' : ''}`}
+                onClick={() => setPicked(t.id)}
               >
-                {seasonLabel(s)}
+                {t.label}
               </button>
             ))}
           </div>
@@ -361,7 +457,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
 
           {episodesQuery.isLoading && <p className="muted">Loading episodes…</p>}
           <div className="hscroll episode-row">
-            {(episodesQuery.data ?? []).map((ep) => {
+            {visibleEpisodes.map((ep) => {
               const key = `${ep.season_number}:${ep.episode_number}`
               const st = stateMap.get(key)
               const wc = st?.watchCount ?? (st?.watched ? 1 : 0)

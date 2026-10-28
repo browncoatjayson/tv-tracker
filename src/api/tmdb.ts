@@ -581,22 +581,34 @@ export async function getSeriesByName(name: string): Promise<TmdbCollectionPart[
  * A short "where to watch" string: broadcast networks + streaming services for
  * the given region (default US). Both come free with the details call.
  */
-// TMDB lists many provider variants ("Paramount Plus Premium", "... Amazon
-// Channel", etc.). Collapse them to the base brand so the label stays short.
+// TMDB lists many provider variants ("Paramount Plus Premium", "Netflix Standard
+// with Ads", "... Amazon Channel", etc.). Collapse them to the base brand so the
+// label stays short — and so e.g. "Netflix" and "Netflix Standard with Ads" merge.
 function normalizeProvider(name: string): string {
-  return name
-    .replace(/\s+(Premium|Essential|Standard|Basic|with Ads|Ad-Free)$/i, '')
-    .replace(/\s+(Apple TV|Amazon|Roku Premium)\s+Channel$/i, '')
+  let n = name.replace(/\s+(Apple TV|Amazon|Roku Premium)\s+Channel$/i, '')
+  // Strip trailing tier/variant qualifiers repeatedly ("Standard with Ads" → "").
+  let prev: string
+  do {
+    prev = n
+    n = n.replace(/\s+(Premium|Essential|Standard|Basic|Ad-?Free|with Ads)$/i, '')
+  } while (n !== prev)
+  return n
     .replace(/\bPlus\b/g, '+')
     .replace(/\s+\+/g, '+')
     .trim()
 }
 
-/** All networks + streaming service names (deduped) for the given region. */
+// Live-TV / cable-replacement bundles (Fubo, YouTube TV, Sling, …) carry linear
+// channels rather than a service's own catalog, so they clutter "where to watch".
+const LIVE_TV_RE = /\b(fubo\w*|sling|philo|vidgo|frndly|directv|youtube tv)\b|\blive tv\b/i
+
+/** All networks + streaming service names (deduped) for the given region. Live-TV
+ *  bundles are dropped. */
 export function watchNames(details: WatchInfo, region = 'US'): string[] {
   const names: string[] = []
   for (const n of details.networks ?? []) names.push(n.name)
   for (const p of details['watch/providers']?.results?.[region]?.flatrate ?? []) {
+    if (LIVE_TV_RE.test(p.provider_name)) continue
     names.push(normalizeProvider(p.provider_name))
   }
   return [...new Set(names)]

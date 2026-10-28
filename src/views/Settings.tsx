@@ -43,7 +43,8 @@ export default function Settings() {
           This product uses the TMDB API but is not endorsed or certified by TMDB.
         </p>
         <p className="muted">
-          <a href="/privacy.html">Privacy policy</a> · <a href="/attributions.html">Attributions</a>
+          <a href="/privacy.html">Privacy policy</a> · <a href="/terms.html">Terms</a> ·{' '}
+          <a href="/attributions.html">Attributions</a>
         </p>
       </section>
 

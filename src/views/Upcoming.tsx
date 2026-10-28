@@ -12,6 +12,7 @@ import {
   runtimeOf,
   watchNames,
   whereToWatch,
+  type TmdbEpisodePointer,
 } from '../api/tmdb'
 import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
 import { leagueByKey } from '../api/espn'
@@ -174,6 +175,33 @@ export default function Upcoming() {
     const cast = castNames(details)
     const ended = isEndedStatus(details.status)
     const runtime = runtimeOf(details)
+    // Add a recently-aired, unwatched episode to the feed (deduped per episode).
+    const airedKeys = new Set<string>()
+    const pushAired = (ep: TmdbEpisodePointer | null | undefined) => {
+      if (!ep?.air_date || !inAiredWindow(ep.air_date)) return
+      const key = `${ep.season_number}:${ep.episode_number}`
+      if (airedKeys.has(key) || watchedEpisodes.has(`${s.id}:${key}`)) return
+      airedKeys.add(key)
+      aired.push({
+        itemId: s.id,
+        title: s.title,
+        mediaType: 'show',
+        date: ep.air_date,
+        detail: `S${ep.season_number}E${ep.episode_number}${ep.name ? ` · ${ep.name}` : ''}`,
+        posterPath: s.posterPath,
+        where,
+        genres,
+        providers,
+        cast,
+        ended,
+        runtime,
+        time: airTime(s.imdbId, ep.season_number, ep.episode_number),
+        aired: true,
+        season: ep.season_number,
+        episode: ep.episode_number,
+      })
+    }
+
     const next = details.next_episode_to_air
     if (next?.air_date && next.air_date >= today) {
       upcoming.push({
@@ -192,32 +220,12 @@ export default function Upcoming() {
         time: airTime(s.imdbId, next.season_number, next.episode_number),
         aired: false,
       })
+    } else {
+      // TMDB often lags flipping a just-aired episode from "next" to "last", so a
+      // "next" with a past date is actually recently aired — don't drop it.
+      pushAired(next)
     }
-    const last = details.last_episode_to_air
-    if (
-      last?.air_date &&
-      inAiredWindow(last.air_date) &&
-      !watchedEpisodes.has(`${s.id}:${last.season_number}:${last.episode_number}`)
-    ) {
-      aired.push({
-        itemId: s.id,
-        title: s.title,
-        mediaType: 'show',
-        date: last.air_date,
-        detail: `S${last.season_number}E${last.episode_number}${last.name ? ` · ${last.name}` : ''}`,
-        posterPath: s.posterPath,
-        where,
-        genres,
-        providers,
-        cast,
-        ended,
-        runtime,
-        time: airTime(s.imdbId, last.season_number, last.episode_number),
-        aired: true,
-        season: last.season_number,
-        episode: last.episode_number,
-      })
-    }
+    pushAired(details.last_episode_to_air)
   })
 
   movies.forEach((m, i) => {
