@@ -31,6 +31,20 @@ function setPrimed(): void {
 }
 
 /**
+ * Clear the "primed" flag so the next badge evaluation silently adopts whatever's
+ * already met (no toasts). Call this right before a restore (Welcome sign-in /
+ * import) so previously-earned badges that come back in the backup — e.g.
+ * "Signed In" — don't re-celebrate; only the explicit "Welcome Back!" toasts.
+ */
+export function resetBadgePriming(): void {
+  try {
+    localStorage.removeItem(PRIMED_KEY)
+  } catch {
+    // ignore
+  }
+}
+
+/**
  * Watches the library + account flags and awards badges as they're earned,
  * firing a confetti toast for each. Mount once (in Layout).
  *

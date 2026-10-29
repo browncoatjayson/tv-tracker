@@ -2699,6 +2699,72 @@ input[type='file'] {
     opacity: 1;
   }
 }
+
+/* First-run / empty-library welcome dialog. */
+.welcome {
+  position: relative;
+  z-index: 1; /* above the confetti canvas in the overlay */
+  width: min(100%, 460px);
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  text-align: center;
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+  padding: 28px 24px;
+}
+.welcome__logo {
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+}
+.welcome__title {
+  margin: 14px 0 2px;
+  font-size: 1.4rem;
+}
+.welcome__sub {
+  margin: 0 0 16px;
+  color: var(--muted);
+}
+.welcome__body {
+  text-align: left;
+  color: var(--text);
+  font-size: 0.95rem;
+  line-height: 1.6;
+  margin: 0 0 20px;
+}
+.welcome__tip {
+  font-size: 0.86rem;
+  color: var(--muted);
+  margin: 0 0 18px;
+}
+.welcome__returning {
+  border-top: 1px solid var(--surface-2);
+  padding-top: 16px;
+}
+.welcome__returning-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.welcome__returning-btns {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+.welcome__error {
+  margin: 14px 0 0;
+}
+.welcome__start {
+  margin-top: 20px;
+  width: 100%;
+}
 .update-toast {
   position: relative;
   z-index: 1; /* above the confetti canvas within the overlay */

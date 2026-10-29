@@ -15,6 +15,11 @@ import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import { useTrackedItems } from '../hooks/useTrackedItems'
 import FilterBar from '../components/FilterBar'
 import SectionDivider from '../components/SectionDivider'
+import WelcomeScreen from '../components/WelcomeScreen'
+
+// Session flag (resets on reload = a fresh launch): once the welcome is dismissed
+// we don't re-pop it when navigating back to an (still-empty) Library.
+let welcomeSeen = false
 
 const STATUS_ORDER: WatchStatus[] = ['watching', 'watchlist', 'completed', 'dropped']
 const STATUS_LABEL: Record<WatchStatus, string> = {
@@ -153,6 +158,11 @@ function comparator(sort: SortKey): (a: TrackedItem, b: TrackedItem) => number {
 
 export default function Library() {
   const items = useTrackedItems()
+  const [welcomeDismissed, setWelcomeDismissed] = useState(() => welcomeSeen)
+  const dismissWelcome = () => {
+    welcomeSeen = true
+    setWelcomeDismissed(true)
+  }
   const [query, setQuery] = usePersistentFilter('tvtracker.filter.library')
   const [sort, setSort] = useState<SortKey>(() => {
     try {
@@ -296,6 +306,9 @@ export default function Library() {
   if (items === undefined) return <p className="muted">Loading…</p>
 
   if (items.length === 0) {
+    // Welcome takes over an empty library on launch; once dismissed, the plain
+    // empty-state hint shows beneath it.
+    if (!welcomeDismissed) return <WelcomeScreen onClose={dismissWelcome} />
     return (
       <div className="empty-state">
         <p className="empty-state__emoji">📺</p>

@@ -1,4 +1,5 @@
 import { db, episodeKey, itemKey } from './db'
+import { scheduleAutoSync } from './autoSync'
 import type { MediaType, TrackedItem, WatchStatus } from './types'
 
 // ---------------------------------------------------------------------------
@@ -42,6 +43,7 @@ export async function addItem(input: NewTrackedItem): Promise<TrackedItem> {
     // Re-adding supersedes any prior deletion so sync won't fight over it.
     await db.tombstones.delete(id)
   })
+  scheduleAutoSync()
   return item
 }
 
@@ -51,6 +53,7 @@ export async function updateItem(
   changes: Partial<Omit<TrackedItem, 'id' | 'tmdbId' | 'mediaType' | 'addedAt'>>,
 ): Promise<void> {
   await db.trackedItems.update(id, { ...changes, updatedAt: Date.now() })
+  scheduleAutoSync()
 }
 
 export async function setStatus(id: string, status: WatchStatus): Promise<void> {
@@ -168,6 +171,7 @@ export async function removeItem(id: string): Promise<void> {
       await db.tombstones.put({ id, deletedAt: Date.now() })
     },
   )
+  scheduleAutoSync()
 }
 
 /**
@@ -213,6 +217,7 @@ export async function setEpisodeWatchCount(
     const promote = count > 0 && item?.status === 'watchlist' ? { status: 'watching' as const } : {}
     await db.trackedItems.update(itemId, { updatedAt: now, ...promote })
   })
+  scheduleAutoSync()
 }
 
 /**
@@ -242,6 +247,7 @@ export async function markMovieWatched(itemId: string, isRewatch = false): Promi
       movieWatchedPrecision: 'day',
     })
   })
+  scheduleAutoSync()
 }
 
 /** Set a movie's (editable) watched date, with day/month/year precision. */

@@ -69,6 +69,10 @@ export const BADGES: BadgeDef[] = [
   { id: 'google', name: 'Signed In', description: 'Link your Google account.', emoji: '🔗', group: 'Connected', earned: (c) => c.googleLinked },
   { id: 'cloud', name: 'In the Cloud', description: 'Sync to Google Drive.', emoji: '☁️', group: 'Connected', earned: (c) => c.hasSynced },
   { id: 'traktr', name: "Trakt'r", description: 'Connect your Trakt account.', emoji: '🎟️', group: 'Connected', earned: (c) => c.traktLinked },
+  // Awarded explicitly when a restore repopulates an empty library (see
+  // WelcomeScreen), not from a context snapshot — so it celebrates every
+  // restore, even right after a cache wipe when the badge watcher primes silently.
+  { id: 'welcome-back', name: 'Welcome Back!', description: 'Restore your library by syncing or importing into an empty app.', emoji: '👋', group: 'Connected', earned: () => false },
 ]
 
 export function badgeById(id: string): BadgeDef | undefined {

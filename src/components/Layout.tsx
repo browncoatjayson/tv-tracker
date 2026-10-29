@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { startIndexing, useIndexProgress } from '../data/episodeIndex'
-import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
+import { getGoogleProfile, recordSynced, syncNow, wasConnected, type GoogleProfile } from '../data/driveSync'
 import UpdatePrompt from './UpdatePrompt'
 import ConfirmHost from './ConfirmHost'
 import BadgeToastHost from './BadgeToastHost'
@@ -23,6 +23,23 @@ export default function Layout() {
   // opening Stats. No-ops when everything is already indexed.
   useEffect(() => {
     void startIndexing()
+  }, [])
+
+  // On launch: ask the browser to persist our storage (so it isn't auto-evicted
+  // under pressure — won't stop a manual data clear, but helps otherwise), and,
+  // for a connected user, pull any changes from Drive. Both are silent and
+  // best-effort; the Drive sync is a no-op after a cache wipe (the flag is gone).
+  useEffect(() => {
+    try {
+      void navigator.storage?.persist?.()
+    } catch {
+      // ignore
+    }
+    if (wasConnected()) {
+      void syncNow(false)
+        .then((r) => recordSynced(r.syncedAt))
+        .catch(() => {})
+    }
   }, [])
 
   // Award gamification badges as milestones are hit (confetti toast on earn).

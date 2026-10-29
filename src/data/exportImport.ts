@@ -1,5 +1,6 @@
 import { db } from './db'
 import type {
+  CachedEpisode,
   EarnedBadge,
   EpisodeState,
   FavoritePerson,
@@ -9,6 +10,10 @@ import type {
   WatchEvent,
 } from './types'
 
+// Not synced: a "Welcome Back!" is an in-the-moment thing earned on each restore,
+// not a permanent achievement to carry across devices / cache wipes.
+const UNSYNCED_BADGES = new Set(['welcome-back'])
+
 // ---------------------------------------------------------------------------
 // JSON backup / restore. This is the always-available safety net (and the same
 // shape we'll sync to Google Drive in Phase 5). Keep `version` bumped whenever
@@ -17,9 +22,10 @@ import type {
 
 // v2 adds `tombstones` (delete markers). v3 adds `favoritePeople` (starred
 // actors). v4 adds `favoriteServices`. v5 adds `badges` (earned achievements).
-// Older files still import — the newer arrays default to [] — so these bumps are
-// backward compatible.
-export const BACKUP_VERSION = 5 as const
+// v6 adds `episodeCache` (the TMDB episode name/date cache, so a restore has its
+// index ready instead of waiting to rebuild). Older files still import — the
+// newer arrays default to [] — so these bumps are backward compatible.
+export const BACKUP_VERSION = 6 as const
 
 export interface BackupData {
   app: 'tv-tracker'
@@ -36,10 +42,18 @@ export interface BackupData {
   favoriteServices?: FavoriteService[]
   /** Earned gamification badges (absent in pre-v5 backups). */
   badges?: EarnedBadge[]
+  /** Disposable TMDB episode-name/date cache (absent in pre-v6 backups). Carried
+   *  so a restored library's Upcoming/episode search works without a reindex. */
+  episodeCache?: CachedEpisode[]
 }
 
-/** Read the entire user dataset out of IndexedDB. */
-export async function buildBackup(): Promise<BackupData> {
+/**
+ * Read the user dataset out of IndexedDB. `includeCache` controls the (large,
+ * regenerable) episode cache: the JSON export includes it so a restore has its
+ * index ready, but Drive sync omits it from the frequently-pushed core file and
+ * syncs it separately (see driveSync) to keep uploads small.
+ */
+export async function buildBackup(includeCache = true): Promise<BackupData> {
   const [
     trackedItems,
     watchEvents,
@@ -48,6 +62,7 @@ export async function buildBackup(): Promise<BackupData> {
     favoritePeople,
     favoriteServices,
     badges,
+    episodeCache,
   ] = await Promise.all([
     db.trackedItems.toArray(),
     db.watchEvents.toArray(),
@@ -56,6 +71,7 @@ export async function buildBackup(): Promise<BackupData> {
     db.favoritePeople.toArray(),
     db.favoriteServices.toArray(),
     db.badges.toArray(),
+    includeCache ? db.episodeCache.toArray() : Promise.resolve(undefined),
   ])
   return {
     app: 'tv-tracker',
@@ -67,8 +83,21 @@ export async function buildBackup(): Promise<BackupData> {
     tombstones,
     favoritePeople,
     favoriteServices,
-    badges,
+    badges: badges.filter((b) => !UNSYNCED_BADGES.has(b.id)),
+    episodeCache,
   }
+}
+
+// --- Episode cache, synced on its own (see driveSync) ------------------------
+export async function episodeCacheCount(): Promise<number> {
+  return db.episodeCache.count()
+}
+export async function readEpisodeCache(): Promise<CachedEpisode[]> {
+  return db.episodeCache.toArray()
+}
+/** Upsert cache rows (used to seed a restored library's index from Drive). */
+export async function putEpisodeCache(rows: CachedEpisode[]): Promise<void> {
+  if (rows.length) await db.episodeCache.bulkPut(rows)
 }
 
 /** localStorage key recording when the user last exported a backup (for stats). */
@@ -120,6 +149,9 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
   const favoritePeople = data.favoritePeople ?? []
   const favoriteServices = data.favoriteServices ?? []
   const badges = data.badges ?? []
+  // Only touch the episode cache when the backup actually carries one — a
+  // core-only sync (Drive) must not wipe the locally-built cache.
+  const episodeCache = data.episodeCache
   await db.transaction(
     'rw',
     [
@@ -130,10 +162,11 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
       db.favoritePeople,
       db.favoriteServices,
       db.badges,
+      db.episodeCache,
     ],
     async () => {
       if (mode === 'replace') {
-        await Promise.all([
+        const clears = [
           db.trackedItems.clear(),
           db.watchEvents.clear(),
           db.episodeStates.clear(),
@@ -141,7 +174,9 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
           db.favoritePeople.clear(),
           db.favoriteServices.clear(),
           db.badges.clear(),
-        ])
+        ]
+        if (episodeCache !== undefined) clears.push(db.episodeCache.clear())
+        await Promise.all(clears)
       }
       // `bulkPut` upserts by primary key — safe for both modes.
       await db.trackedItems.bulkPut(data.trackedItems)
@@ -149,6 +184,7 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
       await db.favoritePeople.bulkPut(favoritePeople)
       await db.favoriteServices.bulkPut(favoriteServices)
       await db.badges.bulkPut(badges)
+      if (episodeCache !== undefined) await db.episodeCache.bulkPut(episodeCache)
       // Watch events use auto-increment ids; drop them so the local log assigns
       // fresh ones (the append-only log only ever grows).
       const events =
@@ -165,6 +201,7 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
           await db.trackedItems.delete(t.id)
           await db.watchEvents.where('itemId').equals(t.id).delete()
           await db.episodeStates.where('itemId').equals(t.id).delete()
+          await db.episodeCache.where('itemId').equals(t.id).delete()
         }
       }
     },
@@ -294,8 +331,19 @@ export function mergeBackups(a: BackupData, b: BackupData): BackupData {
   // was first achieved across devices).
   const badges = new Map<string, EarnedBadge>()
   for (const bd of [...(a.badges ?? []), ...(b.badges ?? [])]) {
+    if (UNSYNCED_BADGES.has(bd.id)) continue
     const prev = badges.get(bd.id)
     if (!prev || bd.earnedAt < prev.earnedAt) badges.set(bd.id, bd)
+  }
+
+  // Episode cache: disposable TMDB data, keyed by id. Union across both sides,
+  // dropping rows for deleted items. When NEITHER side carries a cache (a
+  // core-only sync), keep it undefined so applyBackup leaves the local cache be.
+  const hasCache = a.episodeCache !== undefined || b.episodeCache !== undefined
+  const episodeCache = new Map<string, CachedEpisode>()
+  for (const ep of [...(a.episodeCache ?? []), ...(b.episodeCache ?? [])]) {
+    if (isDeleted(ep.itemId)) continue
+    episodeCache.set(ep.id, ep)
   }
 
   return {
@@ -309,5 +357,6 @@ export function mergeBackups(a: BackupData, b: BackupData): BackupData {
     favoritePeople: [...people.values()],
     favoriteServices: [...services.values()],
     badges: [...badges.values()],
+    episodeCache: hasCache ? [...episodeCache.values()] : undefined,
   }
 }
