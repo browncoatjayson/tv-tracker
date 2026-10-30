@@ -27,7 +27,7 @@ function render() {
     <StrictMode>
       <PersistQueryClientProvider
         client={queryClient}
-        persistOptions={{ persister, maxAge: DAY, buster: 'v2' }}
+        persistOptions={{ persister, maxAge: DAY, buster: 'v3' }}
       >
         <HashRouter>
           <App />

@@ -1286,6 +1286,11 @@ input[type='file'] {
   border-radius: 999px;
   padding: 2px 8px;
 }
+.related__loading {
+  margin: 0;
+  padding: 10px 2px;
+  font-size: 0.9rem;
+}
 .reviews__summary > span:first-of-type {
   margin-right: auto;
 }

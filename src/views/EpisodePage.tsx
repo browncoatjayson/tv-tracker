@@ -1,3 +1,4 @@
+import { useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -9,7 +10,8 @@ import {
   imageUrl,
   watchNames,
 } from '../api/tmdb'
-import { getTvDetailsCached } from '../data/episodeCache'
+import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
+import { buildBrowseSequence } from '../data/specials'
 import { hasTraktClientId, resolveTraktId } from '../api/trakt'
 import { markEpisode, setEpisodeRating, setEpisodeWatchedDate } from '../data/library'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
@@ -70,6 +72,22 @@ export default function EpisodePage() {
     enabled: valid,
     staleTime: HOUR,
   })
+  // Season-0 episodes (shared cache with the show page) so Prev/Next can weave
+  // the narrative specials into the browse order between seasons.
+  const hasSpecials = (show.data?.seasons ?? []).some(
+    (s) => s.season_number === 0 && s.episode_count > 0,
+  )
+  const specialsQuery = useQuery({
+    queryKey: ['season', tmdbId, 0],
+    queryFn: () => getSeasonEpisodesCached(itemId, tmdbId, 0),
+    enabled: valid && hasSpecials,
+    staleTime: HOUR,
+  })
+  // The linear browse order: regular episodes with narrative specials interleaved.
+  const browseSeq = useMemo(
+    () => buildBrowseSequence(show.data?.seasons ?? [], specialsQuery.data),
+    [show.data, specialsQuery.data],
+  )
 
   const item = useLiveQuery(() => db.trackedItems.get(itemId).then((r) => r ?? null), [itemId])
   const epState = useLiveQuery(
@@ -112,30 +130,28 @@ export default function EpisodePage() {
   const providers = show.data ? watchNames(show.data) : []
   const gallery = (epImages.data ?? []).slice(0, 10)
 
-  // Prev/Next across the show: step within the season, then roll over to the
-  // adjacent season (the last episode of the previous one, or episode 1 of the
-  // next). The linear chain is the regular seasons (1, 2, …); Specials (season 0)
-  // are their own island, so you don't fall into them from a regular-season edge
-  // and vice versa. Each season's length is its episode_count (once loaded).
-  const chain = (show.data?.seasons ?? [])
-    .filter((s) => (s.episode_count ?? 0) > 0)
-    .filter((s) => (seasonNum === 0 ? s.season_number === 0 : s.season_number >= 1))
-    .sort((a, b) => a.season_number - b.season_number)
-  const curIdx = chain.findIndex((s) => s.season_number === seasonNum)
-  const seasonCount = curIdx >= 0 ? chain[curIdx].episode_count : undefined
-
+  // Prev/Next follow the browse order: regular episodes with narrative specials
+  // woven in by air date. Extras aren't in that order (they're their own island),
+  // so when we're on one — or before the data has loaded — we fall back to
+  // stepping within the current season.
+  const seqIdx = browseSeq.findIndex((e) => e.season === seasonNum && e.episode === episodeNum)
   let prevEp: { season: number; episode: number } | null = null
-  if (episodeNum > 1) prevEp = { season: seasonNum, episode: episodeNum - 1 }
-  else if (curIdx > 0) {
-    const p = chain[curIdx - 1]
-    prevEp = { season: p.season_number, episode: p.episode_count ?? 1 }
-  }
-
   let nextEp: { season: number; episode: number } | null = null
-  if (seasonCount == null) nextEp = { season: seasonNum, episode: episodeNum + 1 } // details not loaded yet
-  else if (episodeNum < seasonCount) nextEp = { season: seasonNum, episode: episodeNum + 1 }
-  else if (curIdx >= 0 && curIdx < chain.length - 1)
-    nextEp = { season: chain[curIdx + 1].season_number, episode: 1 }
+  if (seqIdx >= 0) {
+    prevEp = seqIdx > 0 ? browseSeq[seqIdx - 1] : null
+    nextEp = seqIdx < browseSeq.length - 1 ? browseSeq[seqIdx + 1] : null
+  } else if (seasonNum === 0 && specialsQuery.data?.length) {
+    // An Extra (or an undated special): step among the season-0 items by number.
+    const nums = specialsQuery.data.map((e) => e.episode_number).sort((a, b) => a - b)
+    const i = nums.indexOf(episodeNum)
+    prevEp = i > 0 ? { season: 0, episode: nums[i - 1] } : null
+    nextEp = i >= 0 && i < nums.length - 1 ? { season: 0, episode: nums[i + 1] } : null
+  } else {
+    // Details still loading: step within this season using its summary count.
+    const cnt = show.data?.seasons?.find((s) => s.season_number === seasonNum)?.episode_count
+    prevEp = episodeNum > 1 ? { season: seasonNum, episode: episodeNum - 1 } : null
+    nextEp = cnt == null || episodeNum < cnt ? { season: seasonNum, episode: episodeNum + 1 } : null
+  }
 
   const epPath = (t: { season: number; episode: number }) =>
     `/item/${encodeURIComponent(itemId)}/episode/${t.season}/${t.episode}`

@@ -40,16 +40,21 @@ export interface Universe {
   /** Franchise name, e.g. "Child's Play". */
   name: string
   members: UniverseMember[]
+  /** True for a tight group under the cap (a phase / small franchise); false for a
+   *  larger franchise shown as a last resort (so callers can prefer a collection). */
+  narrow: boolean
 }
 
 interface SparqlBinding {
   [key: string]: { value: string } | undefined
 }
 
-async function runSparql(query: string): Promise<SparqlBinding[]> {
-  const res = await fetchSoft(`${SPARQL}?format=json&query=${encodeURIComponent(query)}`, {
-    headers: { Accept: 'application/sparql-results+json' },
-  })
+async function runSparql(query: string, ms = 8000): Promise<SparqlBinding[]> {
+  const res = await fetchSoft(
+    `${SPARQL}?format=json&query=${encodeURIComponent(query)}`,
+    { headers: { Accept: 'application/sparql-results+json' } },
+    ms,
+  )
   if (!res.ok) throw new Error(`Wikidata request failed (${res.status})`)
   const data = (await res.json()) as { results?: { bindings?: SparqlBinding[] } }
   return data.results?.bindings ?? []
@@ -75,45 +80,91 @@ function memberOf(row: SparqlBinding): UniverseMember | null {
   return null
 }
 
+// A title belongs to several nested groups at once — e.g. an MCU film is in
+// "Marvel Cinematic Universe" (~58), "The Infinity Saga" (22), "…Phase One" (7)
+// and "Avengers" (6). We prefer a *useful-sized* group: the largest under CAP
+// (lands on "Phase One", "Star Wars", "Child's Play", "NCIS", "Scream" …). When
+// nothing is under CAP, we fall back to the smallest franchise up to WIDE_CAP
+// (so a big TV franchise like "Doctor Who"/"Star Trek"/"James Bond" still shows),
+// noise-filtered and display-capped.
+const UNIVERSE_CAP = 20
+const WIDE_CAP = 60
+const WIDE_SHOW = 24
+// Franchise padding that isn't a watchable entry (behind-the-scenes, recap and
+// companion shows) — trimmed from the wide fallback so it isn't all clutter.
+const FRANCHISE_NOISE =
+  /\b(confidential|declassified|unleashed|totally|aftershow|recap|documentary|bloopers?|outtakes?|insider)\b|behind the scenes|making of|years in the|alien files|\bextra\b/i
+
 /**
- * The shared-universe franchise a TMDB title belongs to, with all its sibling
- * works that have a TMDB id (movies and shows alike). Returns null when the
- * title isn't in Wikidata, has no franchise, or the lookup fails.
+ * The shared-universe franchise a TMDB title belongs to, with its sibling works
+ * that have a TMDB id (movies and shows alike). Returns null when the title isn't
+ * in Wikidata or the lookup fails.
+ *
+ * One query, via "part of the series" (P179), "from narrative universe" (P1080),
+ * and "media franchise" (P8345 — how TV franchises like NCIS/Doctor Who/Star Trek
+ * link their series). Deliberately NOT generic "part of" (P361), which drags in
+ * thematic lists like "National Film Registry" (849 films); dropping it removes
+ * that noise and keeps the query fast.
  */
 export async function getUniverse(
   mediaType: 'movie' | 'show',
   tmdbId: number,
 ): Promise<Universe | null> {
   const prop = mediaType === 'movie' ? 'P4947' : 'P4983'
-  const query = `SELECT DISTINCT ?franchise ?franchiseLabel ?work ?workLabel ?tmdbM ?tmdbT WHERE {
+  const query = `SELECT ?f ?fLabel ?work ?workLabel ?tmdbM ?tmdbT WHERE {
     ?seed wdt:${prop} "${tmdbId}" .
-    { ?seed (wdt:P179|wdt:P1080|wdt:P361) ?franchise. } UNION { ?franchise wdt:P527 ?seed. }
-    { ?work (wdt:P179|wdt:P1080|wdt:P361) ?franchise. } UNION { ?franchise wdt:P527 ?work. }
+    { ?seed (wdt:P179|wdt:P1080|wdt:P8345) ?f. } UNION { ?f wdt:P527 ?seed. }
+    { ?work (wdt:P179|wdt:P1080|wdt:P8345) ?f. } UNION { ?f wdt:P527 ?work. }
     OPTIONAL { ?work wdt:P4947 ?tmdbM. }
     OPTIONAL { ?work wdt:P4983 ?tmdbT. }
     FILTER(BOUND(?tmdbM) || BOUND(?tmdbT))
     SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
-  } LIMIT 200`
-  try {
-    const rows = await runSparql(query)
-    // A title can belong to several franchises (e.g. a crossover); keep the one
-    // with the most TMDB-linked works — that's the "main" shared universe.
-    const groups = new Map<string, { name: string; members: Map<string, UniverseMember> }>()
-    for (const row of rows) {
-      const fid = row.franchise?.value
-      if (!fid) continue
-      const g = groups.get(fid) ?? { name: row.franchiseLabel?.value ?? 'Shared universe', members: new Map() }
-      const m = memberOf(row)
-      if (m) g.members.set(`${m.mediaType}:${m.tmdbId}`, m)
-      groups.set(fid, g)
+  } LIMIT 500`
+  // No try/catch: a timeout/network error must PROPAGATE so TanStack treats it as
+  // an error (retries, refetches next visit) instead of caching a null "no
+  // universe" for a day. Some big-franchise queries are slow cold (~15s) but fast
+  // once Wikidata warms its own cache, so a later visit then succeeds. Only a
+  // query that *succeeds* with no suitable group returns null.
+  // Most titles answer in ~2–4s; a rare highly-connected entity is much slower
+  // (and meanwhile falls back to the collection/keyword path).
+  const rows = await runSparql(query, 10000)
+  const groups = new Map<string, { name: string; members: Map<string, UniverseMember> }>()
+  for (const row of rows) {
+    const fid = row.f?.value
+    if (!fid) continue
+    const g = groups.get(fid) ?? {
+      name: row.fLabel?.value ?? 'Shared universe',
+      members: new Map<string, UniverseMember>(),
     }
-    let best: { name: string; members: Map<string, UniverseMember> } | null = null
-    for (const g of groups.values()) if (!best || g.members.size > best.members.size) best = g
-    if (!best || best.members.size < 2) return null
-    return { name: best.name, members: [...best.members.values()] }
-  } catch {
-    return null
+    const m = memberOf(row)
+    if (m) g.members.set(`${m.mediaType}:${m.tmdbId}`, m)
+    groups.set(fid, g)
   }
+
+  // Tier 1: the largest tight group (2..CAP-1) — a phase / small franchise.
+  let narrow: { name: string; members: Map<string, UniverseMember> } | null = null
+  // Tier 2: the smallest broad franchise (CAP..WIDE_CAP) — a last resort so a
+  // big franchise still links its parts.
+  let wide: { name: string; members: Map<string, UniverseMember> } | null = null
+  for (const g of groups.values()) {
+    const n = g.members.size
+    if (n >= 2 && n < UNIVERSE_CAP) {
+      if (!narrow || n > narrow.members.size) narrow = g
+    } else if (n >= UNIVERSE_CAP && n <= WIDE_CAP) {
+      if (!wide || n < wide.members.size) wide = g
+    }
+  }
+
+  if (narrow) {
+    return { name: narrow.name, members: [...narrow.members.values()], narrow: true }
+  }
+  if (wide) {
+    const members = [...wide.members.values()]
+      .filter((m) => !FRANCHISE_NOISE.test(m.title))
+      .slice(0, WIDE_SHOW)
+    if (members.length >= 2) return { name: wide.name, members, narrow: false }
+  }
+  return null
 }
 
 /** Members of a franchise looked up by its name (used to broaden a series:

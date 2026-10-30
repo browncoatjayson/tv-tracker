@@ -193,6 +193,92 @@ export async function discover(
   }
 }
 
+// --- Keyword-based shared universe (fallback when Wikidata has no franchise) ---
+// TMDB tags some titles with a "named universe" keyword — "marvel cinematic
+// universe (mcu)", "dc extended universe (dceu)", "arrowverse", "monsterverse".
+// These are cross-media (movie + TV). Pattern-match the name, excluding plot
+// keywords ("multiverse", "parallel universe"), and drop obvious making-of noise.
+const UNIVERSE_KW_RE = /(cinematic|extended|expanded|shared)\s+universe|\w+verse\b|wizarding world/i
+const UNIVERSE_KW_DENY = /\b(multiverse|metaverse|parallel universe|alternate universe|reverse|converse)\b/i
+const UNIVERSE_NOISE_RE = /behind the scenes|making of|assembling|the death of|documentary|\bb-roll\b/i
+
+interface TmdbKeyword {
+  id: number
+  name: string
+}
+
+async function getKeywords(mediaType: 'movie' | 'tv', tmdbId: number): Promise<TmdbKeyword[]> {
+  // Movies return `keywords`, TV returns `results` — same shape, different key.
+  const data = await tmdbGet<{ keywords?: TmdbKeyword[]; results?: TmdbKeyword[] }>(
+    `/${mediaType}/${tmdbId}/keywords`,
+  )
+  return data.keywords ?? data.results ?? []
+}
+
+export interface KeywordUniverseMember {
+  tmdbId: number
+  mediaType: 'movie' | 'show'
+  title: string
+  year?: number
+  posterPath?: string | null
+}
+export interface KeywordUniverse {
+  name: string
+  members: KeywordUniverseMember[]
+}
+
+/**
+ * Shared universe assembled from a TMDB "named universe" keyword (cross-media,
+ * capped + noise-filtered). A fallback for Related when Wikidata finds no
+ * franchise. Best-effort; returns null on no universe keyword / failure.
+ */
+export async function getKeywordUniverse(
+  mediaType: 'movie' | 'tv',
+  tmdbId: number,
+  maxItems = 16,
+): Promise<KeywordUniverse | null> {
+  try {
+    const kws = await getKeywords(mediaType, tmdbId)
+    const uni = kws.find((k) => UNIVERSE_KW_RE.test(k.name) && !UNIVERSE_KW_DENY.test(k.name))
+    if (!uni) return null
+    const members: KeywordUniverseMember[] = []
+    const seen = new Set<string>()
+    // One page per media (most-popular first); the whole set is capped below so a
+    // giant universe (the full MCU has 100+) can't flood the Related row.
+    for (const mt of ['movie', 'tv'] as const) {
+      const res = await discover(mt, { with_keywords: String(uni.id), sort_by: 'popularity.desc' }, 1)
+      for (const r of res.results) {
+        const kind = mt === 'tv' ? 'show' : 'movie'
+        const key = `${kind}:${r.id}`
+        const title = r.title || r.name || ''
+        if (seen.has(key) || !title || UNIVERSE_NOISE_RE.test(title)) continue
+        seen.add(key)
+        const date = r.release_date || r.first_air_date
+        members.push({
+          tmdbId: r.id,
+          mediaType: kind,
+          title,
+          year: date ? Number(date.slice(0, 4)) || undefined : undefined,
+          posterPath: r.poster_path,
+        })
+      }
+    }
+    if (members.length < 2) return null
+    // Keep the most popular up to the cap (members are already in popularity
+    // order); the caller sorts by year for display.
+    if (members.length > maxItems) members.length = maxItems
+    // Prefer the parenthetical short form as the label ("…(MCU)" -> "MCU");
+    // otherwise title-case the full name ("arrowverse" -> "Arrowverse").
+    const paren = uni.name.match(/\(([^)]+)\)\s*$/)
+    const name = paren
+      ? paren[1].toUpperCase()
+      : uni.name.replace(/\b\w/g, (c) => c.toUpperCase())
+    return { name, members }
+  } catch {
+    return null
+  }
+}
+
 export interface TmdbProvider {
   provider_id: number
   provider_name: string
@@ -652,6 +738,12 @@ export interface TmdbEpisode {
   still_path?: string | null
   vote_average?: number
   guest_stars?: { id?: number; name: string; character?: string }[]
+  /** Per-episode crew (the season endpoint already returns this). Used to tell a
+   *  narrative special (has a director) from an extra/clip in season 0. */
+  crew?: { name?: string; job?: string; department?: string }[]
+  /** TMDB's "standard" | "finale" | "mid_season" — only meaningful on regular
+   *  seasons (season 0 is always "standard"), so not used for the specials split. */
+  episode_type?: string
 }
 
 export async function getSeasonEpisodes(

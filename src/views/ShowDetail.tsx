@@ -19,6 +19,7 @@ import {
 } from '../api/tmdb'
 import { getShowAkas } from '../api/tvmaze'
 import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
+import { classifySpecials } from '../data/specials'
 import { hasTraktClientId, resolveTraktId } from '../api/trakt'
 import {
   addItem,
@@ -87,9 +88,9 @@ function buildSeasonTabs(
   }))
   if (!specials) return regularTabs
 
-  const spTab = (key: string, eps: number[]): SeasonTab => ({
+  const spTab = (key: string, label: string, eps: number[]): SeasonTab => ({
     id: `sp-${key}`,
-    label: 'Specials',
+    label,
     seasonNumber: 0,
     episodeCount: eps.length,
     episodeNumbers: new Set(eps),
@@ -102,28 +103,18 @@ function buildSeasonTabs(
       { id: 'sp', label: 'Specials', seasonNumber: 0, episodeCount: specials.episode_count, rating: specials.vote_average },
     ]
   }
-  // Bucket each special by the regular season it aired after (0 = before season 1).
-  const groups = new Map<number, number[]>()
-  const undated: number[] = []
-  for (const ep of specialEps) {
-    if (!ep.air_date) {
-      undated.push(ep.episode_number)
-      continue
-    }
-    let after = 0
-    for (const s of regular) if (s.air_date && s.air_date <= ep.air_date) after = s.season_number
-    const list = groups.get(after) ?? []
-    list.push(ep.episode_number)
-    groups.set(after, list)
-  }
+  // Narrative specials (have a director) are interleaved by air date; extras
+  // (clips, trailers, behind-the-scenes) go to a single "Extras" tab at the end.
+  const { groups, undated, extras } = classifySpecials(regular, specialEps)
   const out: SeasonTab[] = []
-  if (groups.has(0)) out.push(spTab('0', groups.get(0)!)) // specials before season 1
+  if (groups.has(0)) out.push(spTab('0', 'Specials', groups.get(0)!)) // before season 1
   for (const t of regularTabs) {
     out.push(t)
     const g = groups.get(t.seasonNumber)
-    if (g) out.push(spTab(String(t.seasonNumber), g))
+    if (g) out.push(spTab(String(t.seasonNumber), 'Specials', g))
   }
-  if (undated.length) out.push(spTab('x', undated)) // undated specials go last
+  if (undated.length) out.push(spTab('x', 'Specials', undated)) // undated specials go last
+  if (extras.length) out.push(spTab('extras', 'Extras', extras))
   return out
 }
 
@@ -262,12 +253,14 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
     enabled: season !== null,
     staleTime: HOUR,
   })
-  // A specials tab shows only its slice of the season-0 episodes.
+  // A specials tab shows only its slice of the season-0 episodes, in air-date
+  // order (so the cards match the Prev/Next browse order).
   const visibleEpisodes = useMemo(() => {
     const eps = episodesQuery.data ?? []
-    return activeTab?.episodeNumbers
-      ? eps.filter((e) => activeTab.episodeNumbers!.has(e.episode_number))
-      : eps
+    if (!activeTab?.episodeNumbers) return eps
+    return eps
+      .filter((e) => activeTab.episodeNumbers!.has(e.episode_number))
+      .sort((a, b) => (a.air_date ?? '').localeCompare(b.air_date ?? ''))
   }, [episodesQuery.data, activeTab])
 
   if (detailsQuery.isError && !d) {
