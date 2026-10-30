@@ -34,8 +34,12 @@ optionally, in your own Google Drive.
   teams side by side, each with full schedules and status (watching, completed,
   plan to watch, etc.).
 - **Episode & season tracking.** Mark episodes watched, log rewatches, and let
-  status advance automatically (watching → completed). Specials (season 0) are
-  split by air date and interleaved between the regular seasons.
+  status advance automatically (watching → completed). Step through episodes with
+  Prev/Next (across season boundaries), and edit the watched date with a picker
+  that also accepts month- or year-only precision. Narrative specials (Christmas
+  specials, anniversary episodes, …) are interleaved between the regular seasons
+  by air date, while clips and behind-the-scenes extras go to a separate "Extras"
+  tab.
 - **Ratings & progress.** Rate anything on a 10-star scale (shown next to the
   community average) and pick up where you left off.
 - **Upcoming tab.** "This Week", upcoming, and "Recently Aired" feeds with
@@ -46,17 +50,20 @@ optionally, in your own Google Drive.
 - **Powerful filters.** Narrow the library by genre, year, language, cast, and
   streaming service — and exclude what you don't want. The filter box also
   accepts `genre:` and `service:` tokens (e.g. `genre:crime, service:hbo`).
-- **Related & universes.** Jump between sequels, spin-offs, and shared
-  universes that span movies and TV.
+- **Related & universes.** Jump between sequels, spin-offs, and shared universes
+  that span movies and TV — grouped to a sensible size (e.g. an MCU film shows
+  its phase, not all 100+ titles) from TMDB collections, keywords, and Wikidata.
 - **Watch providers.** See where a title streams, with near-duplicate services
   merged (e.g. "Netflix" + "Netflix Standard") and cable-replacement/live-TV
   bundles (Fubo, Sling, etc.) filtered out.
 - **Timeline & badges.** Browse your watch history as an agenda and earn
   milestone badges as you go.
 - **Welcome screen.** On first launch with an empty library, a welcome dialog
-  explains the app and offers returning users a one-click Drive restore or
-  backup import. A restore that brings data back earns the "Welcome Back!"
-  badge.
+  explains the app and offers returning users a one-click Drive restore or backup
+  import. On later launches (once the Drive sign-in has lapsed for the session) a
+  "Welcome Back! Log in to Drive" prompt lets you re-authorize with one tap;
+  signing in shows a brief "Welcome Back!" toast to confirm you're signed in and
+  ready.
 - **Installable PWA.** Add it to your home screen or dock for a full-screen,
   offline-ready experience, with an update prompt when a new version ships and
   a request for persistent storage so browser cleanups don't wipe your library.
@@ -115,7 +122,8 @@ the rest of your Drive.
   silent background syncs, so you are not prompted to sign in every time you add
   a show or mark an episode. A fresh sign-in may be needed again after the token
   expires (roughly an hour) and the app reloads, or if third-party cookies are
-  blocked.
+  blocked. When that happens, a "Welcome Back! Log in to Drive" prompt appears on
+  launch so you can re-authorize with one tap.
 - **Sync on open and on change.** The app syncs silently when it opens (if you
   were connected) and auto-syncs shortly after you add/remove items, mark
   episodes or movies, or change status.
@@ -124,8 +132,8 @@ the rest of your Drive.
   `tvtracker-cache.json`, so frequent auto-syncs stay small.
 - **What's backed up.** Tracked items, watch events, episode states, favorites,
   tombstones (so deletes propagate), earned badges, and the episode cache. The
-  one-off "Welcome Back!" badge is intentionally excluded so it doesn't follow
-  a restore around.
+  "Welcome Back!" entry is a per-session sign-in notification, not a real badge,
+  so it's never synced.
 - **Manual backup.** **Settings → Export / Import** writes or reads the same
   JSON locally, independent of Drive.
 

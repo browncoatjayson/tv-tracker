@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import ToastOverlay from './ToastOverlay'
 import { recordSynced, syncNow } from '../data/driveSync'
+import { awardBadges, badgeById } from '../data/badges'
+import { showBadgeToast } from '../utils/badgeToast'
 
 /**
  * Shown on launch when the user has connected Drive before but this session has
@@ -24,6 +26,12 @@ export default function DriveReauthPrompt({ onDone }: { onDone: () => void }) {
     try {
       const r = await syncNow(true) // user gesture → popup allowed, not blocked
       recordSynced(r.syncedAt)
+      // "Welcome Back!" doubles as a "signed in and ready" notification each time
+      // you log in for the day. It's re-awarded here (and deleted at launch when a
+      // new session has no token — see Layout) and never synced to the backup.
+      void awardBadges(['welcome-back'])
+      const b = badgeById('welcome-back')
+      if (b) showBadgeToast(b)
       onDone()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed.')

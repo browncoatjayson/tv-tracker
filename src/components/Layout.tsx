@@ -62,7 +62,12 @@ export default function Layout() {
     // but only when there's a library to keep syncing. An empty library already
     // shows the Welcome screen (with its own Drive restore), so we don't double up.
     void db.trackedItems.count().then((n) => {
-      if (n > 0) setNeedsReauth(true)
+      if (n > 0) {
+        // New session with no token = the sign-in has lapsed. Clear last session's
+        // "Welcome Back!" so signing in again re-awards it as a fresh notification.
+        void db.badges.delete('welcome-back')
+        setNeedsReauth(true)
+      }
     })
   }, [])
 

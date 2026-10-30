@@ -258,13 +258,3 @@ export async function awardBadges(ids: string[]): Promise<void> {
 export function useEarnedBadges(): EarnedBadge[] | undefined {
   return useLiveQuery(() => db.badges.toArray(), [])
 }
-
-/** Nudge the badge watcher to re-check after an action that only touches
- *  localStorage (export / sync), which Dexie live queries don't observe. */
-export function notifyBadgeCheck(): void {
-  try {
-    window.dispatchEvent(new Event('tvtracker:badgecheck'))
-  } catch {
-    // ignore (non-browser env)
-  }
-}

@@ -208,8 +208,13 @@ export default function Stats() {
   }
 
   // --- Badges --------------------------------------------------------------
-  const earnedAt = new Map((earnedBadges ?? []).map((b) => [b.id, b.earnedAt]))
-  const badgeGroups = [...new Set(BADGES.map((b) => b.group))]
+  // "Welcome Back!" is a sign-in notification, not a collectible — hide it here.
+  const HIDDEN_BADGES = new Set(['welcome-back'])
+  const visibleBadges = BADGES.filter((b) => !HIDDEN_BADGES.has(b.id))
+  const earnedAt = new Map(
+    (earnedBadges ?? []).filter((b) => !HIDDEN_BADGES.has(b.id)).map((b) => [b.id, b.earnedAt]),
+  )
+  const badgeGroups = [...new Set(visibleBadges.map((b) => b.group))]
 
   return (
     <div className="stats">
@@ -296,13 +301,13 @@ export default function Stats() {
       {/* Badges */}
       <section className="card">
         <h3 className="section-title">
-          Badges <span className="muted section-title__count">{earnedAt.size} / {BADGES.length}</span>
+          Badges <span className="muted section-title__count">{earnedAt.size} / {visibleBadges.length}</span>
         </h3>
         {badgeGroups.map((group) => (
           <div key={group} className="badge-group">
             <h4 className="badge-group__title">{group}</h4>
             <div className="badge-grid">
-              {BADGES.filter((b) => b.group === group).map((b) => {
+              {visibleBadges.filter((b) => b.group === group).map((b) => {
                 const at = earnedAt.get(b.id)
                 const on = at !== undefined
                 const inner = (
