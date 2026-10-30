@@ -4,6 +4,7 @@ import { hasGoogleClientId, recordSynced, syncNow } from '../data/driveSync'
 import { importBackup } from '../data/exportImport'
 import { awardBadges, badgeById } from '../data/badges'
 import { showBadgeToast } from '../utils/badgeToast'
+import { markFlag } from '../data/appFlags'
 import { resetBadgePriming } from '../hooks/useBadgeWatcher'
 
 /**
@@ -16,6 +17,13 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
   const [busy, setBusy] = useState<null | 'drive' | 'import'>(null)
   const [error, setError] = useState<string | null>(null)
   const fileInput = useRef<HTMLInputElement>(null)
+
+  // Dismissing the welcome (any path) = the user has opened the app — earns
+  // "Are You New Here?".
+  function close() {
+    markFlag('welcomed')
+    onClose()
+  }
 
   function celebrateRestore(restored: number) {
     if (restored <= 0) return
@@ -33,7 +41,7 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
       const r = await syncNow(true)
       recordSynced(r.syncedAt)
       celebrateRestore(r.items)
-      onClose()
+      close()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed.')
       setBusy(null)
@@ -48,7 +56,7 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
     try {
       const counts = await importBackup(await file.text(), 'merge')
       celebrateRestore(counts.items)
-      onClose()
+      close()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed.')
       setBusy(null)
@@ -103,7 +111,7 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
 
         {error && <p className="badge badge--warn welcome__error">{error}</p>}
 
-        <button className="btn welcome__start" disabled={!!busy} onClick={onClose}>
+        <button className="btn welcome__start" disabled={!!busy} onClick={close}>
           Get started
         </button>
       </div>

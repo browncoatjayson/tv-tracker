@@ -106,13 +106,14 @@ export async function setEpisodeWatchedDate(
   season: number,
   episode: number,
   watchedAt: number,
+  precision: 'day' | 'month' | 'year' = 'day',
 ): Promise<void> {
   const id = episodeKey(itemId, season, episode)
   const now = Date.now()
   await db.transaction('rw', db.episodeStates, db.trackedItems, async () => {
     const prev = await db.episodeStates.get(id)
     if (!prev?.watched) return
-    await db.episodeStates.update(id, { watchedAt, updatedAt: now })
+    await db.episodeStates.update(id, { watchedAt, watchedPrecision: precision, updatedAt: now })
     await db.trackedItems.update(itemId, { updatedAt: now })
   })
 }

@@ -605,7 +605,8 @@ a:hover {
 }
 .movie-watch__info .movie-watch__date {
   margin: 0;
-  gap: 2px;
+  gap: 6px;
+  font-size: 0.82rem;
 }
 .movie-watch__date input {
   max-width: 220px;
@@ -1105,6 +1106,79 @@ input[type='file'] {
   color-scheme: dark;
 }
 
+/* ---- Shared watched-date control (movies + episodes) --------------------- */
+.watched-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.watched-date input[type='date'] {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--surface-2);
+  border-radius: 6px;
+  padding: 2px 6px;
+  font: inherit;
+  color-scheme: dark;
+}
+/* The month/year-only value reads like the date input it replaces. */
+.watched-date__value {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--surface-2);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+.watched-date__value:hover {
+  border-color: var(--accent);
+}
+/* The pencil that opens the Select-date dialog. */
+.watched-date__edit {
+  background: none;
+  border: none;
+  padding: 0 2px;
+  font-size: 0.9em;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.75;
+}
+.watched-date__edit:hover {
+  opacity: 1;
+}
+
+/* Select-date dialog: Month / Day / Year number fields. */
+.date-fields {
+  display: flex;
+  gap: 10px;
+  margin: 12px 0 6px;
+}
+.date-fields__f {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.date-fields__f input {
+  width: 70px;
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--surface-2);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font: inherit;
+  color-scheme: dark;
+}
+.date-fields__f--year input {
+  width: 90px;
+}
+.date-fields__preview {
+  margin: 0 0 4px;
+  font-size: 0.82rem;
+}
+
 /* ---- Episode detail page ------------------------------------------------- */
 .back-link {
   display: inline-block;
@@ -1351,14 +1425,39 @@ input[type='file'] {
   font-size: 0.85rem;
   white-space: nowrap;
 }
-.episode-hero__still {
+/* Poster column: the still plus the Prev/Next nav tucked into the space below it.
+   The width cap lives here now (relative to the hero body) so the still fills it. */
+.episode-hero__poster {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
   width: 260px;
   max-width: 42%;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+.episode-hero__nav {
+  display: flex;
+  gap: 8px;
+}
+.episode-hero__nav .btn {
+  flex: 1;
+  justify-content: center;
+}
+/* On narrow phones the poster column is slim, so shrink the label (and trim the
+   side padding) to keep each button's "← Prev" / "Next →" on a single line. */
+@media (max-width: 480px) {
+  .episode-hero__nav .btn {
+    font-size: 0.69rem;
+    padding: 6px 8px;
+    white-space: nowrap;
+  }
+}
+.episode-hero__still {
+  width: 100%;
   aspect-ratio: 16 / 9;
   object-fit: cover;
   border-radius: 10px;
-  flex-shrink: 0;
-  align-self: flex-start;
   box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
 }
 .episode-hero__still--ph {
@@ -2790,6 +2889,26 @@ input[type='file'] {
     transform: none;
   }
 }
+/* "Welcome back — sign in to Drive" launch prompt. Text stacks on the left,
+   the Sign in / Not now buttons sit to its right (wrapping on narrow screens). */
+.reauth-toast {
+  flex-wrap: wrap;
+  width: min(420px, calc(100% - 32px));
+}
+.reauth-toast__text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  margin-right: auto;
+}
+.reauth-toast__text span {
+  color: var(--muted);
+}
+.reauth-toast__err {
+  color: var(--danger, #f87171) !important;
+  margin-top: 4px;
+}
+
 /* Confirm variant: message on its own line, actions right-aligned below. */
 .confirm-toast {
   flex-wrap: wrap;

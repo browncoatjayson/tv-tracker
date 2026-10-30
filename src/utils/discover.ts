@@ -59,9 +59,15 @@ export function resolveProviderIds(tokens: string[], providers: TmdbProvider[]):
 
 /**
  * /discover params for "new releases now on these providers": recent releases
- * (within `days`) streaming (flatrate) on any of the given providers, popular
- * first. TMDB has no "date added to the service", so recent release date is the
- * closest proxy for a fresh-arrivals feed.
+ * (within `days`) available on any of the given providers, popular first. TMDB
+ * has no "date added to the service", so recent release date is the closest
+ * proxy for a fresh-arrivals feed.
+ *
+ * Monetization spans flatrate + ads + free (but not rent/buy): free, ad-
+ * supported services like Tubi, Pluto TV, The Roku Channel and Freevee list
+ * their catalogs as "ads"/"free", not "flatrate", so a flatrate-only query
+ * returns little or nothing for them. Subscription services are unaffected
+ * (their catalogs are flatrate) beyond also picking up any free-with-ads tier.
  */
 export function newReleasesParams(
   mediaType: 'movie' | 'tv',
@@ -74,7 +80,7 @@ export function newReleasesParams(
   return {
     with_watch_providers: providerIds.join('|'),
     watch_region: REGION,
-    with_watch_monetization_types: 'flatrate',
+    with_watch_monetization_types: 'flatrate|ads|free',
     sort_by: 'popularity.desc',
     [`${dateKey}.gte`]: since,
     [`${dateKey}.lte`]: today,

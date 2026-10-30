@@ -8,6 +8,7 @@ import { useFavoritePeople } from '../data/favorites'
 import { BADGES, useEarnedBadges } from '../data/badges'
 import { reviewBadgeToast } from '../utils/badgeToast'
 import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
+import { markFlag } from '../data/appFlags'
 import { LAST_EXPORT_KEY } from '../data/exportImport'
 import { itemNeedsIndex, startIndexing, useIndexProgress } from '../data/episodeIndex'
 import { getTraktLastSync, getTraktStats } from '../api/trakt'
@@ -54,6 +55,9 @@ export default function Stats() {
     window.addEventListener('tvtracker:profile', onProfile)
     return () => window.removeEventListener('tvtracker:profile', onProfile)
   }, [])
+
+  // Earns "It's Full of Stars" the first time you open this page.
+  useEffect(() => markFlag('openedStats'), [])
 
   const index = useIndexProgress()
   const [indexDismissed, setIndexDismissed] = useState(false)

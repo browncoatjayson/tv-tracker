@@ -155,6 +155,17 @@ function loadGis(): Promise<void> {
 let cachedToken: { token: string; expiresAt: number } | null = null
 
 /**
+ * True when we hold an access token that's still valid — i.e. a silent sync can
+ * run WITHOUT calling GIS (no popup/account-chooser). This is in-memory only, so
+ * it's false right after a cold start/reload: there we must get a fresh token via
+ * a user gesture rather than attempting a silent refresh (which a PWA blocks as a
+ * popup). See Layout's launch flow + DriveReauthPrompt.
+ */
+export function hasLiveToken(): boolean {
+  return !!cachedToken && Date.now() < cachedToken.expiresAt
+}
+
+/**
  * Obtain an access token, reusing a cached one until it expires.
  * @param interactive true to allow a sign-in/consent popup (a user clicked). When
  *   false we request silently (`prompt: 'none'`) and reject rather than pop UI —

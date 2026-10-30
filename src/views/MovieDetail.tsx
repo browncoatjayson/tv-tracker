@@ -11,6 +11,7 @@ import {
   getMovieDetails,
   getRecommendations,
   getVideos,
+  hasAired,
   imageUrl,
   runtimeOf,
   watchNames,
@@ -144,6 +145,14 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
         tags={
           <>
             <span>Movie</span>
+            {d.release_date && (
+              <>
+                <span className="where-pill">
+                  {hasAired(d.release_date) ? 'Released' : 'Upcoming'}
+                </span>
+                <span className="where-pill">{d.release_date}</span>
+              </>
+            )}
             <WherePills providers={providers} />
           </>
         }

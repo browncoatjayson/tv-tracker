@@ -144,6 +144,9 @@ export interface EpisodeState {
   /** How many times watched (0 = unwatched, 2 = watched twice). Enables rewatches. */
   watchCount?: number
   watchedAt?: number
+  /** Precision of watchedAt — 'day' (default) or a partial month/year the user
+   *  entered via the Select-date dialog. Undefined is treated as 'day'. */
+  watchedPrecision?: 'day' | 'month' | 'year'
   /** Personal rating of this episode, 1–10. Undefined if unrated. */
   userRating?: number
   /** When this flag last changed (watch OR unwatch). Drives last-write-wins on sync. */

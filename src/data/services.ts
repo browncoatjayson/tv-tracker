@@ -19,6 +19,17 @@ export const SERVICES: Service[] = [
   { label: 'Paramount+', value: 'paramount plus' },
   { label: 'Peacock', value: 'peacock' },
   { label: 'Crunchyroll', value: 'crunchyroll' },
+  // Free, ad-supported (FAST) services. Their catalogs are mostly "ads"/"free"
+  // on TMDB rather than "flatrate", so the New-on-Your-Services row includes
+  // ad-supported titles too (see newReleasesParams). `value` is a substring
+  // matched against the TMDB provider name:
+  //   The Roku Channel (207) · Tubi TV (73) · Pluto TV (300)
+  //   Freevee → the retired brand's catalog is now "Amazon Prime Video Free
+  //   with Ads" (613); 'free with ads' matches only that, not regular Prime.
+  { label: 'The Roku Channel', value: 'roku channel' },
+  { label: 'Tubi', value: 'tubi' },
+  { label: 'Freevee', value: 'free with ads' },
+  { label: 'Pluto TV', value: 'pluto' },
 ]
 
 /** Star or un-star a service. Un-starring keeps a soft-deleted record so the

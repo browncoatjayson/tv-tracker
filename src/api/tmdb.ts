@@ -346,8 +346,14 @@ export interface TmdbEpisodePointer {
   name?: string
 }
 
+interface ProviderRef {
+  provider_name: string
+}
 export interface TmdbWatchProviders {
-  results?: Record<string, { flatrate?: { provider_name: string }[] }>
+  // `flatrate` = included with a subscription; `ads`/`free` = watchable free
+  // (with or without ads) — the latter is where FAST services (Tubi, Pluto TV,
+  // The Roku Channel, Freevee, …) list their catalogs.
+  results?: Record<string, { flatrate?: ProviderRef[]; ads?: ProviderRef[]; free?: ProviderRef[] }>
 }
 
 /** The minimal shape {@link whereToWatch} needs (satisfied by TV and movie details). */
@@ -605,11 +611,22 @@ const LIVE_TV_RE = /\b(fubo\w*|sling|philo|vidgo|frndly|directv|youtube tv)\b|\b
 /** All networks + streaming service names (deduped) for the given region. Live-TV
  *  bundles are dropped. */
 export function watchNames(details: WatchInfo, region = 'US'): string[] {
+  const providers = details['watch/providers']?.results?.[region]
   const names: string[] = []
   for (const n of details.networks ?? []) names.push(n.name)
-  for (const p of details['watch/providers']?.results?.[region]?.flatrate ?? []) {
+  for (const p of providers?.flatrate ?? []) {
     if (LIVE_TV_RE.test(p.provider_name)) continue
     names.push(normalizeProvider(p.provider_name))
+  }
+  // Fallback: if nothing qualified (no network, no subscription streamer), fall
+  // back to free / ad-supported availability — so a title that only streams on a
+  // FAST service (Tubi, Pluto TV, The Roku Channel, Freevee, …) still shows where
+  // to watch instead of a blank. Live-TV bundles stay suppressed.
+  if (names.length === 0) {
+    for (const p of [...(providers?.ads ?? []), ...(providers?.free ?? [])]) {
+      if (LIVE_TV_RE.test(p.provider_name)) continue
+      names.push(normalizeProvider(p.provider_name))
+    }
   }
   return [...new Set(names)]
 }

@@ -9,7 +9,9 @@ import { ESPN_LEAGUES } from '../api/espn'
 // ---------------------------------------------------------------------------
 
 const KEY = 'tvtracker.sportLeagues'
-const DEFAULT_KEYS = ['cfb', 'wcvb']
+/** Leagues enabled out of the box (so the badge for picking one requires more). */
+export const DEFAULT_LEAGUE_KEYS = ['cfb', 'wcvb']
+const DEFAULT_KEYS = DEFAULT_LEAGUE_KEYS
 
 /** Valid league keys, so a stale stored value can't surface a removed league. */
 const VALID = new Set(ESPN_LEAGUES.map((l) => l.key))
@@ -34,6 +36,13 @@ const listeners = new Set<() => void>()
 function emit() {
   cache = read()
   for (const l of listeners) l()
+  // Let the badge watcher re-check the "Sportsball" badge (leagues live here,
+  // not in Dexie, so its live queries don't observe this change).
+  try {
+    window.dispatchEvent(new Event('tvtracker:badgecheck'))
+  } catch {
+    // ignore (non-browser env)
+  }
 }
 
 function subscribe(cb: () => void): () => void {

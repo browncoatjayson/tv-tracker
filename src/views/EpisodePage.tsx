@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { db, episodeKey } from '../data/db'
 import {
   getEpisodeDetails,
@@ -20,13 +20,9 @@ import { WherePills } from '../components/DetailHero'
 import CastRow from '../components/CastRow'
 import RatingRow from '../components/RatingRow'
 import Reviews from '../components/Reviews'
+import WatchedDateField from '../components/WatchedDateField'
 
 const HOUR = 1000 * 60 * 60
-
-function localDate(ms: number): string {
-  const d = new Date(ms)
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-}
 
 export default function EpisodePage() {
   const { id = '', season = '', episode = '' } = useParams()
@@ -34,6 +30,7 @@ export default function EpisodePage() {
   const tmdbId = Number(itemId.split(':')[1])
   const seasonNum = Number(season)
   const episodeNum = Number(episode)
+  const navigate = useNavigate()
   const valid =
     itemId.startsWith('show:') &&
     Number.isFinite(tmdbId) &&
@@ -115,6 +112,34 @@ export default function EpisodePage() {
   const providers = show.data ? watchNames(show.data) : []
   const gallery = (epImages.data ?? []).slice(0, 10)
 
+  // Prev/Next across the show: step within the season, then roll over to the
+  // adjacent season (the last episode of the previous one, or episode 1 of the
+  // next). The linear chain is the regular seasons (1, 2, …); Specials (season 0)
+  // are their own island, so you don't fall into them from a regular-season edge
+  // and vice versa. Each season's length is its episode_count (once loaded).
+  const chain = (show.data?.seasons ?? [])
+    .filter((s) => (s.episode_count ?? 0) > 0)
+    .filter((s) => (seasonNum === 0 ? s.season_number === 0 : s.season_number >= 1))
+    .sort((a, b) => a.season_number - b.season_number)
+  const curIdx = chain.findIndex((s) => s.season_number === seasonNum)
+  const seasonCount = curIdx >= 0 ? chain[curIdx].episode_count : undefined
+
+  let prevEp: { season: number; episode: number } | null = null
+  if (episodeNum > 1) prevEp = { season: seasonNum, episode: episodeNum - 1 }
+  else if (curIdx > 0) {
+    const p = chain[curIdx - 1]
+    prevEp = { season: p.season_number, episode: p.episode_count ?? 1 }
+  }
+
+  let nextEp: { season: number; episode: number } | null = null
+  if (seasonCount == null) nextEp = { season: seasonNum, episode: episodeNum + 1 } // details not loaded yet
+  else if (episodeNum < seasonCount) nextEp = { season: seasonNum, episode: episodeNum + 1 }
+  else if (curIdx >= 0 && curIdx < chain.length - 1)
+    nextEp = { season: chain[curIdx + 1].season_number, episode: 1 }
+
+  const epPath = (t: { season: number; episode: number }) =>
+    `/item/${encodeURIComponent(itemId)}/episode/${t.season}/${t.episode}`
+
   const links = {
     imdb: epImdb.data ? `https://www.imdb.com/title/${epImdb.data}/` : undefined,
     tmdb: `https://www.themoviedb.org/tv/${tmdbId}/season/${seasonNum}/episode/${episodeNum}`,
@@ -147,11 +172,29 @@ export default function EpisodePage() {
           <ExternalLinks {...links} />
         </div>
         <div className="hero__body">
-          {still ? (
-            <img className="episode-hero__still" src={still} alt="" loading="lazy" />
-          ) : (
-            <div className="episode-hero__still episode-hero__still--ph">📺</div>
-          )}
+          <div className="episode-hero__poster">
+            {still ? (
+              <img className="episode-hero__still" src={still} alt="" loading="lazy" />
+            ) : (
+              <div className="episode-hero__still episode-hero__still--ph">📺</div>
+            )}
+            <nav className="episode-hero__nav" aria-label="Episode navigation">
+              <button
+                className="btn btn--small"
+                disabled={!prevEp}
+                onClick={() => prevEp && navigate(epPath(prevEp))}
+              >
+                ← Prev
+              </button>
+              <button
+                className="btn btn--small"
+                disabled={!nextEp}
+                onClick={() => nextEp && navigate(epPath(nextEp))}
+              >
+                Next →
+              </button>
+            </nav>
+          </div>
           <div className="hero__meta">
             <h2 className="hero__title">
               <span className="episode-page__num">
@@ -192,22 +235,15 @@ export default function EpisodePage() {
               {watched ? '✓ Watched' : 'Mark as watched'}
             </button>
             {watched && (
-              <label className="episode__watched">
-                <span className="muted">Watched on</span>
-                <input
-                  type="date"
-                  value={epState?.watchedAt ? localDate(epState.watchedAt) : ''}
-                  onChange={(e) => {
-                    if (!e.target.value) return
-                    void setEpisodeWatchedDate(
-                      itemId,
-                      seasonNum,
-                      episodeNum,
-                      new Date(`${e.target.value}T12:00:00`).getTime(),
-                    )
-                  }}
-                />
-              </label>
+              <WatchedDateField
+                watchedAt={epState?.watchedAt}
+                precision={epState?.watchedPrecision}
+                onChange={(ms, p) =>
+                  void setEpisodeWatchedDate(itemId, seasonNum, episodeNum, ms, p)
+                }
+                label="Watched on"
+                className="episode__watched"
+              />
             )}
           </div>
         )}

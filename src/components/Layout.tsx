@@ -1,8 +1,18 @@
 import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
+import { db } from '../data/db'
 import { startIndexing, useIndexProgress } from '../data/episodeIndex'
-import { getGoogleProfile, recordSynced, syncNow, wasConnected, type GoogleProfile } from '../data/driveSync'
+import {
+  getGoogleProfile,
+  hasGoogleClientId,
+  hasLiveToken,
+  recordSynced,
+  syncNow,
+  wasConnected,
+  type GoogleProfile,
+} from '../data/driveSync'
 import UpdatePrompt from './UpdatePrompt'
+import DriveReauthPrompt from './DriveReauthPrompt'
 import ConfirmHost from './ConfirmHost'
 import BadgeToastHost from './BadgeToastHost'
 import NotificationScheduler from './NotificationScheduler'
@@ -18,6 +28,10 @@ const TABS = [
 ] as const
 
 export default function Layout() {
+  // When Drive is linked but this session has no token yet (cold start), prompt
+  // the user to sign in rather than attempting a silent refresh — see the effect.
+  const [needsReauth, setNeedsReauth] = useState(false)
+
   // Warm the index (and the shared TMDB cache it populates) on launch, so a show
   // just added or pulled in by a sync is ready on Library/Upcoming without first
   // opening Stats. No-ops when everything is already indexed.
@@ -26,20 +40,30 @@ export default function Layout() {
   }, [])
 
   // On launch: ask the browser to persist our storage (so it isn't auto-evicted
-  // under pressure — won't stop a manual data clear, but helps otherwise), and,
-  // for a connected user, pull any changes from Drive. Both are silent and
-  // best-effort; the Drive sync is a no-op after a cache wipe (the flag is gone).
+  // under pressure — won't stop a manual data clear, but helps otherwise), then
+  // handle Drive for a connected user.
   useEffect(() => {
     try {
       void navigator.storage?.persist?.()
     } catch {
       // ignore
     }
-    if (wasConnected()) {
+    if (!wasConnected() || !hasGoogleClientId()) return
+    if (hasLiveToken()) {
+      // We already hold a valid token this session — sync silently, no popup.
       void syncNow(false)
         .then((r) => recordSynced(r.syncedAt))
         .catch(() => {})
+      return
     }
+    // Cold start: GIS tokens live only in memory, so there's nothing to refresh
+    // silently. Attempting it opens an account-chooser popup the PWA blocks
+    // ("Popup blocked"). Prompt the user to sign in from a real click instead —
+    // but only when there's a library to keep syncing. An empty library already
+    // shows the Welcome screen (with its own Drive restore), so we don't double up.
+    void db.trackedItems.count().then((n) => {
+      if (n > 0) setNeedsReauth(true)
+    })
   }, [])
 
   // Award gamification badges as milestones are hit (confetti toast on earn).
@@ -60,6 +84,7 @@ export default function Layout() {
         <Outlet />
       </main>
 
+      {needsReauth && <DriveReauthPrompt onDone={() => setNeedsReauth(false)} />}
       <UpdatePrompt />
       <ConfirmHost />
       <BadgeToastHost />

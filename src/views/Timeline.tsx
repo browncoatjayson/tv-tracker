@@ -1,8 +1,9 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
 import { badgeById } from '../data/badges'
+import { markFlag } from '../data/appFlags'
 import { reviewBadgeToast } from '../utils/badgeToast'
 import {
   buildTimeline,
@@ -50,6 +51,9 @@ export default function Timeline() {
   const states = useLiveQuery(() => db.episodeStates.toArray())
   const badges = useLiveQuery(() => db.badges.toArray())
   const cache = useLiveQuery(() => db.episodeCache.toArray())
+
+  // Earns "Dear Diary…" the first time you open the Timeline.
+  useEffect(() => markFlag('openedTimeline'), [])
 
   const entries = useMemo(() => {
     if (!items || !states || !badges) return null

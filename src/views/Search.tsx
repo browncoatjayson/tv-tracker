@@ -47,6 +47,7 @@ import {
 import { getUniverseByName } from '../api/wikidata'
 import { addSportTeam, sportItemId } from '../data/sports'
 import { useEnabledLeagues } from '../data/sportPrefs'
+import { markFlag } from '../data/appFlags'
 import FilterBar from '../components/FilterBar'
 import Recommendations from '../components/Recommendations'
 import type { MediaType } from '../data/types'
@@ -82,6 +83,10 @@ function releaseState(r: TmdbMediaResult): boolean | undefined {
 export default function Search() {
   const [input, setInput] = usePersistentFilter('tvtracker.filter.search')
   const query = useDebouncedValue(input, 350)
+  // Earns "They're All Here" the first time a search query is entered.
+  useEffect(() => {
+    if (query.trim()) markFlag('searched')
+  }, [query])
   const [addingId, setAddingId] = useState<number | null>(null)
   const [visibleCount, setVisibleCount] = useState(PAGE)
   const [loadingMore, setLoadingMore] = useState(false)

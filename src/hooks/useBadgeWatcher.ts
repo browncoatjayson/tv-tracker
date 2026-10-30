@@ -58,14 +58,23 @@ export function useBadgeWatcher(): void {
   const states = useLiveQuery(() => db.episodeStates.toArray(), [])
   const events = useLiveQuery(() => db.watchEvents.toArray(), [])
   const earned = useLiveQuery(() => db.badges.toArray(), [])
+  const favPeople = useLiveQuery(() => db.favoritePeople.filter((p) => !p.removed).count(), [])
+  const favServices = useLiveQuery(() => db.favoriteServices.filter((s) => !s.removed).count(), [])
   const trakt = useTraktAuth()
 
   // Re-check on account actions that only touch localStorage (export, sync,
-  // Google connect) — Dexie live queries don't observe those.
+  // Google connect, notifications, first-run flags) — Dexie live queries don't
+  // observe those.
   const [tick, setTick] = useState(0)
   useEffect(() => {
     const bump = () => setTick((n) => n + 1)
-    const evs = ['tvtracker:profile', 'tvtracker:trakt', 'tvtracker:badgecheck', 'storage']
+    const evs = [
+      'tvtracker:profile',
+      'tvtracker:trakt',
+      'tvtracker:badgecheck',
+      'tvtracker:notify',
+      'storage',
+    ]
     evs.forEach((e) => window.addEventListener(e, bump))
     return () => evs.forEach((e) => window.removeEventListener(e, bump))
   }, [])
@@ -75,7 +84,10 @@ export function useBadgeWatcher(): void {
   useEffect(() => {
     if (!items || !states || !events || !earned) return
 
-    const ctx = buildBadgeContext(items, states, events, trakt.signedIn)
+    const ctx = buildBadgeContext(items, states, events, trakt.signedIn, {
+      favoritePeople: favPeople ?? 0,
+      favoriteServices: favServices ?? 0,
+    })
     const met = evaluateBadges(ctx)
     const have = new Set(earned.map((b) => b.id))
     const newly = [...met].filter((id) => !have.has(id) && !toastedRef.current.has(id))
@@ -105,5 +117,5 @@ export function useBadgeWatcher(): void {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, states, events, earned, trakt.signedIn, tick])
+  }, [items, states, events, earned, favPeople, favServices, trakt.signedIn, tick])
 }
