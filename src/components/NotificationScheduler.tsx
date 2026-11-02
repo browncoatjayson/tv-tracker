@@ -48,14 +48,16 @@ export default function NotificationScheduler() {
     [enabled],
   )
 
-  const watched = new Set(
-    (states ?? []).filter((s) => s.watched).map((s) => `${s.itemId}:${s.season}:${s.episode}`),
+  const seen = new Set(
+    (states ?? [])
+      .filter((s) => s.watched || s.skipped)
+      .map((s) => `${s.itemId}:${s.season}:${s.episode}`),
   )
   const entries: AiringEntry[] = []
   shows.forEach((s, i) => {
     for (const e of tvmaze[i]?.data ?? []) {
       if (!e.airstamp || e.season === 0) continue
-      if (watched.has(`${s.id}:${e.season}:${e.number}`)) continue
+      if (seen.has(`${s.id}:${e.season}:${e.number}`)) continue
       entries.push({
         showTitle: s.title,
         season: e.season,

@@ -24,7 +24,10 @@ import type { EarnedBadge, EpisodeState, TrackedItem, WatchEvent } from './types
 /** The snapshot every badge predicate is evaluated against. */
 export interface BadgeContext {
   episodesWatched: number
+  episodesSkipped: number
   moviesWatched: number
+  /** A watched movie whose recorded watch date is before its release date. */
+  watchedPreRelease: boolean
   gamesWatched: number
   episodesRated: number
   showsRated: number
@@ -92,6 +95,7 @@ export const BADGES: BadgeDef[] = [
   { id: 'ep-5000', name: 'TV Buff', description: 'Watch 5,000 episodes.', emoji: '🧐', group: 'TV Watch', earned: (c) => c.episodesWatched >= 5000 },
   { id: 'ep-10000', name: 'Screen Addict', description: 'Watch 10,000 episodes.', emoji: '🤯', group: 'TV Watch', earned: (c) => c.episodesWatched >= 10000 },
   { id: 'ep-20000', name: 'Telephile', description: 'Watch 20,000 episodes.', emoji: '👑', group: 'TV Watch', earned: (c) => c.episodesWatched >= 20000 },
+  { id: 'ep-skipped', name: 'Discerning Taste', description: 'Skip an episode of a show.', emoji: '⏭️', group: 'TV Watch', earned: (c) => c.episodesSkipped >= 1 },
 
   // --- Movie Watch -------------------------------------------------------
   { id: 'mv-1', name: 'First Feature', description: 'Watch your first movie.', emoji: '🎬', group: 'Movie Watch', earned: (c) => c.moviesWatched >= 1 },
@@ -99,6 +103,7 @@ export const BADGES: BadgeDef[] = [
   { id: 'mv-100', name: 'Movie Lover', description: 'Watch 100 movies.', emoji: '❤️', group: 'Movie Watch', earned: (c) => c.moviesWatched >= 100 },
   { id: 'mv-500', name: 'Media Buff', description: 'Watch 500 movies.', emoji: '🎟️', group: 'Movie Watch', earned: (c) => c.moviesWatched >= 500 },
   { id: 'mv-1000', name: 'Cinephile', description: 'Watch 1,000 movies.', emoji: '🎖️', group: 'Movie Watch', earned: (c) => c.moviesWatched >= 1000 },
+  { id: 'mv-premiere', name: 'Premiere', description: 'Watch a movie before its release date.', emoji: '🍾', group: 'Movie Watch', earned: (c) => c.watchedPreRelease },
 
   // --- Game Watch --------------------------------------------------------
   { id: 'game-1', name: 'Game On', description: 'Mark your first game watched.', emoji: '🏟️', group: 'Game Watch', earned: (c) => c.gamesWatched >= 1 },
@@ -182,12 +187,24 @@ export function buildBadgeContext(
   const watched = states.filter((s) => s.watched)
   const episodesWatched = watched.filter((s) => !isSport(s.itemId)).length
   const gamesWatched = watched.filter((s) => isSport(s.itemId)).length
+  const episodesSkipped = states.filter((s) => s.skipped && !isSport(s.itemId)).length
   const episodesRated = states.filter((s) => typeof s.userRating === 'number').length
 
   const movieItems = new Set<string>()
   for (const e of events) {
     if (e.episodeId === null && byId.has(e.itemId)) movieItems.add(e.itemId)
   }
+
+  // "Premiere": a watched movie whose recorded watch date falls before its
+  // release date (lastAirDate once out, nextAirDate while still upcoming).
+  const watchedPreRelease = items.some((i) => {
+    if (i.mediaType !== 'movie' || i.movieWatchedAt == null) return false
+    const release = i.lastAirDate ?? i.nextAirDate
+    if (!release) return false
+    const d = new Date(i.movieWatchedAt)
+    const watchedDay = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return watchedDay < release
+  })
 
   const rated = items.filter((i) => typeof i.userRating === 'number')
   const showsRated = rated.filter((i) => i.mediaType === 'show').length
@@ -221,7 +238,9 @@ export function buildBadgeContext(
 
   return {
     episodesWatched,
+    episodesSkipped,
     moviesWatched: movieItems.size,
+    watchedPreRelease,
     gamesWatched,
     episodesRated,
     showsRated,

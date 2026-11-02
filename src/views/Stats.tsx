@@ -102,6 +102,7 @@ export default function Stats() {
   const isSportState = (itemId: string) => itemsById.get(itemId)?.mediaType === 'sport'
   const episodesWatched = watched.filter((s) => !isSportState(s.itemId)).length
   const gamesWatched = watched.filter((s) => isSportState(s.itemId)).length
+  const episodesSkipped = episodeStates.filter((s) => s.skipped && !isSportState(s.itemId)).length
   const watchedPerShow = new Map<string, number>()
   for (const s of watched) watchedPerShow.set(s.itemId, (watchedPerShow.get(s.itemId) ?? 0) + 1)
 
@@ -276,6 +277,9 @@ export default function Stats() {
       {/* Quick tiles */}
       <div className="stat-grid">
         <StatTile value={episodesWatched.toLocaleString()} label="Episodes watched" />
+        {episodesSkipped > 0 && (
+          <StatTile value={episodesSkipped.toLocaleString()} label="Episodes skipped" />
+        )}
         <StatTile value={moviesWatched.toLocaleString()} label="Movies watched" />
         <StatTile value={shows.length.toLocaleString()} label="Shows tracked" />
         <StatTile value={`${activeShows} / ${completedShows}`} label="Watching / Completed" />

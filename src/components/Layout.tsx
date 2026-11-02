@@ -77,7 +77,7 @@ export default function Layout() {
   return (
     <div className="app-shell">
       <header className="app-header">
-        <h1 className="app-title">TV Tracker</h1>
+        <AppTitle />
         <div className="app-header__right">
           <IndexIndicator />
           <UserButton />
@@ -130,6 +130,20 @@ function UserButton() {
         <UserGlyph />
       )}
     </Link>
+  )
+}
+
+/** Header brand: the app icon plus the title. While the episode index is
+ *  rebuilding, the text is hidden (the icon stays) so the progress indicator has
+ *  room — otherwise the title wraps and the header grows mid-rebuild. */
+function AppTitle() {
+  const { status, total } = useIndexProgress()
+  const indexing = status === 'running' && total > 0
+  return (
+    <h1 className="app-title">
+      <img className="app-title__icon" src={`${import.meta.env.BASE_URL}app-icon.svg`} alt="" />
+      {!indexing && <span className="app-title__text">TV Tracker</span>}
+    </h1>
   )
 }
 

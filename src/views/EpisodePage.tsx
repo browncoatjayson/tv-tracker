@@ -13,8 +13,13 @@ import {
 import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
 import { buildBrowseSequence } from '../data/specials'
 import { hasTraktClientId, resolveTraktId } from '../api/trakt'
-import { markEpisode, setEpisodeRating, setEpisodeWatchedDate } from '../data/library'
-import { markWatchedWithCatchUp } from '../utils/watchActions'
+import {
+  markEpisode,
+  setEpisodeRating,
+  setEpisodeSkipped,
+  setEpisodeWatchedDate,
+} from '../data/library'
+import { markWatchedWithCatchUp, skipWithCatchUp } from '../utils/watchActions'
 import { airTimeOrDate, hasAiredByTime } from '../utils/airTime'
 import { useShowAirstamps } from '../hooks/useShowAirstamps'
 import ExternalLinks from '../components/ExternalLinks'
@@ -23,6 +28,7 @@ import CastRow from '../components/CastRow'
 import RatingRow from '../components/RatingRow'
 import Reviews from '../components/Reviews'
 import WatchedDateField from '../components/WatchedDateField'
+import SplitButton from '../components/SplitButton'
 
 const HOUR = 1000 * 60 * 60
 
@@ -123,6 +129,7 @@ export default function EpisodePage() {
   const airstamp = airstampOf(seasonNum, episodeNum)
   const aired = hasAiredByTime(ep.air_date, airstamp)
   const watched = !!epState?.watched
+  const skipped = !!epState?.skipped
   const average =
     typeof ep.vote_average === 'number' && ep.vote_average > 0 ? `★ ${ep.vote_average.toFixed(1)} / 10` : '—'
   const cast = ep.credits?.cast ?? []
@@ -239,17 +246,37 @@ export default function EpisodePage() {
       <section className="detail-actions">
         {inLibrary && (
           <div className="episode-watch">
-            <button
-              className="btn"
-              disabled={!aired}
+            <SplitButton
+              label={watched ? '✓ Watched' : skipped ? '✗ Skipped' : 'Mark as watched'}
+              disabled={!aired && !watched && !skipped}
               onClick={() =>
                 void (watched
                   ? markEpisode(itemId, seasonNum, episodeNum, false)
-                  : markWatchedWithCatchUp(itemId, seasonNum, episodeNum))
+                  : skipped
+                    ? setEpisodeSkipped(itemId, seasonNum, episodeNum, false)
+                    : markWatchedWithCatchUp(itemId, seasonNum, episodeNum))
               }
-            >
-              {watched ? '✓ Watched' : 'Mark as watched'}
-            </button>
+              menu={[
+                skipped
+                  ? {
+                      label: 'Mark as watched',
+                      onClick: () => void markWatchedWithCatchUp(itemId, seasonNum, episodeNum),
+                    }
+                  : {
+                      label: 'Mark as skipped',
+                      onClick: () => void skipWithCatchUp(itemId, seasonNum, episodeNum),
+                    },
+                // Clear an accidental mark — on the show list you'd uncheck the box.
+                ...(watched || skipped
+                  ? [
+                      {
+                        label: 'Mark as unwatched',
+                        onClick: () => void markEpisode(itemId, seasonNum, episodeNum, false),
+                      },
+                    ]
+                  : []),
+              ]}
+            />
             {watched && (
               <WatchedDateField
                 watchedAt={epState?.watchedAt}

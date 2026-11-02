@@ -1,7 +1,7 @@
 import { hasAired } from '../api/tmdb'
 import { db } from '../data/db'
 import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
-import { markEpisode } from '../data/library'
+import { markEpisode, setEpisodeSkipped, skipEpisodes } from '../data/library'
 import type { CachedEpisode } from '../data/types'
 import { appConfirm } from './confirm'
 
@@ -34,7 +34,10 @@ export async function markWatchedWithCatchUp(
   const previous: { season: number; episode: number }[] = []
   try {
     const states = await db.episodeStates.where('itemId').equals(itemId).toArray()
-    const watched = new Set(states.filter((s) => s.watched).map((s) => `${s.season}:${s.episode}`))
+    // Watched or skipped episodes are both "handled" — neither needs catching up.
+    const handled = new Set(
+      states.filter((s) => s.watched || s.skipped).map((s) => `${s.season}:${s.episode}`),
+    )
 
     // The authoritative season list + per-season episode counts (so we can tell
     // when the local cache is missing episodes and needs a refetch).
@@ -69,7 +72,7 @@ export async function markWatchedWithCatchUp(
       for (const e of eps) {
         const before = e.season < season || (e.season === season && e.episode < episode)
         if (!before || !hasAired(e.airDate)) continue
-        if (watched.has(`${e.season}:${e.episode}`)) continue
+        if (handled.has(`${e.season}:${e.episode}`)) continue
         previous.push({ season: e.season, episode: e.episode })
       }
     }
@@ -85,4 +88,45 @@ export async function markWatchedWithCatchUp(
   for (const p of previous) {
     await markEpisode(itemId, p.season, p.episode, true)
   }
+}
+
+/**
+ * Mark an episode skipped, then — if earlier episodes *in the same season* are
+ * still unwatched and unskipped — offer to skip those too. Unlike watched
+ * catch-up, this stays within the one season (you might still watch earlier
+ * seasons). Best-effort: a fetch failure just leaves the one episode skipped.
+ */
+export async function skipWithCatchUp(
+  itemId: string,
+  season: number,
+  episode: number,
+): Promise<void> {
+  await setEpisodeSkipped(itemId, season, episode, true)
+  if (season < 1) return // specials have no linear predecessors
+
+  const tmdbId = tmdbIdOf(itemId)
+  if (!Number.isFinite(tmdbId)) return
+
+  const earlier: { season: number; episode: number }[] = []
+  try {
+    const states = await db.episodeStates.where('itemId').equals(itemId).toArray()
+    const handled = new Set(
+      states.filter((s) => s.watched || s.skipped).map((s) => `${s.season}:${s.episode}`),
+    )
+    const eps = await getSeasonEpisodesCached(itemId, tmdbId, season)
+    for (const e of eps) {
+      if (e.episode_number >= episode) continue // only earlier in this season
+      if (handled.has(`${season}:${e.episode_number}`)) continue
+      earlier.push({ season, episode: e.episode_number })
+    }
+  } catch {
+    return
+  }
+
+  if (earlier.length === 0) return
+  const ok = await appConfirm(
+    `Skip ${earlier.length} earlier ${earlier.length === 1 ? 'episode' : 'episodes'} this season too?`,
+  )
+  if (!ok) return
+  await skipEpisodes(itemId, earlier, true)
 }

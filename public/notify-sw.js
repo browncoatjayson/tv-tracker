@@ -31,6 +31,9 @@ self.addEventListener('push', (event) => {
   event.waitUntil(
     (async () => {
       const icon = `${self.registration.scope}pwa-192.png`
+      // Monochrome/transparent silhouette for the status-bar badge (Android tints
+      // its alpha mask, so a full-color icon would render as a solid square).
+      const badge = `${self.registration.scope}notify-badge.png`
       const url = `${self.registration.scope}#/upcoming`
       const groups = await readPushGroups()
       const now = Date.now()
@@ -43,7 +46,7 @@ self.addEventListener('push', (event) => {
           body: 'Open TV Tracker to see what’s on.',
           tag: 'airing-fallback',
           icon,
-          badge: icon,
+          badge,
           data: { url },
         })
         return
@@ -54,7 +57,7 @@ self.addEventListener('push', (event) => {
           tag: g.tag,
           renotify: true,
           icon,
-          badge: icon,
+          badge,
           data: { url },
         })
       }

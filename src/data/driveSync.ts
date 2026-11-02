@@ -22,9 +22,11 @@ import type { CachedEpisode } from './types'
 // ---------------------------------------------------------------------------
 
 // drive.appdata to store the backup; userinfo.profile so we can show the user's
-// Google name + avatar on the stats page / header.
+// Google name + avatar on the stats page / header; userinfo.email so we can
+// remember which account they used and pass it back as a sign-in hint (skipping
+// the account chooser on later sessions).
 const SCOPE =
-  'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.profile'
+  'https://www.googleapis.com/auth/drive.appdata https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/userinfo.email'
 // Two files: the small core backup (synced on every change) and the larger,
 // regenerable episode cache (synced on its own, only when it has changed) — so a
 // routine "mark watched" doesn't re-upload the whole episode cache.
@@ -42,6 +44,9 @@ const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID?.trim()
 // silent (no-popup) token refresh on load.
 const CONNECTED_KEY = 'tvtracker.driveConnected'
 const PROFILE_KEY = 'tvtracker.googleProfile'
+// The email of the account last signed in — passed to GIS as a `hint` so the
+// token request targets that account instead of showing the full chooser.
+const LOGIN_HINT_KEY = 'tvtracker.googleLoginHint'
 
 export interface GoogleProfile {
   name?: string
@@ -73,15 +78,35 @@ function setGoogleProfile(profile: GoogleProfile | null): void {
   }
 }
 
-/** Best-effort: fetch the signed-in user's name + avatar. Never throws. */
+/** The email of the last-used account, if known, for use as a GIS sign-in hint. */
+function getLoginHint(): string | null {
+  try {
+    return localStorage.getItem(LOGIN_HINT_KEY)
+  } catch {
+    return null
+  }
+}
+
+function setLoginHint(email: string | null): void {
+  try {
+    if (email) localStorage.setItem(LOGIN_HINT_KEY, email)
+    else localStorage.removeItem(LOGIN_HINT_KEY)
+  } catch {
+    // ignore storage errors
+  }
+}
+
+/** Best-effort: fetch the signed-in user's name + avatar + email. Never throws. */
 async function fetchProfile(token: string): Promise<void> {
   try {
     const res = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
       headers: { Authorization: `Bearer ${token}` },
     })
     if (!res.ok) return
-    const data = (await res.json()) as { name?: string; picture?: string }
+    const data = (await res.json()) as { name?: string; picture?: string; email?: string }
     if (data.name || data.picture) setGoogleProfile({ name: data.name, picture: data.picture })
+    // Remember the account so later sign-ins can skip the chooser.
+    if (data.email) setLoginHint(data.email)
   } catch {
     // Profile is a nicety; ignore failures (e.g. scope not yet granted).
   }
@@ -124,6 +149,8 @@ interface GoogleOAuth2 {
     client_id: string
     scope: string
     prompt?: string
+    /** Email of the account to target, so GIS can skip the account chooser. */
+    hint?: string
     callback: (resp: TokenResponse) => void
     error_callback?: (err: { type?: string }) => void
   }) => TokenClient
@@ -183,9 +210,13 @@ async function getAccessToken(interactive: boolean): Promise<string> {
   if (!oauth2) throw new Error('Google sign-in unavailable.')
 
   return new Promise<string>((resolve, reject) => {
+    const hint = getLoginHint()
     const client = oauth2.initTokenClient({
       client_id: CLIENT_ID as string,
       scope: SCOPE,
+      // Target the previously-used account (when known) so GIS can skip the
+      // "choose an account" screen and go straight to that one.
+      ...(hint ? { hint } : {}),
       callback: (resp) => {
         if (resp.access_token) {
           // Cache with a 1-minute safety margin before the real expiry.
@@ -386,6 +417,7 @@ export async function autoSync(): Promise<void> {
 export function disconnect(): void {
   rememberConnected(false)
   setGoogleProfile(null)
+  setLoginHint(null)
   cachedToken = null
 }
 

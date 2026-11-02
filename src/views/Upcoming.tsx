@@ -149,9 +149,11 @@ export default function Upcoming() {
   const airTime = (imdbId: string | undefined, season: number, episode: number) =>
     formatAirTime(imdbId ? airstampByImdb.get(imdbId)?.get(`${season}x${episode}`) : undefined)
 
-  // Watched lookups.
-  const watchedEpisodes = new Set(
-    (episodeStates ?? []).filter((s) => s.watched).map((s) => `${s.itemId}:${s.season}:${s.episode}`),
+  // Watched lookups. Skipped episodes are also "seen" — they drop out of the feed.
+  const seenEpisodes = new Set(
+    (episodeStates ?? [])
+      .filter((s) => s.watched || s.skipped)
+      .map((s) => `${s.itemId}:${s.season}:${s.episode}`),
   )
   const watchedMovies = new Set(
     (watchEvents ?? []).filter((e) => e.episodeId === null).map((e) => e.itemId),
@@ -180,7 +182,7 @@ export default function Upcoming() {
     const pushAired = (ep: TmdbEpisodePointer | null | undefined) => {
       if (!ep?.air_date || !inAiredWindow(ep.air_date)) return
       const key = `${ep.season_number}:${ep.episode_number}`
-      if (airedKeys.has(key) || watchedEpisodes.has(`${s.id}:${key}`)) return
+      if (airedKeys.has(key) || seenEpisodes.has(`${s.id}:${key}`)) return
       airedKeys.add(key)
       aired.push({
         itemId: s.id,
@@ -294,7 +296,7 @@ export default function Upcoming() {
       upcoming.push({ ...base, aired: false })
     } else if (
       inAiredWindow(g.airDate) &&
-      !watchedEpisodes.has(`${item.id}:${g.season}:${g.episode}`)
+      !seenEpisodes.has(`${item.id}:${g.season}:${g.episode}`)
     ) {
       aired.push({ ...base, aired: true })
     }

@@ -61,6 +61,15 @@ a:hover {
   margin: 0;
   font-size: 1.15rem;
   letter-spacing: 0.02em;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.app-title__icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  flex-shrink: 0;
 }
 .index-indicator {
   display: flex;
@@ -834,6 +843,63 @@ input[type='file'] {
   font-size: 0.82rem;
   flex-shrink: 0;
 }
+
+/* Split button: a primary action with a ▾ menu of alternatives. */
+.split-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+.split-btn__main {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.split-btn__toggle {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  margin-left: 1px;
+  padding-left: 9px;
+  padding-right: 9px;
+}
+.split-btn__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 30;
+  background: var(--surface);
+  border: 1px solid var(--surface-2);
+  border-radius: 8px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+}
+.split-btn__item {
+  background: none;
+  border: none;
+  color: var(--text);
+  text-align: left;
+  white-space: nowrap;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+}
+.split-btn__item:hover {
+  background: var(--surface-2);
+}
+/* The season-bar split button stays small + ghost like the old button. */
+.season-bar__mark .btn {
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  background: transparent;
+  color: var(--accent);
+  border: 1px solid var(--surface-2);
+}
+.season-bar__mark .btn:hover {
+  border-color: var(--accent);
+}
+/* Skipped-episode control on the show page cards. */
 .btn:disabled {
   opacity: 0.5;
   cursor: default;
@@ -2011,6 +2077,40 @@ input[type='file'] {
   font-size: 0.8rem;
   color: var(--muted);
   cursor: pointer;
+}
+/* Custom checkbox so "skipped" can read as a box with an ✗ (vs the watched ✓). */
+.ep-card__watched input[type='checkbox'] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  flex-shrink: 0;
+  border: 1.5px solid var(--muted);
+  border-radius: 4px;
+  display: inline-grid;
+  place-content: center;
+  cursor: pointer;
+}
+.ep-card__watched input[type='checkbox']:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.ep-card__watched input[type='checkbox']:checked::after {
+  content: '✓';
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 700;
+  color: #04121f;
+}
+/* Skipped: an ✗ in a neutral box rather than the accent check. */
+.ep-card__watched input.ep-card__skipbox:checked {
+  background: var(--surface-2);
+  border-color: var(--muted);
+}
+.ep-card__watched input.ep-card__skipbox:checked::after {
+  content: '✗';
+  color: var(--text);
 }
 .ep-card__upcoming {
   font-size: 0.8rem;

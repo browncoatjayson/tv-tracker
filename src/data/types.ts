@@ -143,6 +143,10 @@ export interface EpisodeState {
   watched: boolean
   /** How many times watched (0 = unwatched, 2 = watched twice). Enables rewatches. */
   watchCount?: number
+  /** Deliberately skipped — won't be watched, so it drops out of the "to watch"
+   *  feeds and reminders but isn't counted in watched stats. Mutually exclusive
+   *  with `watched` (marking either clears the other). */
+  skipped?: boolean
   watchedAt?: number
   /** Precision of watchedAt — 'day' (default) or a partial month/year the user
    *  entered via the Select-date dialog. Undefined is treated as 'day'. */

@@ -129,7 +129,9 @@ function notifyOptions(group: NotifyGroup): NotificationOptions {
     tag: group.tag,
     renotify: true,
     icon: `${base}pwa-192.png`,
-    badge: `${base}pwa-192.png`,
+    // A monochrome, transparent silhouette — Android tints the badge's alpha mask
+    // one system color, so the full-color app icon would show as a solid square.
+    badge: `${base}notify-badge.png`,
     data: { url: `${window.location.origin}${base}#/upcoming` },
   } as NotificationOptions
 }

@@ -222,8 +222,55 @@ export async function setEpisodeWatchCount(
 }
 
 /**
+ * Mark one or more episodes skipped (or clear the skip). Skipping clears any
+ * watched state and count; the episode then drops out of the "to watch" feeds and
+ * reminders without counting toward watched stats. Like watching, it moves a
+ * watchlist title into "watching". One transaction + one auto-sync for the batch.
+ */
+export async function skipEpisodes(
+  itemId: string,
+  eps: { season: number; episode: number }[],
+  skipped = true,
+): Promise<void> {
+  if (!eps.length) return
+  const now = Date.now()
+  await db.transaction('rw', db.episodeStates, db.trackedItems, async () => {
+    for (const { season, episode } of eps) {
+      const id = episodeKey(itemId, season, episode)
+      const prev = await db.episodeStates.get(id)
+      await db.episodeStates.put({
+        id,
+        itemId,
+        season,
+        episode,
+        watched: false,
+        watchCount: 0,
+        watchedAt: undefined,
+        userRating: prev?.userRating,
+        skipped,
+        updatedAt: now,
+      })
+    }
+    const item = await db.trackedItems.get(itemId)
+    const promote = skipped && item?.status === 'watchlist' ? { status: 'watching' as const } : {}
+    await db.trackedItems.update(itemId, { updatedAt: now, ...promote })
+  })
+  scheduleAutoSync()
+}
+
+/** Skip (or un-skip) a single episode. */
+export async function setEpisodeSkipped(
+  itemId: string,
+  season: number,
+  episode: number,
+  skipped: boolean,
+): Promise<void> {
+  await skipEpisodes(itemId, [{ season, episode }], skipped)
+}
+
+/**
  * Simple watched toggle (first-pass). Marking watched keeps any existing higher
- * rewatch count; unmarking sets it to 0.
+ * rewatch count; unmarking sets it to 0. (Marking watched also clears a skip.)
  */
 export async function markEpisode(
   itemId: string,

@@ -25,10 +25,12 @@ import {
   addItem,
   markEpisode,
   removeItem,
+  setEpisodeSkipped,
   setEpisodeWatchCount,
   setItemMeta,
   setRating,
   setStatus,
+  skipEpisodes,
 } from '../data/library'
 import type { EpisodeState, WatchStatus } from '../data/types'
 import DetailHero, { WherePills } from '../components/DetailHero'
@@ -38,6 +40,7 @@ import Reviews from '../components/Reviews'
 import Gallery from '../components/Gallery'
 import Recommendations from '../components/Recommendations'
 import Related from '../components/Related'
+import SplitButton from '../components/SplitButton'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
 import { appConfirm } from '../utils/confirm'
 import { airTimeOrDate, hasAiredByTime } from '../utils/airTime'
@@ -118,19 +121,47 @@ function buildSeasonTabs(
   return out
 }
 
-/** The tab holding the first unwatched episode (resume where you left off); the
- *  last tab once everything's watched. */
+/**
+ * Which tab to open by default. We take the later of two tabs:
+ *  - the "resume" tab (the first one not fully watched), which is the next thing
+ *    to watch for a show watched in order; and
+ *  - the latest tab with any marked episode (watched or skipped), so a show
+ *    watched out of order (e.g. SNL) opens on the recent season you're on rather
+ *    than Season 1.
+ * With nothing marked, both point at the first tab, so a new show opens on it.
+ */
 function pickDefaultTab(tabs: SeasonTab[], stateMap: Map<string, EpisodeState>): string | null {
-  for (const t of tabs) {
-    let watched = 0
+  if (!tabs.length) return null
+
+  const tabHas = (t: SeasonTab, pred: (s: EpisodeState) => boolean): number => {
+    let n = 0
     if (t.episodeNumbers) {
-      for (const ep of t.episodeNumbers) if (stateMap.get(`0:${ep}`)?.watched) watched++
+      for (const ep of t.episodeNumbers) {
+        const s = stateMap.get(`0:${ep}`)
+        if (s && pred(s)) n++
+      }
     } else {
-      for (const st of stateMap.values()) if (st.season === t.seasonNumber && st.watched) watched++
+      for (const s of stateMap.values()) if (s.season === t.seasonNumber && pred(s)) n++
     }
-    if (watched < t.episodeCount) return t.id
+    return n
   }
-  return tabs[tabs.length - 1]?.id ?? null
+
+  // Resume: first tab not fully watched (else the last tab).
+  let resumeIdx = tabs.length - 1
+  for (let i = 0; i < tabs.length; i++) {
+    if (tabHas(tabs[i], (s) => s.watched) < tabs[i].episodeCount) {
+      resumeIdx = i
+      break
+    }
+  }
+
+  // Latest tab with any mark (watched or skipped).
+  let markedIdx = -1
+  for (let i = 0; i < tabs.length; i++) {
+    if (tabHas(tabs[i], (s) => !!s.watched || !!s.skipped) > 0) markedIdx = i
+  }
+
+  return tabs[Math.max(resumeIdx, markedIdx)]?.id ?? null
 }
 
 export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId: number }) {
@@ -330,11 +361,13 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
   const seasonRatingPct = activeTab?.rating ? Math.round(activeTab.rating * 10) : 0
 
   // Mark the selected season's aired episodes watched for the current pass.
+  // Deliberately-skipped episodes are left alone.
   async function markSeasonWatched() {
     if (!item) return
     for (const ep of visibleEpisodes) {
       if (!hasAiredByTime(ep.air_date, airstampOf(ep.season_number, ep.episode_number))) continue
       const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
+      if (st?.skipped) continue
       const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
       await setEpisodeWatchCount(
         item.id,
@@ -343,6 +376,18 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
         Math.max(wc, completedPasses + 1),
       )
     }
+  }
+
+  // Mark every not-yet-watched episode in the selected season as skipped.
+  async function markSeasonSkipped() {
+    if (!item) return
+    const toSkip = visibleEpisodes
+      .filter((ep) => {
+        const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
+        return !st?.watched && !st?.skipped
+      })
+      .map((ep) => ({ season: ep.season_number, episode: ep.episode_number }))
+    await skipEpisodes(item.id, toSkip, true)
   }
 
   return (
@@ -441,9 +486,17 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
                 <span className="season-bar__rating">★ {seasonRatingPct}% season rating</span>
               )}
               {!readOnly && (
-                <button className="btn btn--small btn--ghost" onClick={() => void markSeasonWatched()}>
-                  Mark aired episodes watched
-                </button>
+                <SplitButton
+                  className="season-bar__mark"
+                  label="Mark aired episodes watched"
+                  onClick={() => void markSeasonWatched()}
+                  menu={[
+                    {
+                      label: 'Mark season episodes as skipped',
+                      onClick: () => void markSeasonSkipped(),
+                    },
+                  ]}
+                />
               )}
             </div>
           )}
@@ -489,7 +542,23 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
                     <p className="ep-card__summary muted">
                       {ep.overview || 'No synopsis yet.'}
                     </p>
-                    {!aired ? (
+                    {!readOnly && st?.skipped ? (
+                      <label
+                        className="ep-card__watched"
+                        onClick={(e) => e.stopPropagation()}
+                        onKeyDown={(e) => e.stopPropagation()}
+                      >
+                        <input
+                          type="checkbox"
+                          className="ep-card__skipbox"
+                          checked
+                          onChange={() =>
+                            void setEpisodeSkipped(item.id, ep.season_number, ep.episode_number, false)
+                          }
+                        />
+                        Skipped
+                      </label>
+                    ) : !aired ? (
                       <span className="ep-card__upcoming">Airs · {airTimeOrDate(ep.air_date, airstamp)}</span>
                     ) : (
                       !readOnly && (
