@@ -40,6 +40,11 @@ optionally, in your own Google Drive.
   specials, anniversary episodes, …) are interleaved between the regular seasons
   by air date, while clips and behind-the-scenes extras go to a separate "Extras"
   tab.
+- **Skip episodes.** Mark an episode (or a whole season's worth) as *skipped* for
+  the ones you'll never watch — it drops off your watchlist and prompts without
+  counting toward your watched stats. Skipping offers to catch up earlier
+  episodes in the same season, and you can switch a skip back to watched or
+  unwatched anytime.
 - **Ratings & progress.** Rate anything on a 10-star scale (shown next to the
   community average) and pick up where you left off.
 - **Upcoming tab.** "This Week", upcoming, and "Recently Aired" feeds with

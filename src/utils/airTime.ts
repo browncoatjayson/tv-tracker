@@ -33,6 +33,19 @@ export function compactAirTime(airstamp: string | undefined): string | undefined
   return `${h}:${String(d.getMinutes()).padStart(2, '0')}${suffix}`
 }
 
+/** Clock time in am/pm, dropping ":00": "8pm", "8:30pm", "11am". Undefined if
+ *  unparseable. */
+export function clockTime(airstamp: string | undefined): string | undefined {
+  if (!airstamp) return undefined
+  const d = new Date(airstamp)
+  if (Number.isNaN(d.getTime())) return undefined
+  const mins = d.getMinutes()
+  let h = d.getHours()
+  const ap = h >= 12 ? 'pm' : 'am'
+  h = h % 12 || 12
+  return mins === 0 ? `${h}${ap}` : `${h}:${String(mins).padStart(2, '0')}${ap}`
+}
+
 /** When an upcoming episode airs: "today at 7:00p" (precise time) or the date. */
 export function airTimeOrDate(airDate: string | null | undefined, airstamp?: string): string {
   if (airsToday(airstamp)) {

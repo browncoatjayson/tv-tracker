@@ -2112,6 +2112,22 @@ input[type='file'] {
   content: '✗';
   color: var(--text);
 }
+/* Aired-date pill on each episode card (neutral), yellow when still upcoming. */
+.ep-card__datepill {
+  align-self: flex-start;
+  font-size: 0.68rem;
+  font-weight: 600;
+  line-height: 1;
+  padding: 3px 7px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.ep-card__datepill--upcoming {
+  background: rgba(251, 191, 36, 0.15);
+  color: var(--warn);
+}
 .ep-card__upcoming {
   font-size: 0.8rem;
   font-weight: 600;

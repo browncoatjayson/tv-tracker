@@ -43,7 +43,7 @@ import Related from '../components/Related'
 import SplitButton from '../components/SplitButton'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
 import { appConfirm } from '../utils/confirm'
-import { airTimeOrDate, hasAiredByTime } from '../utils/airTime'
+import { airsToday, clockTime, hasAiredByTime } from '../utils/airTime'
 import { useShowAirstamps } from '../hooks/useShowAirstamps'
 
 const HOUR = 1000 * 60 * 60
@@ -539,6 +539,13 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
                       S{String(ep.season_number).padStart(2, '0')}E{String(ep.episode_number).padStart(2, '0')}
                       {ep.name ? ` • ${ep.name}` : ''}
                     </span>
+                    {(ep.air_date || !aired) && (
+                      <span
+                        className={`ep-card__datepill${aired ? '' : ' ep-card__datepill--upcoming'}`}
+                      >
+                        {ep.air_date || 'TBA'}
+                      </span>
+                    )}
                     <p className="ep-card__summary muted">
                       {ep.overview || 'No synopsis yet.'}
                     </p>
@@ -559,7 +566,11 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
                         Skipped
                       </label>
                     ) : !aired ? (
-                      <span className="ep-card__upcoming">Airs · {airTimeOrDate(ep.air_date, airstamp)}</span>
+                      <span className="ep-card__upcoming">
+                        {airsToday(airstamp) && clockTime(airstamp)
+                          ? `Upcoming at ${clockTime(airstamp)}`
+                          : 'Upcoming'}
+                      </span>
                     ) : (
                       !readOnly && (
                         <label
