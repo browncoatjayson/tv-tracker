@@ -11,6 +11,7 @@ import {
   type AiringEntry,
 } from '../data/notifications'
 import { pushConfigured, registerPush } from '../data/push'
+import { useCachedAirstamps } from '../hooks/useShowAirstamps'
 import type { EpisodeState } from '../data/types'
 
 const DAY = 1000 * 60 * 60 * 24
@@ -48,6 +49,10 @@ export default function NotificationScheduler() {
     [enabled],
   )
 
+  // Prefer precise Trakt times (cached on the episode rows) over TVmaze — TVmaze
+  // fills a noon-UTC placeholder for streaming shows, which would fire ~hours early.
+  const cachedStamp = useCachedAirstamps(shows.map((s) => s.id))
+
   const seen = new Set(
     (states ?? [])
       .filter((s) => s.watched || s.skipped)
@@ -56,14 +61,16 @@ export default function NotificationScheduler() {
   const entries: AiringEntry[] = []
   shows.forEach((s, i) => {
     for (const e of tvmaze[i]?.data ?? []) {
-      if (!e.airstamp || e.season === 0) continue
+      if (e.season === 0) continue
+      const airstamp = cachedStamp(s.id, e.season, e.number) ?? e.airstamp
+      if (!airstamp) continue
       if (seen.has(`${s.id}:${e.season}:${e.number}`)) continue
       entries.push({
         showTitle: s.title,
         season: e.season,
         episode: e.number,
         epName: e.name,
-        airstamp: e.airstamp,
+        airstamp,
       })
     }
   })

@@ -8,7 +8,7 @@ import {
   watchNames,
 } from '../api/tmdb'
 import { db } from './db'
-import { getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
+import { cacheTraktAirstamps, getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
 import { setItemMeta } from './library'
 import { queryClient } from './queryClient'
 import type { TrackedItem } from './types'
@@ -151,6 +151,9 @@ async function indexItem(item: TrackedItem): Promise<void> {
       }
     }
   }
+  // Precise Trakt air times onto the cached rows (preferred over TVmaze for
+  // streaming shows). One request per show; best-effort, no-op without Trakt.
+  await cacheTraktAirstamps(item.id, item.tmdbId)
 }
 
 let running = false

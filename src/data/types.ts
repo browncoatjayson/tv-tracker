@@ -124,6 +124,9 @@ export interface CachedEpisode {
   name: string
   /** YYYY-MM-DD, or null if unknown. */
   airDate: string | null
+  /** Precise ISO UTC air time, preferred from Trakt (more reliable than TVmaze
+   *  for streaming shows). Undefined when no precise time is known. */
+  airstamp?: string
   /** Sport games only: ESPN's "game finished" flag. Lets callers tell a real
    *  upcoming game from one ESPN never marked complete even though its date
    *  passed (see `sportAirState`). Undefined for TV episodes. */

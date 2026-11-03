@@ -1,4 +1,4 @@
-import { useMemo } from 'react'
+import { useEffect, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link, useNavigate, useParams } from 'react-router-dom'
@@ -10,9 +10,13 @@ import {
   imageUrl,
   watchNames,
 } from '../api/tmdb'
-import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
+import {
+  cacheEpisodeAirstamp,
+  getSeasonEpisodesCached,
+  getTvDetailsCached,
+} from '../data/episodeCache'
 import { buildBrowseSequence } from '../data/specials'
-import { hasTraktClientId, resolveTraktId } from '../api/trakt'
+import { getTraktEpisodeTime, hasTraktClientId, resolveTraktId } from '../api/trakt'
 import {
   markEpisode,
   setEpisodeRating,
@@ -31,6 +35,7 @@ import WatchedDateField from '../components/WatchedDateField'
 import SplitButton from '../components/SplitButton'
 
 const HOUR = 1000 * 60 * 60
+const DAY = HOUR * 24
 
 export default function EpisodePage() {
   const { id = '', season = '', episode = '' } = useParams()
@@ -72,6 +77,15 @@ export default function EpisodePage() {
     enabled: valid && hasTraktClientId(),
     staleTime: Infinity,
   })
+  // Precise air time from Trakt for just this episode (bundled with the comment
+  // lookup above, which shares the resolved ref). Preferred over TVmaze, and
+  // persisted to the cache below so the Show page / Upcoming reuse it.
+  const traktTime = useQuery({
+    queryKey: ['trakt-eptime', tmdbId, seasonNum, episodeNum],
+    queryFn: () => getTraktEpisodeTime(tmdbId, seasonNum, episodeNum),
+    enabled: valid && hasTraktClientId(),
+    staleTime: DAY,
+  })
   const epImages = useQuery({
     queryKey: ['episode-images', tmdbId, seasonNum, episodeNum],
     queryFn: () => getEpisodeImages(tmdbId, seasonNum, episodeNum),
@@ -101,7 +115,21 @@ export default function EpisodePage() {
     [itemId, seasonNum, episodeNum],
   )
   const inLibrary = !!item
-  const airstampOf = useShowAirstamps(item?.imdbId)
+  const airstampOf = useShowAirstamps(itemId, item?.imdbId)
+
+  // Persist the freshly-fetched Trakt time so the Show page / Upcoming reuse it.
+  useEffect(() => {
+    if (!traktTime.data || !ep) return
+    void cacheEpisodeAirstamp({
+      id: episodeKey(itemId, seasonNum, episodeNum),
+      itemId,
+      season: seasonNum,
+      episode: episodeNum,
+      name: ep.name ?? '',
+      airDate: ep.air_date ?? null,
+      airstamp: traktTime.data,
+    })
+  }, [traktTime.data, ep, itemId, seasonNum, episodeNum])
 
   if (!valid) {
     return (
@@ -126,7 +154,8 @@ export default function EpisodePage() {
   const showTitle = item?.title ?? show.data?.name ?? 'Show'
   const showBackdrop = imageUrl(show.data?.backdrop_path ?? undefined, 'w1280')
   const still = imageUrl(ep.still_path ?? undefined, 'w500')
-  const airstamp = airstampOf(seasonNum, episodeNum)
+  // Prefer the just-fetched Trakt time, then the cached/TVmaze lookup.
+  const airstamp = traktTime.data ?? airstampOf(seasonNum, episodeNum)
   const aired = hasAiredByTime(ep.air_date, airstamp)
   const watched = !!epState?.watched
   const skipped = !!epState?.skipped

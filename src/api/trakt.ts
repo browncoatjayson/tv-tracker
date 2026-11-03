@@ -295,6 +295,72 @@ async function resolveEpisodeTraktId(
   return ep.ids?.trakt ?? null
 }
 
+// --- Episode air times (public; client ID only, no sign-in) ------------------
+// Trakt stores `first_aired` as a precise UTC timestamp, which is more reliable
+// than TVmaze for streaming shows (TVmaze fills a noon-UTC placeholder when it
+// has no release time). We prefer Trakt and fall back to TVmaze.
+
+/** Map key for an episode's air time: `"<season>:<episode>"`. */
+function epTimeKey(season: number, episode: number): string {
+  return `${season}:${episode}`
+}
+
+/**
+ * Every episode's air time for a show (by TMDB id), as `"season:episode" ->
+ * ISO UTC airstamp`. One request via `/seasons?extended=episodes,full`. Returns
+ * an empty map when Trakt isn't configured, has no match, or the request fails —
+ * callers then fall back to TVmaze.
+ */
+export async function getTraktEpisodeTimes(tmdbId: number): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (!hasTraktClientId()) return out
+  try {
+    const ref = await resolveTraktId('show', tmdbId)
+    if (!ref) return out
+    const res = await fetch(`${BASE}/shows/${ref.trakt}/seasons?extended=episodes,full`, {
+      headers: baseHeaders(),
+    })
+    if (!res.ok) return out
+    const seasons = (await res.json()) as Array<{
+      number: number
+      episodes?: Array<{ number: number; first_aired?: string | null }>
+    }>
+    for (const s of seasons) {
+      for (const e of s.episodes ?? []) {
+        if (e.first_aired) out.set(epTimeKey(s.number, e.number), e.first_aired)
+      }
+    }
+  } catch {
+    // Best-effort; fall back to TVmaze.
+  }
+  return out
+}
+
+/**
+ * A single episode's air time (by TMDB id), or null. Used to fill the viewed
+ * episode on the Episode page without fetching the whole show.
+ */
+export async function getTraktEpisodeTime(
+  tmdbId: number,
+  season: number,
+  episode: number,
+): Promise<string | null> {
+  if (!hasTraktClientId()) return null
+  try {
+    const ref = await resolveTraktId('show', tmdbId)
+    if (!ref) return null
+    const res = await fetch(
+      `${BASE}/shows/${ref.trakt}/seasons/${season}/episodes/${episode}?extended=full`,
+      { headers: baseHeaders() },
+    )
+    if (!res.ok) return null
+    const ep = (await res.json()) as { first_aired?: string | null }
+    return ep.first_aired ?? null
+  } catch {
+    return null
+  }
+}
+
 // --- Comments / reviews ------------------------------------------------------
 export interface TraktComment {
   id: number

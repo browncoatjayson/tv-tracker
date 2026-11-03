@@ -58,6 +58,7 @@ interface Editor {
   statuses: Set<'ended' | 'ongoing'>
   released: Set<'aired' | 'upcoming'>
   seen: Set<'watched' | 'unwatched'>
+  hiatus: Set<'include' | 'exclude'>
   languages: Set<'english' | 'foreign'>
   genres: Set<string>
   genresEx: Set<string>
@@ -102,6 +103,7 @@ function parseForEditor(raw: string, sportsOptIn = false): Editor {
     // No token = both shown, so default both chips on; a single token restricts.
     released: new Set(p.released.length ? p.released : (['aired', 'upcoming'] as const)),
     seen: new Set(p.seen),
+    hiatus: new Set(p.hiatus),
     languages: new Set(p.languages),
     genres: new Set(p.genres),
     genresEx: new Set(p.genresExclude),
@@ -130,6 +132,7 @@ function buildQuery(e: Editor): string {
   // Only a single pick restricts (both/none = show everything, so no token).
   if (e.released.size === 1) parts.push(`released:${[...e.released][0]}`)
   for (const s of e.seen) parts.push(`seen:${s}`)
+  for (const h of e.hiatus) parts.push(`hiatus:${h}`)
   for (const l of e.languages) parts.push(`language:${l}`)
   for (const g of e.genres) parts.push(`genre:${g}`)
   for (const g of e.genresEx) parts.push(`genre:-${g}`)
@@ -160,6 +163,7 @@ function activeCount(raw: string): number {
     p.ended.length +
     (p.released.length === 1 ? 1 : 0) +
     p.seen.length +
+    p.hiatus.length +
     p.languages.length +
     p.genres.length +
     p.genresExclude.length +
@@ -192,6 +196,7 @@ export default function FilterBar({
   autoFocus,
   onSubmit,
   sportsOptIn,
+  hiatusFilter,
   children,
 }: {
   value: string
@@ -203,6 +208,8 @@ export default function FilterBar({
   /** Search only: an untyped query defaults to Movies + TV Shows, so sports are
    *  opt-in and the Team/Game options stay dimmed until Sports is selected. */
   sportsOptIn?: boolean
+  /** Library only: show the Hiatus filter (needs per-item watch progress). */
+  hiatusFilter?: boolean
   children?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -494,6 +501,30 @@ export default function FilterBar({
               ))}
             </div>
           </div>
+
+          {hiatusFilter && (
+            <div className="filter-pop__group">
+              <span className="filter-pop__label">
+                Hiatus <span className="muted">(caught-up, waiting for new episodes)</span>
+              </span>
+              <div className="chip-row">
+                {([
+                  ['include', 'Include'],
+                  ['exclude', 'Exclude'],
+                ] as const).map(([v, label]) => (
+                  <button
+                    key={v}
+                    type="button"
+                    className={`chip${ed.hiatus.has(v) ? ' chip--on' : ''}`}
+                    aria-pressed={ed.hiatus.has(v)}
+                    onClick={() => setEd({ ...ed, hiatus: toggleIn(ed.hiatus, v) })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="filter-pop__group">
             <span className="filter-pop__label">Released</span>

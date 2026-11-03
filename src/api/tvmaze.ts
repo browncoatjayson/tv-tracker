@@ -34,6 +34,10 @@ export interface TvmazeEpisode {
   name?: string
   /** Full ISO datetime with timezone offset, e.g. "2026-10-04T21:00:00-04:00". */
   airstamp?: string
+  /** Local air time, e.g. "21:00". Empty ("") when TVmaze doesn't know the time
+   *  (common for streaming shows) — in which case `airstamp` is a noon-UTC
+   *  placeholder we must not trust. */
+  airtime?: string
 }
 
 /**
@@ -46,7 +50,12 @@ export async function getTvmazeEpisodesByImdb(imdbId: string): Promise<TvmazeEpi
   const show = (await lookup.json()) as { id: number }
   const epsRes = await tvmazeFetch(`${BASE}/shows/${show.id}/episodes`)
   if (!epsRes) return []
-  return (await epsRes.json()) as TvmazeEpisode[]
+  const eps = (await epsRes.json()) as TvmazeEpisode[]
+  // When TVmaze has no release time (airtime empty), its airstamp is a noon-UTC
+  // placeholder — drop it so callers fall back to Trakt or a date-only check
+  // instead of showing/comparing a bogus time (e.g. a streaming drop at "6am").
+  for (const e of eps) if (!e.airtime) e.airstamp = undefined
+  return eps
 }
 
 /**

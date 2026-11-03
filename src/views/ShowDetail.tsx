@@ -215,7 +215,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
     staleTime: HOUR,
   })
   // Precise air times so an episode airing later today reads as upcoming.
-  const airstampOf = useShowAirstamps(item?.imdbId)
+  const airstampOf = useShowAirstamps(itemId, item?.imdbId)
 
   useEffect(() => {
     if (!item || item.imdbId) return

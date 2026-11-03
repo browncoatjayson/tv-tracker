@@ -12,6 +12,7 @@ import { markEpisode, seenState, toggleFavorite } from '../data/library'
 import type { CachedEpisode, EpisodeState, TrackedItem, WatchStatus } from '../data/types'
 import { matchesFilter, parseQuery } from '../utils/filter'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
+import { useCachedAirstamps } from '../hooks/useShowAirstamps'
 import { useTrackedItems } from '../hooks/useTrackedItems'
 import FilterBar from '../components/FilterBar'
 import SectionDivider from '../components/SectionDivider'
@@ -44,8 +45,9 @@ interface Section {
   items: TrackedItem[]
   /** Watching shows get the "next episode" strip (full view only). */
   watching?: boolean
-  /** Dropped gets a "Hide" toggle so you can tuck it away. */
-  dropped?: boolean
+  /** Gets a "Hide" toggle in the full view so you can tuck it away (In Hiatus,
+   *  Completed, Dropped). */
+  collapsible?: boolean
 }
 
 /** Placeholder emoji for a title (sports use their league icon). */
@@ -96,16 +98,16 @@ function readFlag(key: string): boolean {
 
 const HIDDEN_KEY = 'tvtracker.libraryHidden'
 
-/** Section keys the user has collapsed. Migrates the old dropped-only flag. */
+/** Section keys the user has collapsed. Dropped is hidden by default (until the
+ *  user has saved a preference of their own). */
 function readHidden(): Set<string> {
   try {
     const raw = localStorage.getItem(HIDDEN_KEY)
     if (raw) return new Set(JSON.parse(raw) as string[])
-    if (localStorage.getItem('tvtracker.libraryHideDropped') === '1') return new Set(['dropped'])
   } catch {
     // ignore
   }
-  return new Set()
+  return new Set(['dropped'])
 }
 
 /** Which release states a title belongs to (for the Released filter). A show can
@@ -176,6 +178,10 @@ export default function Library() {
   // Compact "collapsed" layout, and which groups are tucked away.
   const [collapsed, setCollapsed] = useState(() => readFlag('tvtracker.libraryCollapsed'))
   const [hidden, setHidden] = useState<Set<string>>(readHidden)
+  // "Now" captured once per mount (stable across renders; plenty fresh for the
+  // 14-day hiatus window) — avoids calling Date impurely during render.
+  const [now] = useState(() => Date.now())
+  const [today] = useState(() => new Date().toISOString().slice(0, 10))
   const toggleHidden = (key: string, v: boolean) =>
     setHidden((prev) => {
       const next = new Set(prev)
@@ -263,8 +269,11 @@ export default function Library() {
     for (const e of eps) if (e.airstamp) m.set(`${e.season}:${e.number}`, e.airstamp)
     airstampByItem.set(s.id, m)
   })
+  // Prefer precise Trakt times cached on the episode rows over TVmaze (which
+  // fills a noon-UTC placeholder for streaming shows).
+  const cachedStamp = useCachedAirstamps(watchingImdb.map((s) => s.id))
   const airstampOf = (itemId: string, season: number, episode: number): string | undefined =>
-    airstampByItem.get(itemId)?.get(`${season}:${episode}`)
+    cachedStamp(itemId, season, episode) ?? airstampByItem.get(itemId)?.get(`${season}:${episode}`)
 
   const watchedEpKeys = new Set(
     (watchingStates ?? []).filter((s) => s.watched).map((s) => `${s.itemId}:${s.season}:${s.episode}`),
@@ -302,6 +311,36 @@ export default function Library() {
   // (Past-dated sport anomalies are already excluded: their date has passed.)
   const nextUpcoming = (itemId: string): CachedEpisode | null =>
     sortedEps(itemId).find((e) => !hasAired(e.airDate)) ?? null
+
+  // "In hiatus": a returning show you're fully caught up on (every aired episode
+  // watched or skipped) AND with no new episode airing soon — i.e. the season's
+  // over and you're waiting. A show whose next episode is imminent is still
+  // actively airing, so it stays in Watching even when you're momentarily caught
+  // up. (Needs cached episodes, so an un-indexed show stays in Watching.)
+  const HIATUS_SOON_MS = 14 * 24 * 60 * 60 * 1000
+  const seenEpKeys = new Set(
+    (watchingStates ?? [])
+      .filter((s) => s.watched || s.skipped)
+      .map((s) => `${s.itemId}:${s.season}:${s.episode}`),
+  )
+  const isHiatus = (i: TrackedItem): boolean => {
+    if (i.mediaType !== 'show' || i.ended !== false) return false
+    const eps = sortedEps(i.id)
+    if (eps.length === 0) return false
+    const caughtUp = !eps.some(
+      (e) =>
+        !seenEpKeys.has(`${e.itemId}:${e.season}:${e.episode}`) &&
+        hasAiredByTime(e.airDate, airstampOf(i.id, e.season, e.episode)),
+    )
+    if (!caughtUp) return false
+    // An episode airing within the next couple of weeks = actively in-season.
+    const upcoming = nextUpcoming(i.id)?.airDate ?? undefined
+    const scheduled = i.nextAirDate && i.nextAirDate >= today ? i.nextAirDate : undefined
+    const next = upcoming ?? scheduled
+    if (next && Date.parse(next) - now <= HIATUS_SOON_MS) return false
+    return true
+  }
+  const hiatusIds = new Set((items ?? []).filter(isHiatus).map((i) => i.id))
 
   if (items === undefined) return <p className="muted">Loading…</p>
 
@@ -351,6 +390,7 @@ export default function Library() {
             // A title can be both: a mid-run show has aired episodes (lastAirDate)
             // AND upcoming ones (nextAirDate). Unknown (not indexed) → undefined.
             releasedStates: titleReleasedStates(i),
+            hiatus: hiatusIds.has(i.id),
             runtime: i.runtime,
             rating: i.tmdbRating,
           },
@@ -368,15 +408,32 @@ export default function Library() {
   }
   for (const status of STATUS_ORDER) {
     const group = matched.filter((i) => i.status === status && (searching || !i.favorite))
-    if (group.length > 0) {
-      sections.push({
-        key: status,
-        label: STATUS_LABEL[status],
-        items: group,
-        watching: status === 'watching',
-        dropped: status === 'dropped',
-      })
+    if (group.length === 0) continue
+    if (status === 'watching') {
+      // Pull caught-up returning shows out of Watching into their own "In Hiatus"
+      // section (right after Watching) to declutter the list of things to watch.
+      const active = group.filter((i) => !hiatusIds.has(i.id))
+      const paused = group.filter((i) => hiatusIds.has(i.id))
+      if (active.length > 0) {
+        sections.push({ key: 'watching', label: 'Watching', items: active, watching: true })
+      }
+      if (paused.length > 0) {
+        sections.push({
+          key: 'hiatus',
+          label: 'In Hiatus',
+          items: paused,
+          watching: true,
+          collapsible: true,
+        })
+      }
+      continue
     }
+    sections.push({
+      key: status,
+      label: STATUS_LABEL[status],
+      items: group,
+      collapsible: status === 'completed' || status === 'dropped',
+    })
   }
 
   // Episode-name matches, one row per episode (only for shows not already matched
@@ -412,7 +469,7 @@ export default function Library() {
 
   return (
     <div className="library">
-      <FilterBar value={query} onChange={setQuery} placeholder="Search for a title">
+      <FilterBar value={query} onChange={setQuery} placeholder="Search for a title" hiatusFilter>
         <ViewToggle collapsed={collapsed} onChange={setCollapsed} />
         <SortMenu sort={sort} onChange={setSort} />
       </FilterBar>
@@ -495,13 +552,14 @@ function FullSection({
   pickNextEp: (id: string) => CachedEpisode | null
   airstampOf: (itemId: string, season: number, episode: number) => string | undefined
 }) {
-  // In the full view only Dropped is collapsible.
-  const isHidden = !!sec.dropped && hidden
+  // In the full view, collapsible sections (In Hiatus, Completed, Dropped) can be
+  // hidden behind a "Hide" toggle.
+  const isHidden = !!sec.collapsible && hidden
   return (
     <section className="library__section">
-      <h2 className={`section-title${sec.dropped ? ' section-title--row' : ''}`}>
+      <h2 className={`section-title${sec.collapsible ? ' section-title--row' : ''}`}>
         {sec.label} <span className="count">{sec.items.length}</span>
-        {sec.dropped && (
+        {sec.collapsible && (
           <label className="lib-hide">
             <input
               type="checkbox"

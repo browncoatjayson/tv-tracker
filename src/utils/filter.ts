@@ -42,6 +42,9 @@ export interface ParsedQuery {
   /** Watch state to keep: 'watched' and/or 'unwatched'. Any selection also
    *  excludes dropped titles. */
   seen: ('watched' | 'unwatched')[]
+  /** Hiatus (a returning show you're fully caught up on, waiting for new
+   *  episodes): 'exclude' alone hides them; 'include' / both / neither shows them. */
+  hiatus: ('include' | 'exclude')[]
   /** Original language to keep: 'english' and/or 'foreign'. */
   languages: ('english' | 'foreign')[]
   /** Runtime (minutes) constraints, e.g. {op:'<', value:30}. */
@@ -76,13 +79,14 @@ export function parseQuery(raw: string): ParsedQuery {
   const ended: ('ended' | 'ongoing')[] = []
   const released: ('aired' | 'upcoming')[] = []
   const seen: ('watched' | 'unwatched')[] = []
+  const hiatus: ('include' | 'exclude')[] = []
   const languages: ('english' | 'foreign')[] = []
   const lengths: LengthConstraint[] = []
   const years: YearConstraint[] = []
   let rating: number | undefined
   for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
     const m = part.match(
-      /^(genre|service|actor|series|team|game|type|status|released|seen|language|lang|length|year|rating):(.+)$/i,
+      /^(genre|service|actor|series|team|game|type|status|released|seen|hiatus|language|lang|length|year|rating):(.+)$/i,
     )
     if (!m) {
       text.push(part.toLowerCase())
@@ -117,6 +121,10 @@ export function parseQuery(raw: string): ParsedQuery {
       const v = val.toLowerCase()
       if (v === 'watched' || v === 'seen') seen.push('watched')
       else if (v === 'unwatched' || v === 'unseen') seen.push('unwatched')
+    } else if (key === 'hiatus') {
+      const v = val.toLowerCase()
+      if (v === 'include' || v === 'show') hiatus.push('include')
+      else if (v === 'exclude' || v === 'hide') hiatus.push('exclude')
     } else if (key === 'language' || key === 'lang') {
       const v = val.toLowerCase()
       if (v === 'english' || v === 'en') languages.push('english')
@@ -152,6 +160,7 @@ export function parseQuery(raw: string): ParsedQuery {
     ended,
     released,
     seen,
+    hiatus,
     languages,
     lengths,
     years,
@@ -179,6 +188,9 @@ export interface FilterTarget {
   mediaType?: 'movie' | 'show' | 'sport'
   /** Watch state for the seen: filter. Undefined = unknown (never confirmable). */
   seen?: 'watched' | 'unwatched' | 'dropped'
+  /** True when this is a returning show the viewer is fully caught up on (for the
+   *  hiatus: filter). Undefined/false = not on hiatus. */
+  hiatus?: boolean
   /** Original-language kind for the language: filter. Undefined = unknown. */
   language?: 'english' | 'foreign'
   /** Release / first-air year, for the year: filter. Undefined = unknown. */
@@ -257,6 +269,12 @@ export function matchesFilter(target: FilterTarget, q: ParsedQuery): boolean {
   if (q.seen.length) {
     if (target.seen === undefined || target.seen === 'dropped') return false
     if (q.seen.length === 1 && target.seen !== q.seen[0]) return false
+  }
+  // Hiatus: 'exclude' on its own hides caught-up returning shows; 'include', both,
+  // or neither leaves them in. Only shows are ever flagged, so this never hides
+  // movies or sports.
+  if (q.hiatus.includes('exclude') && !q.hiatus.includes('include') && target.hiatus === true) {
+    return false
   }
   // Language: one pick restricts; both/none = no restriction. Unknown is hidden.
   if (q.languages.length === 1) {

@@ -15,6 +15,7 @@ import {
   type TmdbEpisodePointer,
 } from '../api/tmdb'
 import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
+import { useCachedAirstamps } from '../hooks/useShowAirstamps'
 import { leagueByKey } from '../api/espn'
 import { getTvDetailsCached } from '../data/episodeCache'
 import { matchesFilter, parseQuery } from '../utils/filter'
@@ -146,8 +147,18 @@ export default function Upcoming() {
     for (const e of eps) if (e.airstamp) m.set(`${e.season}x${e.number}`, e.airstamp)
     airstampByImdb.set(s.imdbId as string, m)
   })
-  const airTime = (imdbId: string | undefined, season: number, episode: number) =>
-    formatAirTime(imdbId ? airstampByImdb.get(imdbId)?.get(`${season}x${episode}`) : undefined)
+  // Prefer precise Trakt times cached on the episode rows over TVmaze.
+  const cachedStamp = useCachedAirstamps(shows.map((s) => s.id))
+  const airTime = (
+    itemId: string,
+    imdbId: string | undefined,
+    season: number,
+    episode: number,
+  ) =>
+    formatAirTime(
+      cachedStamp(itemId, season, episode) ??
+        (imdbId ? airstampByImdb.get(imdbId)?.get(`${season}x${episode}`) : undefined),
+    )
 
   // Watched lookups. Skipped episodes are also "seen" — they drop out of the feed.
   const seenEpisodes = new Set(
@@ -197,7 +208,7 @@ export default function Upcoming() {
         cast,
         ended,
         runtime,
-        time: airTime(s.imdbId, ep.season_number, ep.episode_number),
+        time: airTime(s.id, s.imdbId, ep.season_number, ep.episode_number),
         aired: true,
         season: ep.season_number,
         episode: ep.episode_number,
@@ -219,7 +230,7 @@ export default function Upcoming() {
         cast,
         ended,
         runtime,
-        time: airTime(s.imdbId, next.season_number, next.episode_number),
+        time: airTime(s.id, s.imdbId, next.season_number, next.episode_number),
         aired: false,
       })
     } else {
