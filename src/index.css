@@ -675,6 +675,61 @@ input[type='file'] {
   outline-offset: 1px;
 }
 
+/* "Watch next" shuffle suggestion card (Search, empty query). */
+.watch-next {
+  margin-bottom: 16px;
+}
+.watch-next__card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid var(--surface-2);
+  border-radius: var(--radius);
+  background: var(--surface);
+  text-decoration: none;
+  color: var(--text);
+}
+.watch-next__card:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+.watch-next__card--empty {
+  cursor: default;
+}
+.watch-next__poster {
+  width: 54px;
+  height: 81px;
+  object-fit: cover;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+.watch-next__poster--ph {
+  display: grid;
+  place-content: center;
+  background: var(--surface-2);
+  font-size: 1.4rem;
+}
+.watch-next__body {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.watch-next__label {
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.03em;
+}
+.watch-next__show {
+  font-weight: 600;
+}
+.watch-next__hint {
+  font-size: 0.72rem;
+  margin-top: 2px;
+}
+
 .result-list {
   list-style: none;
   padding: 0;

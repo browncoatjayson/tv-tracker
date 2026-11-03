@@ -12,11 +12,12 @@ optionally, in your own Google Drive.
 - **Metadata:** [TMDB](https://www.themoviedb.org/) (movies, shows, episodes,
   cast, watch providers, images) via a Cloudflare proxy worker that keeps the
   API token server-side
-- **Air times:** [TVmaze](https://www.tvmaze.com/) (local, per-episode air times)
+- **Air times:** [Trakt](https://trakt.tv/) for precise per-episode air times,
+  with [TVmaze](https://www.tvmaze.com/) as a fallback and for alternate titles
 - **Sports:** [ESPN](https://www.espn.com/)'s public (keyless) scoreboard API
-  for teams, leagues, and fixtures
+  for teams, leagues, fixtures, broadcasters, and racing series
 - **Reviews & sync:** [Trakt](https://trakt.tv/) (reviews/discussion on detail
-  pages, plus optional history import)
+  pages, episode air times, plus optional history import)
 - **Universes & franchises:** [Wikidata](https://www.wikidata.org/) for
   sequel / spin-off / shared-universe links
 - **Outbound links:** [IMDb](https://www.imdb.com/) on detail pages
@@ -45,22 +46,34 @@ optionally, in your own Google Drive.
   counting toward your watched stats. Skipping offers to catch up earlier
   episodes in the same season, and you can switch a skip back to watched or
   unwatched anytime.
+- **In Hiatus.** Returning shows you're fully caught up on are pulled out of
+  Watching into their own collapsible "In Hiatus" section, so your Watching list
+  stays focused on what you can actually watch. A `hiatus:` filter can hide them
+  too.
+- **Watch next.** On the Search tab with nothing typed, a shuffle button picks a
+  random next-unwatched episode from your Watching list — nudged toward your most
+  watched genres, favorite services, and favorite actors. Shuffle again for
+  another.
 - **Ratings & progress.** Rate anything on a 10-star scale (shown next to the
   community average) and pick up where you left off.
 - **Upcoming tab.** "This Week", upcoming, and "Recently Aired" feeds with
-  local air times — including episodes that just aired even while TMDB still
-  lists them as the "next" episode.
+  precise local air times (from Trakt, falling back to TVmaze) — including
+  episodes that just aired even while TMDB still lists them as the "next"
+  episode.
 - **Sports schedules.** Upcoming and recent games for the teams and leagues you
-  follow.
+  follow, each showing its broadcaster (e.g. "on CBS", "on Prime Video"). Whole
+  racing series like **NASCAR** can be tracked too — each race lists its winner
+  and links out to the full results.
 - **Powerful filters.** Narrow the library by genre, year, language, cast, and
   streaming service — and exclude what you don't want. The filter box also
   accepts `genre:` and `service:` tokens (e.g. `genre:crime, service:hbo`).
 - **Related & universes.** Jump between sequels, spin-offs, and shared universes
   that span movies and TV — grouped to a sensible size (e.g. an MCU film shows
   its phase, not all 100+ titles) from TMDB collections, keywords, and Wikidata.
-- **Watch providers.** See where a title streams, with near-duplicate services
-  merged (e.g. "Netflix" + "Netflix Standard") and cable-replacement/live-TV
-  bundles (Fubo, Sling, etc.) filtered out.
+- **Watch providers.** See where a title streams — including free, ad-supported
+  services (Tubi, The Roku Channel, Pluto TV, …) alongside the paid ones — with
+  near-duplicate services merged (e.g. "Netflix" + "Netflix Standard") and
+  cable-replacement/live-TV bundles (Fubo, Sling, etc.) filtered out.
 - **Timeline & badges.** Browse your watch history as an agenda and earn
   milestone badges as you go.
 - **Welcome screen.** On first launch with an empty library, a welcome dialog

@@ -9,7 +9,7 @@ import {
 } from '../api/tmdb'
 import { db } from './db'
 import { cacheTraktAirstamps, getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
-import { setItemMeta } from './library'
+import { setItemMeta, setStatus } from './library'
 import { queryClient } from './queryClient'
 import type { TrackedItem } from './types'
 
@@ -130,6 +130,12 @@ async function indexItem(item: TrackedItem): Promise<void> {
     // Next *upcoming* episode — powers Released:upcoming for shows mid-run.
     nextAirDate: details.next_episode_to_air?.air_date ?? undefined,
   })
+  // A show you marked Completed but that has a new episode scheduled (returning
+  // soon) goes back to Watching, so it resurfaces instead of staying "done".
+  const nextAir = details.next_episode_to_air?.air_date
+  if (item.status === 'completed' && nextAir && nextAir >= today()) {
+    await setStatus(item.id, 'watching')
+  }
   // Dropped shows (only reached on a full rebuild) get their stats metadata but
   // skip the per-season episode caching — episode search isn't needed for them.
   if (item.status === 'dropped') return

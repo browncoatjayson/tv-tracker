@@ -43,6 +43,25 @@ function baseHeaders(accessToken?: string): Record<string, string> {
   return h
 }
 
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
+
+/**
+ * fetch() that retries Trakt's rate-limit (429) responses, honouring Retry-After.
+ * A full index fires many public read calls at once (two per show), so without
+ * this they silently fail under the limit and air times never get cached.
+ */
+async function traktFetch(url: string, init?: RequestInit, retries = 3): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, init)
+    if (res.status === 429 && attempt < retries) {
+      const retryAfter = Number(res.headers.get('Retry-After'))
+      await sleep(retryAfter > 0 ? retryAfter * 1000 : Math.min(4000, 500 * 2 ** attempt))
+      continue
+    }
+    return res
+  }
+}
+
 // --- Token storage -----------------------------------------------------------
 interface StoredToken {
   access_token: string
@@ -272,7 +291,9 @@ export async function resolveTraktId(
   const key = `${type}:${tmdbId}`
   const cached = refCache.get(key)
   if (cached !== undefined) return cached
-  const res = await fetch(`${BASE}/search/tmdb/${tmdbId}?type=${type}`, { headers: baseHeaders() })
+  const res = await traktFetch(`${BASE}/search/tmdb/${tmdbId}?type=${type}`, {
+    headers: baseHeaders(),
+  })
   if (!res.ok) throw new Error(`Trakt lookup failed (${res.status}).`)
   const arr = (await res.json()) as Array<Record<string, { ids?: { trakt: number; slug: string } }>>
   const hit = arr.find((x) => x[type]?.ids) ?? null
@@ -317,7 +338,7 @@ export async function getTraktEpisodeTimes(tmdbId: number): Promise<Map<string, 
   try {
     const ref = await resolveTraktId('show', tmdbId)
     if (!ref) return out
-    const res = await fetch(`${BASE}/shows/${ref.trakt}/seasons?extended=episodes,full`, {
+    const res = await traktFetch(`${BASE}/shows/${ref.trakt}/seasons?extended=episodes,full`, {
       headers: baseHeaders(),
     })
     if (!res.ok) return out
@@ -349,7 +370,7 @@ export async function getTraktEpisodeTime(
   try {
     const ref = await resolveTraktId('show', tmdbId)
     if (!ref) return null
-    const res = await fetch(
+    const res = await traktFetch(
       `${BASE}/shows/${ref.trakt}/seasons/${season}/episodes/${episode}?extended=full`,
       { headers: baseHeaders() },
     )

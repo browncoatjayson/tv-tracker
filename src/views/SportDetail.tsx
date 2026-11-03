@@ -4,7 +4,9 @@ import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import {
   espnGameUrl,
+  espnRaceUrl,
   espnTeamUrl,
+  getEspnRaceSchedule,
   getEspnTeamSchedule,
   leagueByKey,
   recentSeasons,
@@ -33,10 +35,14 @@ export default function SportDetail({ itemId }: { itemId: string }) {
 
   const item = useLiveQuery(() => db.trackedItems.get(itemId).then((r) => r ?? null), [itemId])
   const [season, setSeason] = useState<number>(SEASONS[0])
+  const isRace = league?.kind === 'races'
 
   const schedule = useQuery({
     queryKey: ['espn-schedule', parsed?.league, teamId, season],
-    queryFn: () => getEspnTeamSchedule(parsed!.league, teamId!, season),
+    queryFn: () =>
+      isRace
+        ? getEspnRaceSchedule(parsed!.league, season)
+        : getEspnTeamSchedule(parsed!.league, teamId!, season),
     enabled: !!parsed && !!league,
     staleTime: HOUR,
   })
@@ -89,7 +95,13 @@ export default function SportDetail({ itemId }: { itemId: string }) {
   const rank = nextGame?.teamRank ?? lastCompleted?.teamRank
   const hasRecord = wins > 0 || losses > 0
 
-  const links = { espn: teamId ? espnTeamUrl(league.key, teamId) : undefined }
+  const links = {
+    espn: isRace
+      ? `https://www.espn.com/racing/schedule/_/series/${league.raceSeries ?? 'sprint'}`
+      : teamId
+        ? espnTeamUrl(league.key, teamId)
+        : undefined,
+  }
 
   // Any aired-but-unwatched games left to mark in one go.
   const unwatchedAired = games.some(
@@ -206,11 +218,21 @@ export default function SportDetail({ itemId }: { itemId: string }) {
             const epNo = i + 1
             const watched = watchedSet.has(`${season}:${epNo}`)
             const vs = g.homeAway === 'away' ? 'at' : 'vs'
-            const matchup = g.opponent
-              ? `${vs} ${g.opponent.name}${g.opponent.record ? ` (${g.opponent.record})` : ''}`
-              : g.name
+            // Races have no opponent — the summary carries the winner instead of a
+            // matchup; the race name is already in the code line above.
+            const summaryParts: string[] = []
+            if (isRace) {
+              if (g.winner) summaryParts.push(`🏁 ${g.winner}`)
+            } else {
+              summaryParts.push(
+                g.opponent
+                  ? `${vs} ${g.opponent.name}${g.opponent.record ? ` (${g.opponent.record})` : ''}`
+                  : g.name,
+              )
+            }
+            if (g.broadcast) summaryParts.push(`on ${g.broadcast}`)
             const air = sportAirState(g.date, g.completed)
-            const gameUrl = espnGameUrl(league.key, g.id, g.date)
+            const gameUrl = isRace ? espnRaceUrl(league, g.id) : espnGameUrl(league.key, g.id, g.date)
             const openGame = () => {
               if (gameUrl) window.open(gameUrl, '_blank', 'noopener,noreferrer')
             }
@@ -238,7 +260,14 @@ export default function SportDetail({ itemId }: { itemId: string }) {
                     {g.week ? `${g.week} • ` : ''}
                     {g.name}
                   </span>
-                  <p className="ep-card__summary muted">{matchup}</p>
+                  {g.date && (
+                    <span
+                      className={`ep-card__datepill${air === 'upcoming' ? ' ep-card__datepill--upcoming' : ''}`}
+                    >
+                      {g.date.slice(0, 10)}
+                    </span>
+                  )}
+                  <p className="ep-card__summary muted">{summaryParts.join(' · ')}</p>
                   {g.result && (
                     <span
                       className={`ep-card__result ${g.result.won ? 'sport-win' : 'sport-loss'}`}
@@ -247,13 +276,9 @@ export default function SportDetail({ itemId }: { itemId: string }) {
                     </span>
                   )}
                   {air === 'upcoming' ? (
-                    <span className="ep-card__upcoming">
-                      {g.date ? `Airs · ${g.date.slice(0, 10)}` : 'TBA'}
-                    </span>
+                    <span className="ep-card__upcoming">Upcoming</span>
                   ) : air === 'unaired' ? (
-                    <span className="ep-card__upcoming ep-card__unaired">
-                      {g.date ? `Unaired · Originally ${g.date.slice(0, 10)}` : 'Unaired'}
-                    </span>
+                    <span className="ep-card__upcoming ep-card__unaired">Unaired</span>
                   ) : (
                     !readOnly && (
                       <label

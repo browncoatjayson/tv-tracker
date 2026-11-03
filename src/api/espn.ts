@@ -34,6 +34,13 @@ export interface EspnLeague {
    *  game pages, so a team/game link to one 404s — fall back to the scoreboard).
    *  Soccer (sport === 'soccer') has its own /soccer/ web scheme, handled below. */
   webPages: 'clubhouse' | 'scoreboard'
+  /** 'team' (default) — you track a team and its games. 'races' — a racing series
+   *  (e.g. NASCAR) with no teams: you track the whole series and its races, each
+   *  with a winner instead of a head-to-head score. */
+  kind?: 'team' | 'races'
+  /** Racing only: ESPN's `series` query param for the web results page
+   *  (nascar-premier → "sprint"). */
+  raceSeries?: string
 }
 
 // Supported leagues. College football + women's college volleyball ship enabled
@@ -60,6 +67,8 @@ export const ESPN_LEAGUES: EspnLeague[] = [
   { key: 'seriea', sport: 'soccer', league: 'ita.1', label: 'Serie A', emoji: '⚽', group: 'Soccer', scope: 'pro', espnSlug: 'ita.1', webPages: 'clubhouse' },
   { key: 'ligue1', sport: 'soccer', league: 'fra.1', label: 'Ligue 1', emoji: '⚽', group: 'Soccer', scope: 'pro', espnSlug: 'fra.1', webPages: 'clubhouse' },
   { key: 'ucl', sport: 'soccer', league: 'uefa.champions', label: 'Champions League', emoji: '⚽', group: 'Soccer', scope: 'pro', espnSlug: 'uefa.champions', webPages: 'clubhouse' },
+  // Racing — a whole series (no teams). Tracked from Settings → Sports.
+  { key: 'nascar', sport: 'racing', league: 'nascar-premier', label: 'NASCAR Cup Series', emoji: '🏁', group: 'Racing', scope: 'pro', espnSlug: 'nascar-premier', webPages: 'scoreboard', kind: 'races', raceSeries: 'sprint' },
 ]
 
 export function leagueByKey(key: string | undefined): EspnLeague | undefined {
@@ -186,6 +195,10 @@ export interface EspnGame {
   teamRank?: number
   /** Final score from the tracked team's perspective, if available. */
   result?: { us: number; them: number; won: boolean }
+  /** TV/streaming broadcaster(s), e.g. "CBS" or "ABC/ESPN+". From ESPN. */
+  broadcast?: string
+  /** Racing only: the winning driver, once the race has finished. */
+  winner?: string
 }
 
 export interface EspnSchedule {
@@ -198,8 +211,12 @@ export interface EspnSchedule {
 interface Competitor {
   homeAway?: string
   winner?: boolean
+  /** Finishing position (racing): 1 = winner. */
+  order?: number
   curatedRank?: { current?: number }
   team?: { id?: string; displayName?: string; abbreviation?: string; logos?: { href: string }[] }
+  /** Driver (racing). */
+  athlete?: { displayName?: string }
   score?: { value?: number; displayValue?: string }
   record?: { type?: string; displayValue?: string }[]
 }
@@ -209,10 +226,33 @@ interface EspnEvent {
   shortName?: string
   date: string
   week?: { text?: string }
+  /** Racing scoreboard puts the state here: 'pre' | 'in' | 'post'. */
+  status?: { type?: { state?: string; completed?: boolean } }
   competitions?: {
     status?: { type?: { completed?: boolean } }
     competitors?: Competitor[]
+    /** TV/streaming carriers. The scoreboard uses `names[]`; the team schedule
+     *  uses `media.shortName` — handle both. */
+    broadcasts?: { names?: string[]; media?: { shortName?: string } }[]
   }[]
+}
+
+/** Dedupe the broadcaster name(s) on a competition, short — handles the team
+ *  schedule's `media.shortName` and the scoreboard's `names[]`. */
+function broadcastOf(
+  comp: { broadcasts?: { names?: string[]; media?: { shortName?: string } }[] } | undefined,
+): string | undefined {
+  return (
+    [
+      ...new Set(
+        (comp?.broadcasts ?? [])
+          .flatMap((b) => b.names ?? (b.media?.shortName ? [b.media.shortName] : []))
+          .filter(Boolean),
+      ),
+    ]
+      .slice(0, 2)
+      .join('/') || undefined
+  )
 }
 interface ScheduleResponse {
   team?: { displayName?: string; logos?: { href: string }[] }
@@ -276,6 +316,7 @@ function toTeamGame(lg: EspnLeague, teamId: string, e: EspnEvent): EspnGame {
     result = { us: us.score.value, them: them.score.value, won: us.winner ?? false }
   }
   const rank = us?.curatedRank?.current
+  const broadcast = broadcastOf(comp)
   return {
     id: e.id,
     name: e.shortName ?? e.name ?? 'Game',
@@ -293,7 +334,47 @@ function toTeamGame(lg: EspnLeague, teamId: string, e: EspnEvent): EspnGame {
       : undefined,
     teamRank: rank != null && rank >= 1 && rank <= 25 ? rank : undefined,
     result,
+    broadcast,
   }
+}
+
+/** Build a race (one event of a racing series) from the scoreboard. */
+function toRaceGame(e: EspnEvent): EspnGame {
+  const comp = e.competitions?.[0]
+  const completed = e.status?.type?.state === 'post'
+  const competitors = comp?.competitors ?? []
+  const winnerC = competitors.find((c) => c.winner) ?? competitors.find((c) => c.order === 1)
+  return {
+    id: e.id,
+    name: e.shortName ?? e.name ?? 'Race',
+    fullName: e.name ?? e.shortName ?? 'Race',
+    date: e.date,
+    completed,
+    broadcast: broadcastOf(comp),
+    winner: completed ? winnerC?.athlete?.displayName : undefined,
+  }
+}
+
+/** A racing series' races for one season (year), oldest-first. ESPN exposes the
+ *  full calendar on the scoreboard with `?dates=<year>`. */
+export async function getEspnRaceSchedule(
+  leagueKey: string,
+  season: number,
+): Promise<EspnSchedule> {
+  const lg = leagueByKey(leagueKey)
+  if (!lg) throw new Error(`Unknown league: ${leagueKey}`)
+  const data = await fetchJson<ScoreboardResponse>(
+    `${SITE}/${lg.sport}/${lg.league}/scoreboard?dates=${season}`,
+  )
+  const games = (data.events ?? []).map(toRaceGame)
+  games.sort((a, b) => a.date.localeCompare(b.date))
+  return { teamName: lg.label, season, games }
+}
+
+/** Link to a race's full results (finishing order + points) on espn.com. */
+export function espnRaceUrl(lg: EspnLeague, raceId: string): string | undefined {
+  if (!lg.raceSeries) return undefined
+  return `https://www.espn.com/racing/raceresults?raceId=${raceId}&series=${lg.raceSeries}`
 }
 
 /** A team's games for one season, oldest-first. */

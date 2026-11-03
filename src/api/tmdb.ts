@@ -704,15 +704,13 @@ export function watchNames(details: WatchInfo, region = 'US'): string[] {
     if (LIVE_TV_RE.test(p.provider_name)) continue
     names.push(normalizeProvider(p.provider_name))
   }
-  // Fallback: if nothing qualified (no network, no subscription streamer), fall
-  // back to free / ad-supported availability — so a title that only streams on a
-  // FAST service (Tubi, Pluto TV, The Roku Channel, Freevee, …) still shows where
-  // to watch instead of a blank. Live-TV bundles stay suppressed.
-  if (names.length === 0) {
-    for (const p of [...(providers?.ads ?? []), ...(providers?.free ?? [])]) {
-      if (LIVE_TV_RE.test(p.provider_name)) continue
-      names.push(normalizeProvider(p.provider_name))
-    }
+  // Free / ad-supported (FAST) availability, listed after the paid options — so a
+  // title on a free service (Tubi, Pluto TV, The Roku Channel, Freevee, …) shows
+  // it alongside any subscription options, for viewers who don't have those.
+  // Live-TV bundles stay suppressed.
+  for (const p of [...(providers?.ads ?? []), ...(providers?.free ?? [])]) {
+    if (LIVE_TV_RE.test(p.provider_name)) continue
+    names.push(normalizeProvider(p.provider_name))
   }
   return [...new Set(names)]
 }

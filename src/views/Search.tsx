@@ -35,6 +35,9 @@ import { matchesFilter, parseQuery } from '../utils/filter'
 import { hasDiscoverFilters, newReleasesParams, planDiscover, resolveProviderIds } from '../utils/discover'
 import { useFavoritePeople } from '../data/favorites'
 import { useFavoriteServices } from '../data/services'
+import { useCachedAirstamps } from '../hooks/useShowAirstamps'
+import { hasAiredByTime } from '../utils/airTime'
+import { pickWatchNext, type WatchNextCandidate } from '../utils/watchNext'
 import {
   ESPN_LEAGUES,
   espnGameUrl,
@@ -50,7 +53,7 @@ import { useEnabledLeagues } from '../data/sportPrefs'
 import { markFlag } from '../data/appFlags'
 import FilterBar from '../components/FilterBar'
 import Recommendations from '../components/Recommendations'
-import type { MediaType } from '../data/types'
+import type { CachedEpisode, EpisodeState, MediaType } from '../data/types'
 
 const HOUR = 1000 * 60 * 60
 // Results are revealed a page at a time so an actor's credits only poll TMDB
@@ -190,6 +193,8 @@ export default function Search() {
     !sportMode && !searchText && !actorName && !seriesName && hasDiscoverFilters(parsed)
   const discoverActive = filterOnly && discoverRun === query && query.length > 0
   const runDiscover = () => setDiscoverRun(query)
+  // Nothing typed and no filters set → offer the "Watch next" shuffle button.
+  const emptyQuery = !input.trim()
   // A fresh run (new filters) starts over at page 1 / first dozen.
   useEffect(() => {
     setDiscoverPages(1)
@@ -300,6 +305,88 @@ export default function Search() {
     const st = statusById.get(itemKey(toMediaType(r), r.id))
     return st ? seenState(st) : 'unwatched'
   }
+  // --- "Watch next" (random) --------------------------------------------------
+  // A pseudo-random next-unwatched episode from the shows you're actively
+  // watching (no movies, no not-yet-started shows, no sports), slightly weighted
+  // toward your genres / favourite services / favourite actors.
+  const favPeople = useFavoritePeople()
+  const watchingShows = (libraryItems ?? []).filter(
+    (i) => i.status === 'watching' && i.mediaType === 'show',
+  )
+  const watchingShowIds = watchingShows.map((i) => i.id)
+  const watchNextKey = watchingShowIds.join('|')
+  const wnEpisodes = useLiveQuery<CachedEpisode[]>(
+    () =>
+      watchingShowIds.length
+        ? db.episodeCache.where('itemId').anyOf(watchingShowIds).toArray()
+        : Promise.resolve([] as CachedEpisode[]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [watchNextKey],
+  )
+  const wnStates = useLiveQuery<EpisodeState[]>(
+    () =>
+      watchingShowIds.length
+        ? db.episodeStates.where('itemId').anyOf(watchingShowIds).toArray()
+        : Promise.resolve([] as EpisodeState[]),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [watchNextKey],
+  )
+  const wnAirstamp = useCachedAirstamps(watchingShowIds)
+  const wnSeen = new Set(
+    (wnStates ?? [])
+      .filter((s) => s.watched || s.skipped)
+      .map((s) => `${s.itemId}:${s.season}:${s.episode}`),
+  )
+  const wnEpsByItem = new Map<string, CachedEpisode[]>()
+  for (const e of wnEpisodes ?? []) {
+    if (e.season === 0) continue // skip specials
+    const arr = wnEpsByItem.get(e.itemId) ?? []
+    arr.push(e)
+    wnEpsByItem.set(e.itemId, arr)
+  }
+  const watchNextCandidates: WatchNextCandidate[] = []
+  for (const it of watchingShows) {
+    const eps = (wnEpsByItem.get(it.id) ?? [])
+      .slice()
+      .sort((a, b) => a.season - b.season || a.episode - b.episode)
+    const next = eps.find(
+      (e) =>
+        !wnSeen.has(`${e.itemId}:${e.season}:${e.episode}`) &&
+        hasAiredByTime(e.airDate, wnAirstamp(it.id, e.season, e.episode)),
+    )
+    if (next) {
+      watchNextCandidates.push({ item: it, season: next.season, episode: next.episode, epName: next.name })
+    }
+  }
+  const watchNextGenreFreq = new Map<string, number>()
+  for (const it of watchingShows) {
+    for (const g of it.genres ?? []) {
+      const k = g.toLowerCase()
+      watchNextGenreFreq.set(k, (watchNextGenreFreq.get(k) ?? 0) + 1)
+    }
+  }
+  const [watchNext, setWatchNext] = useState<WatchNextCandidate | 'none' | null>(null)
+  const [watchNextShown, setWatchNextShown] = useState<Set<string>>(() => new Set())
+  const rollWatchNext = () => {
+    const exclude =
+      watchNext && watchNext !== 'none' ? new Set([watchNext.item.id]) : new Set<string>()
+    // Re-rolling excludes the current pick; once everything's been shown, start over.
+    const pool = watchNextCandidates.filter((c) => !watchNextShown.has(c.item.id))
+    const picked = pickWatchNext(pool.length ? pool : watchNextCandidates, {
+      genreFreq: watchNextGenreFreq,
+      favServices,
+      favPeople: (favPeople ?? []).map((p) => p.name.toLowerCase()),
+      excludeIds: exclude,
+    })
+    setWatchNext(picked ?? 'none')
+    setWatchNextShown((prev) => {
+      if (!picked) return new Set()
+      const next = pool.length ? new Set(prev) : new Set<string>()
+      next.add(picked.item.id)
+      return next
+    })
+  }
+
   const ratedCount = (libraryItems ?? []).filter((i) => i.userRating !== undefined).length
   const recSeeds = (libraryItems ?? [])
     .filter((i) => (i.userRating ?? 0) >= 6)
@@ -666,7 +753,73 @@ export default function Search() {
             </svg>
           </button>
         )}
+        {emptyQuery && (
+          <button
+            type="button"
+            className="run-btn"
+            title="Watch next — a random episode from your Watching list"
+            aria-label="Watch next"
+            onClick={rollWatchNext}
+          >
+            <svg
+              width="18"
+              height="18"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <polyline points="16 3 21 3 21 8" />
+              <line x1="4" y1="20" x2="21" y2="3" />
+              <polyline points="21 16 21 21 16 21" />
+              <line x1="15" y1="15" x2="21" y2="21" />
+              <line x1="4" y1="4" x2="9" y2="9" />
+            </svg>
+          </button>
+        )}
       </FilterBar>
+
+      {emptyQuery && watchNext !== null && (
+        <section className="watch-next">
+          {watchNext === 'none' ? (
+            <div className="watch-next__card watch-next__card--empty">
+              <div className="watch-next__body">
+                <span className="watch-next__show">No suggestions found.</span>
+                <span className="muted">Maybe start a new series?</span>
+              </div>
+            </div>
+          ) : (
+            <Link
+              to={`/item/${encodeURIComponent(watchNext.item.id)}/episode/${watchNext.season}/${watchNext.episode}`}
+              className="watch-next__card"
+            >
+              {imageUrl(watchNext.item.posterPath, 'w154') ? (
+                <img
+                  className="watch-next__poster"
+                  src={imageUrl(watchNext.item.posterPath, 'w154')}
+                  alt=""
+                  loading="lazy"
+                />
+              ) : (
+                <div className="watch-next__poster watch-next__poster--ph">📺</div>
+              )}
+              <div className="watch-next__body">
+                <span className="watch-next__label">▶ Watch next</span>
+                <span className="watch-next__show">{watchNext.item.title}</span>
+                <span className="muted">
+                  S{String(watchNext.season).padStart(2, '0')}E
+                  {String(watchNext.episode).padStart(2, '0')}
+                  {watchNext.epName ? ` · ${watchNext.epName}` : ''}
+                </span>
+                <span className="muted watch-next__hint">Shuffle again with the ⤭ button.</span>
+              </div>
+            </Link>
+          )}
+        </section>
+      )}
 
       {gameBrowse ? (
         <SportGameResults games={browseGames} fetching={browseFetching} noLeagues={browseLeagues.length === 0} />
