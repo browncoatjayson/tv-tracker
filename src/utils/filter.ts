@@ -208,6 +208,24 @@ export interface FilterTarget {
   rating?: number
 }
 
+// Extra substrings a genre value should also match, so one chip reaches TMDB's
+// movie- and TV-specific names for the same thing. (TV bundles sci-fi into
+// "Sci-Fi & Fantasy", so the "Science Fiction" chip would otherwise miss it —
+// imperfect since you can't then separate TV sci-fi from TV fantasy, but better
+// than it being unfilterable.) Keyed by the lowercased genre value.
+const GENRE_ALIASES: Record<string, string[]> = {
+  'science fiction': ['sci-fi'],
+}
+
+/** Whether any of a target's genres matches the filter value `g` (or an alias). */
+function genreHit(genres: string[] | undefined, g: string): boolean {
+  const terms = GENRE_ALIASES[g] ? [g, ...GENRE_ALIASES[g]] : [g]
+  return (genres ?? []).some((x) => {
+    const lx = x.toLowerCase()
+    return terms.some((t) => lx.includes(t))
+  })
+}
+
 /** The release states a target belongs to, or undefined if unknown. */
 function releasedStatesOf(t: FilterTarget): ('aired' | 'upcoming')[] | undefined {
   if (t.releasedStates) return t.releasedStates
@@ -291,12 +309,12 @@ export function matchesFilter(target: FilterTarget, q: ParsedQuery): boolean {
     return false
   }
   for (const g of q.genres) {
-    if (!(target.genres ?? []).some((x) => x.toLowerCase().includes(g))) return false
+    if (!genreHit(target.genres, g)) return false
   }
   // Excluded genres: a title carrying any of them is hidden (unknown genres can't
   // be confirmed to carry one, so they're left in).
   for (const g of q.genresExclude) {
-    if ((target.genres ?? []).some((x) => x.toLowerCase().includes(g))) return false
+    if (genreHit(target.genres, g)) return false
   }
   for (const s of q.services) {
     if (!(target.providers ?? []).some((x) => x.toLowerCase().includes(s))) return false

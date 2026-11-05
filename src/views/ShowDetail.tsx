@@ -23,6 +23,7 @@ import { classifySpecials } from '../data/specials'
 import { hasTraktClientId, resolveTraktId } from '../api/trakt'
 import {
   addItem,
+  clearWatchedEpisodes,
   markEpisode,
   removeItem,
   setEpisodeSkipped,
@@ -360,14 +361,45 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
 
   const seasonRatingPct = activeTab?.rating ? Math.round(activeTab.rating * 10) : 0
 
+  // Changing status out of "Completed". Leaving for Watching/Watchlist offers to
+  // wipe the watched marks (undo an accidental "mark all watched") so you can
+  // re-mark where you are. Declining keeps the marks — and if everything's still
+  // watched, there's nothing to watch, so it stays Completed.
+  async function handleStatusChange(next: WatchStatus) {
+    if (!item) return
+    const leavingComplete =
+      item.status === 'completed' && (next === 'watching' || next === 'watchlist')
+    const watchedCount = (states ?? []).filter((s) => (s.watchCount ?? (s.watched ? 1 : 0)) > 0).length
+    if (leavingComplete && watchedCount > 0) {
+      const clear = await appConfirm('Clear all watched episodes?', {
+        confirmLabel: 'Yes',
+        cancelLabel: 'No',
+      })
+      if (clear) {
+        await clearWatchedEpisodes(item.id)
+        await setStatus(item.id, next)
+      } else if (!fullyWatched) {
+        await setStatus(item.id, next)
+      }
+      // else: declined and everything's watched — keep Completed (no change).
+      return
+    }
+    await setStatus(item.id, next)
+  }
+
   // Mark the selected season's aired episodes watched for the current pass.
   // Deliberately-skipped episodes are left alone.
   async function markSeasonWatched() {
     if (!item) return
-    for (const ep of visibleEpisodes) {
-      if (!hasAiredByTime(ep.air_date, airstampOf(ep.season_number, ep.episode_number))) continue
+    const aired = visibleEpisodes.filter((ep) => {
+      if (!hasAiredByTime(ep.air_date, airstampOf(ep.season_number, ep.episode_number))) return false
+      return !stateMap.get(`${ep.season_number}:${ep.episode_number}`)?.skipped
+    })
+    if (aired.length === 0) return
+    const ok = await appConfirm(`Mark all ${aired.length} aired episodes as watched?`)
+    if (!ok) return
+    for (const ep of aired) {
       const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
-      if (st?.skipped) continue
       const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
       await setEpisodeWatchCount(
         item.id,
@@ -424,7 +456,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
             <>
               <label className="field show-detail__status">
                 <span>Status</span>
-                <select value={item.status} onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}>
+                <select value={item.status} onChange={(e) => void handleStatusChange(e.target.value as WatchStatus)}>
                   {STATUSES.map((s) => (
                     <option key={s} value={s}>
                       {s}
@@ -488,7 +520,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
               {!readOnly && (
                 <SplitButton
                   className="season-bar__mark"
-                  label="Mark aired episodes watched"
+                  label="Mark season episodes as watched"
                   onClick={() => void markSeasonWatched()}
                   menu={[
                     {

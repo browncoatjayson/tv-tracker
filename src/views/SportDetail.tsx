@@ -12,7 +12,7 @@ import {
   recentSeasons,
 } from '../api/espn'
 import { db } from '../data/db'
-import { markEpisode, removeItem, setStatus } from '../data/library'
+import { clearWatchedEpisodes, markEpisode, removeItem, setStatus } from '../data/library'
 import {
   addSportTeam,
   cacheSportGames,
@@ -118,12 +118,42 @@ export default function SportDetail({ itemId }: { itemId: string }) {
   }
 
   async function markAllAired() {
+    const toMark = games.filter((g, i) => g.completed && !watchedSet.has(`${season}:${i + 1}`))
+    if (toMark.length === 0) return
+    const ok = await appConfirm(`Mark all ${toMark.length} aired games as watched?`)
+    if (!ok) return
     for (let i = 0; i < games.length; i++) {
       const g = games[i]
       if (g.completed && !watchedSet.has(`${season}:${i + 1}`)) {
         await markEpisode(itemId, season, i + 1, true)
       }
     }
+  }
+
+  // Changing status out of "Completed" (rare for sports — teams never auto-
+  // complete). Mirrors the show page: offer to wipe the watched marks so an
+  // accidental bulk-mark can be undone; declining keeps them (and stays Completed
+  // when there's nothing aired left to watch).
+  async function handleStatusChange(next: WatchStatus) {
+    if (!item) return
+    const leavingComplete =
+      item.status === 'completed' && (next === 'watching' || next === 'watchlist')
+    const watchedCount = (states ?? []).filter((s) => (s.watchCount ?? (s.watched ? 1 : 0)) > 0).length
+    if (leavingComplete && watchedCount > 0) {
+      const clear = await appConfirm('Clear all watched games?', {
+        confirmLabel: 'Yes',
+        cancelLabel: 'No',
+      })
+      if (clear) {
+        await clearWatchedEpisodes(item.id)
+        await setStatus(item.id, next)
+      } else if (unwatchedAired) {
+        await setStatus(item.id, next)
+      }
+      // else: caught up and kept the marks — stay Completed.
+      return
+    }
+    await setStatus(item.id, next)
   }
 
   return (
@@ -159,7 +189,7 @@ export default function SportDetail({ itemId }: { itemId: string }) {
               <span>Status</span>
               <select
                 value={item.status}
-                onChange={(e) => setStatus(item.id, e.target.value as WatchStatus)}
+                onChange={(e) => void handleStatusChange(e.target.value as WatchStatus)}
               >
                 {STATUSES.map((s) => (
                   <option key={s} value={s}>
@@ -202,7 +232,7 @@ export default function SportDetail({ itemId }: { itemId: string }) {
           </span>
           {!readOnly && unwatchedAired && (
             <button className="btn btn--small btn--ghost" onClick={() => void markAllAired()}>
-              Mark aired games watched
+              Mark season games as watched
             </button>
           )}
         </div>

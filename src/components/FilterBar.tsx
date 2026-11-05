@@ -21,14 +21,19 @@ const GENRES = [
   'Fantasy',
   'History',
   'Horror',
+  'Music',
   'Mystery',
   'Romance',
   'Science Fiction',
   'Thriller',
   'War',
   'Western',
+  // TV-only genres.
   'Reality',
   'Kids',
+  'News',
+  'Soap',
+  'Talk',
 ]
 
 const LEN_OPS: { value: '' | LengthConstraint['op']; label: string }[] = [

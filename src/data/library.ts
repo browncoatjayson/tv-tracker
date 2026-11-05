@@ -283,6 +283,34 @@ export async function markEpisode(
   await setEpisodeWatchCount(itemId, season, episode, watched ? Math.max(1, prevCount) : 0)
 }
 
+/**
+ * Set every watched episode of a show back to unwatched — undoes a bulk or
+ * accidental "mark all watched" so you can re-mark where you actually are.
+ * Skipped episodes and per-episode ratings are preserved, and the append-only
+ * watch-history log is left intact (same as un-checking a single episode).
+ * Returns how many episodes were cleared. One transaction + one sync.
+ */
+export async function clearWatchedEpisodes(itemId: string): Promise<number> {
+  const states = await db.episodeStates.where('itemId').equals(itemId).toArray()
+  const watched = states.filter((s) => (s.watchCount ?? (s.watched ? 1 : 0)) > 0)
+  if (watched.length === 0) return 0
+  const now = Date.now()
+  await db.transaction('rw', db.episodeStates, db.trackedItems, async () => {
+    for (const s of watched) {
+      await db.episodeStates.put({
+        ...s,
+        watched: false,
+        watchCount: 0,
+        watchedAt: undefined,
+        updatedAt: now,
+      })
+    }
+    await db.trackedItems.update(itemId, { updatedAt: now })
+  })
+  scheduleAutoSync()
+  return watched.length
+}
+
 /** Log a (re)watch of a movie. */
 export async function markMovieWatched(itemId: string, isRewatch = false): Promise<void> {
   const now = Date.now()
