@@ -15,6 +15,8 @@ import {
   type TmdbEpisodePointer,
 } from '../api/tmdb'
 import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
+import { hasAiredByTime } from '../utils/airTime'
+import { localDateValue, todayLocal } from '../utils/watchedDate'
 import { useCachedAirstamps } from '../hooks/useShowAirstamps'
 import { leagueByKey } from '../api/espn'
 import { getTvDetailsCached } from '../data/episodeCache'
@@ -149,16 +151,21 @@ export default function Upcoming() {
   })
   // Prefer precise Trakt times cached on the episode rows over TVmaze.
   const cachedStamp = useCachedAirstamps(shows.map((s) => s.id))
+  // Raw precise airstamp (Trakt-cached, else TVmaze) for an episode, if known.
+  const airStamp = (
+    itemId: string,
+    imdbId: string | undefined,
+    season: number,
+    episode: number,
+  ): string | undefined =>
+    cachedStamp(itemId, season, episode) ??
+    (imdbId ? airstampByImdb.get(imdbId)?.get(`${season}x${episode}`) : undefined)
   const airTime = (
     itemId: string,
     imdbId: string | undefined,
     season: number,
     episode: number,
-  ) =>
-    formatAirTime(
-      cachedStamp(itemId, season, episode) ??
-        (imdbId ? airstampByImdb.get(imdbId)?.get(`${season}x${episode}`) : undefined),
-    )
+  ) => formatAirTime(airStamp(itemId, imdbId, season, episode))
 
   // Watched lookups. Skipped episodes are also "seen" — they drop out of the feed.
   const seenEpisodes = new Set(
@@ -170,10 +177,8 @@ export default function Upcoming() {
     (watchEvents ?? []).filter((e) => e.episodeId === null).map((e) => e.itemId),
   )
 
-  const today = new Date().toISOString().slice(0, 10)
-  const windowStart = new Date(Date.now() - AIRED_WINDOW_DAYS * 86400000)
-    .toISOString()
-    .slice(0, 10)
+  const today = todayLocal()
+  const windowStart = localDateValue(Date.now() - AIRED_WINDOW_DAYS * 86400000)
   const inAiredWindow = (date: string) => date >= windowStart && date <= today
 
   const upcoming: FeedEntry[] = []
@@ -216,7 +221,14 @@ export default function Upcoming() {
     }
 
     const next = details.next_episode_to_air
-    if (next?.air_date && next.air_date >= today) {
+    // Prefer the precise air time: an episode airing later today is still upcoming
+    // until its airstamp passes, not from midnight. Falls back to the local-date
+    // compare when no airstamp is cached.
+    const nextStamp = next
+      ? airStamp(s.id, s.imdbId, next.season_number ?? 0, next.episode_number ?? 0)
+      : undefined
+    const nextIsUpcoming = !!next?.air_date && !hasAiredByTime(next.air_date, nextStamp)
+    if (next?.air_date && nextIsUpcoming) {
       upcoming.push({
         itemId: s.id,
         title: s.title,
@@ -365,7 +377,7 @@ export default function Upcoming() {
     .map((m, i) => `${m.id}|${movieResults[i]?.data?.release_date ?? ''}`)
     .join(',')
   useEffect(() => {
-    const todayStr = new Date().toISOString().slice(0, 10)
+    const todayStr = todayLocal()
     shows.forEach((s, i) => {
       const d = showResults[i]?.data
       if (!d) return

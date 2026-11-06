@@ -46,3 +46,14 @@ export function localDateValue(ms: number): string {
   const d = new Date(ms)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
+
+/**
+ * Today's date as YYYY-MM-DD in the viewer's LOCAL time zone. Air dates are local
+ * calendar dates, so comparing them against `new Date().toISOString()` (which is
+ * UTC) misclassifies them in the evening for time zones behind UTC — tonight's
+ * not-yet-aired episode looks "aired" once UTC has rolled over to tomorrow. Always
+ * compare air dates against this, never the UTC slice.
+ */
+export function todayLocal(): string {
+  return localDateValue(Date.now())
+}

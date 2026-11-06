@@ -1,6 +1,7 @@
 import { db, episodeKey } from './db'
 import { markEpisode } from './library'
 import { appConfirm } from '../utils/confirm'
+import { todayLocal } from '../utils/watchedDate'
 import type { CachedEpisode, TrackedItem } from './types'
 import type { EspnGame } from '../api/espn'
 
@@ -26,7 +27,7 @@ export function sportAirState(
   airDate: string | null | undefined,
   completed: boolean | undefined,
 ): SportAirState {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayLocal()
   const past = !!airDate && airDate.slice(0, 10) < today
   if (completed === true) return 'aired'
   if (completed === false) return past ? 'unaired' : 'upcoming'
@@ -99,7 +100,7 @@ export async function cacheSportGames(
  *  sorts alongside shows in the Library ("Last episode date") and the Upcoming
  *  feed. Not an updatedAt-bumping change (same as the metadata backfill). */
 export async function refreshSportDates(itemId: string): Promise<void> {
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayLocal()
   const games = await db.episodeCache.where('itemId').equals(itemId).toArray()
   let last: string | undefined
   let next: string | undefined
@@ -124,7 +125,7 @@ export async function markGameWithCatchUp(
   episode: number,
 ): Promise<void> {
   await markEpisode(itemId, season, episode, true)
-  const today = new Date().toISOString().slice(0, 10)
+  const today = todayLocal()
   const [cached, states] = await Promise.all([
     db.episodeCache.where('[itemId+season]').equals([itemId, season]).toArray(),
     db.episodeStates.where('itemId').equals(itemId).toArray(),

@@ -794,7 +794,10 @@ export async function getEpisodeImdbId(
 /** True if an air date is today or in the past (i.e. the episode has aired). */
 export function hasAired(airDate: string | null): boolean {
   if (!airDate) return false
-  // Compare by date only; TMDB air dates are YYYY-MM-DD with no time.
-  const today = new Date().toISOString().slice(0, 10)
+  // Compare by date only; TMDB air dates are YYYY-MM-DD with no time. Use the
+  // LOCAL calendar date — a UTC slice rolls over to tomorrow in the evening for
+  // time zones behind UTC, which would flag tonight's episode as already aired.
+  const n = new Date()
+  const today = `${n.getFullYear()}-${String(n.getMonth() + 1).padStart(2, '0')}-${String(n.getDate()).padStart(2, '0')}`
   return airDate <= today
 }

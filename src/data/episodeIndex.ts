@@ -11,10 +11,11 @@ import { db } from './db'
 import { cacheTraktAirstamps, getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
 import { setItemMeta, setStatus } from './library'
 import { queryClient } from './queryClient'
+import { todayLocal } from '../utils/watchedDate'
 import type { TrackedItem } from './types'
 
 const HOUR = 1000 * 60 * 60
-const today = () => new Date().toISOString().slice(0, 10)
+const today = () => todayLocal()
 
 // ---------------------------------------------------------------------------
 // Background episode indexer. Walks every tracked show and caches its episode
