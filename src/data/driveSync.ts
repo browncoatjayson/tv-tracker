@@ -352,6 +352,24 @@ export interface SyncResult {
 }
 
 /**
+ * Interactive sign-in ONLY — obtain and cache the access token (a popup is
+ * allowed, so call this from a user gesture), remember the connection, and kick
+ * off a best-effort profile fetch. Resolves as soon as we're authorized, WITHOUT
+ * doing the data round-trip.
+ *
+ * This is the fast half of a sign-in: the token handshake is the only part that
+ * needs to be on the critical path. A caller that wants a snappy login can show
+ * its "signed in and ready" UI the moment this resolves, then run `syncNow(false)`
+ * in the background — that reuses the token cached here, so there's no second
+ * popup. Throws if authorization fails (popup blocked, consent declined, etc.).
+ */
+export async function connectDrive(): Promise<void> {
+  const token = await getAccessToken(true)
+  rememberConnected(true)
+  void fetchProfile(token)
+}
+
+/**
  * Full sync: pull remote, merge with local, write the merged result to both the
  * local DB and Drive.
  * @param interactive whether a consent popup is allowed (true for a user click).

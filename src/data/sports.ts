@@ -1,7 +1,7 @@
 import { db, episodeKey } from './db'
 import { markEpisode } from './library'
 import { appConfirm } from '../utils/confirm'
-import { todayLocal } from '../utils/watchedDate'
+import { localDateOfIso, todayLocal } from '../utils/watchedDate'
 import type { CachedEpisode, TrackedItem } from './types'
 import type { EspnGame } from '../api/espn'
 
@@ -27,8 +27,12 @@ export function sportAirState(
   airDate: string | null | undefined,
   completed: boolean | undefined,
 ): SportAirState {
-  const today = todayLocal()
-  const past = !!airDate && airDate.slice(0, 10) < today
+  // A full ISO instant (from ESPN) is compared by the actual moment; a date-only
+  // string (a cached game's local date) is compared by local calendar day. Slicing
+  // a UTC instant to its date would read a 7pm game as "tomorrow" in US zones.
+  const past = !!airDate && (airDate.includes('T')
+    ? Date.parse(airDate) < Date.now()
+    : airDate.slice(0, 10) < todayLocal())
   if (completed === true) return 'aired'
   if (completed === false) return past ? 'unaired' : 'upcoming'
   return past ? 'aired' : 'upcoming' // unknown flag: classify by date alone
@@ -88,7 +92,13 @@ export async function cacheSportGames(
     season,
     episode: i + 1,
     name: g.name,
-    airDate: g.date ? g.date.slice(0, 10) : null,
+    // ESPN's event date is a full ISO *UTC* instant, so the game's calendar date
+    // is its LOCAL date — a 7pm game sits on the next day in UTC. Slicing the ISO
+    // string would store (and then show/sort) it a day late in US time zones.
+    airDate: localDateOfIso(g.date),
+    // Keep the full instant as the precise airstamp — same field TV shows use —
+    // for the start time on game cards, the Upcoming feed, and notifications.
+    airstamp: g.date || undefined,
     completed: g.completed,
   }))
   if (!rows.length) return

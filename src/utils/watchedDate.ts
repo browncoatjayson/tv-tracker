@@ -57,3 +57,16 @@ export function localDateValue(ms: number): string {
 export function todayLocal(): string {
   return localDateValue(Date.now())
 }
+
+/**
+ * The LOCAL calendar date (YYYY-MM-DD) of an ISO datetime, or null if absent /
+ * unparseable. Sports carry a precise UTC instant from ESPN; its local date is the
+ * day the viewer means by the game — a 7pm game is "today" even though in UTC the
+ * instant has already rolled into tomorrow. Slicing the ISO string instead would
+ * show (and classify) such a game on the wrong day.
+ */
+export function localDateOfIso(iso: string | null | undefined): string | null {
+  if (!iso) return null
+  const ms = Date.parse(iso)
+  return Number.isNaN(ms) ? null : localDateValue(ms)
+}

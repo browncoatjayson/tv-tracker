@@ -23,6 +23,8 @@ import {
 import type { WatchStatus } from '../data/types'
 import DetailHero from '../components/DetailHero'
 import { appConfirm } from '../utils/confirm'
+import { clockTime } from '../utils/airTime'
+import { localDateOfIso } from '../utils/watchedDate'
 
 const HOUR = 1000 * 60 * 60
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
@@ -294,7 +296,7 @@ export default function SportDetail({ itemId }: { itemId: string }) {
                     <span
                       className={`ep-card__datepill${air === 'upcoming' ? ' ep-card__datepill--upcoming' : ''}`}
                     >
-                      {g.date.slice(0, 10)}
+                      {localDateOfIso(g.date) ?? g.date.slice(0, 10)}
                     </span>
                   )}
                   <p className="ep-card__summary muted">{summaryParts.join(' · ')}</p>
@@ -306,7 +308,9 @@ export default function SportDetail({ itemId }: { itemId: string }) {
                     </span>
                   )}
                   {air === 'upcoming' ? (
-                    <span className="ep-card__upcoming">Upcoming</span>
+                    <span className="ep-card__upcoming">
+                      {clockTime(g.date) ? `Upcoming at ${clockTime(g.date)}` : 'Upcoming'}
+                    </span>
                   ) : air === 'unaired' ? (
                     <span className="ep-card__upcoming ep-card__unaired">Unaired</span>
                   ) : (

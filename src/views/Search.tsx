@@ -37,6 +37,7 @@ import { useFavoritePeople } from '../data/favorites'
 import { useFavoriteServices } from '../data/services'
 import { useCachedAirstamps } from '../hooks/useShowAirstamps'
 import { hasAiredByTime } from '../utils/airTime'
+import { localDateOfIso } from '../utils/watchedDate'
 import { pickWatchNext, type WatchNextCandidate } from '../utils/watchNext'
 import {
   ESPN_LEAGUES,
@@ -98,8 +99,6 @@ export default function Search() {
   const [discoverRun, setDiscoverRun] = useState('')
   const [discoverPages, setDiscoverPages] = useState(1)
   const [discoverVisible, setDiscoverVisible] = useState(PAGE)
-  // Today (YYYY-MM-DD), computed once — lazy init keeps Date out of render.
-  const [today] = useState(() => new Date().toISOString().slice(0, 10))
 
   // Prefill from a ?q= link (e.g. the cast links on the detail page).
   const [searchParams] = useSearchParams()
@@ -169,7 +168,9 @@ export default function Search() {
   if (gameBrowse) {
     for (const q of scoreboardQueries) {
       for (const g of q.data ?? []) {
-        const aired = g.completed || g.date.slice(0, 10) < today
+        // Time-precise: ESPN's date is a full UTC instant, so compare the moment
+        // (a 7pm game isn't "aired" at 6pm, and its UTC date is already tomorrow).
+        const aired = g.completed || Date.parse(g.date) < Date.now()
         // released: filter (single pick restricts; both/none = all).
         if (parsed.released.length === 1) {
           if (parsed.released[0] === 'aired' && !aired) continue
@@ -1089,7 +1090,7 @@ function SportGameResults({
       <ul className="result-list">
         {games.map((g) => {
           const url = espnGameUrl(g.leagueKey, g.id, g.date)
-          const when = g.date.slice(0, 10)
+          const when = localDateOfIso(g.date) ?? g.date.slice(0, 10)
           const aired = g.completed
           const score = aired && g.away?.score != null && g.home?.score != null
             ? ` · ${g.away.abbrev ?? 'Away'} ${g.away.score}–${g.home.score} ${g.home.abbrev ?? 'Home'}`

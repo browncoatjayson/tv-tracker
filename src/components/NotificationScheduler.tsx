@@ -3,6 +3,7 @@ import { useQueries } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../data/db'
 import { getTvmazeEpisodesByImdb } from '../api/tvmaze'
+import { getEspnRaceSchedule, getEspnTeamSchedule, leagueByKey } from '../api/espn'
 import {
   buildNotifyGroups,
   isNotifyEnabled,
@@ -44,6 +45,30 @@ export default function NotificationScheduler() {
         }))
       : [],
   })
+
+  // Sports: a tracked team's games carry ESPN kickoff times. Fetch the current
+  // season's schedule live (like TVmaze above) so a notification fires for an
+  // upcoming game even if the team's detail page hasn't been opened recently.
+  const sportTeams = (items ?? []).filter(
+    (i) => i.status === 'watching' && i.mediaType === 'sport' && i.sport?.league,
+  )
+  const sportSeason = new Date().getFullYear()
+  const sportSchedules = useQueries({
+    queries: enabled
+      ? sportTeams.map((s) => {
+          const lg = leagueByKey(s.sport?.league)
+          return {
+            queryKey: ['espn-notify', s.sport?.league, s.sport?.teamId, sportSeason],
+            queryFn: () =>
+              lg?.kind === 'races'
+                ? getEspnRaceSchedule(s.sport!.league, sportSeason)
+                : getEspnTeamSchedule(s.sport!.league, s.sport!.teamId as string, sportSeason),
+            enabled: !!lg,
+            staleTime: 6 * 60 * 60 * 1000,
+          }
+        })
+      : [],
+  })
   const states = useLiveQuery<EpisodeState[]>(
     () => (enabled ? db.episodeStates.toArray() : Promise.resolve([])),
     [enabled],
@@ -75,7 +100,32 @@ export default function NotificationScheduler() {
     }
   })
 
-  const ready = enabled && items !== undefined && states !== undefined && !tvmaze.some((q) => q.isLoading)
+  // Games: the schedule is date-ordered, so game N is index N (matching how the
+  // cache/episodeStates number them — see cacheSportGames), which keeps the
+  // watched/skipped `seen` check aligned.
+  sportTeams.forEach((s, i) => {
+    const games = sportSchedules[i]?.data?.games ?? []
+    games.forEach((g, gi) => {
+      if (!g.date) return
+      const epNo = gi + 1
+      if (seen.has(`${s.id}:${sportSeason}:${epNo}`)) return
+      entries.push({
+        showTitle: s.title,
+        season: sportSeason,
+        episode: epNo,
+        epName: g.name,
+        airstamp: g.date,
+        kind: 'game',
+      })
+    })
+  })
+
+  const ready =
+    enabled &&
+    items !== undefined &&
+    states !== undefined &&
+    !tvmaze.some((q) => q.isLoading) &&
+    !sportSchedules.some((q) => q.isLoading)
   // Signature so the effect only re-syncs when the upcoming set actually changes.
   const sig = entries
     .map((e) => `${e.showTitle}:${e.season}:${e.episode}:${e.airstamp}`)

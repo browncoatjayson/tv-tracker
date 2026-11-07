@@ -45,6 +45,9 @@ interface FeedEntry {
   where?: string
   /** Local air time (from TVmaze), e.g. "9:00 PM". */
   time?: string
+  /** Precise start instant (ms epoch) when known — used to order same-day entries
+   *  by time. Undefined for date-only entries (e.g. a movie release). */
+  at?: number
   /** For genre/service/actor/status/length filtering. */
   genres?: string[]
   providers?: string[]
@@ -160,12 +163,6 @@ export default function Upcoming() {
   ): string | undefined =>
     cachedStamp(itemId, season, episode) ??
     (imdbId ? airstampByImdb.get(imdbId)?.get(`${season}x${episode}`) : undefined)
-  const airTime = (
-    itemId: string,
-    imdbId: string | undefined,
-    season: number,
-    episode: number,
-  ) => formatAirTime(airStamp(itemId, imdbId, season, episode))
 
   // Watched lookups. Skipped episodes are also "seen" — they drop out of the feed.
   const seenEpisodes = new Set(
@@ -200,6 +197,7 @@ export default function Upcoming() {
       const key = `${ep.season_number}:${ep.episode_number}`
       if (airedKeys.has(key) || seenEpisodes.has(`${s.id}:${key}`)) return
       airedKeys.add(key)
+      const stamp = airStamp(s.id, s.imdbId, ep.season_number, ep.episode_number)
       aired.push({
         itemId: s.id,
         title: s.title,
@@ -213,7 +211,8 @@ export default function Upcoming() {
         cast,
         ended,
         runtime,
-        time: airTime(s.id, s.imdbId, ep.season_number, ep.episode_number),
+        time: formatAirTime(stamp),
+        at: stamp ? Date.parse(stamp) : undefined,
         aired: true,
         season: ep.season_number,
         episode: ep.episode_number,
@@ -242,7 +241,8 @@ export default function Upcoming() {
         cast,
         ended,
         runtime,
-        time: airTime(s.id, s.imdbId, next.season_number, next.episode_number),
+        time: formatAirTime(nextStamp),
+        at: nextStamp ? Date.parse(nextStamp) : undefined,
         aired: false,
       })
     } else {
@@ -312,10 +312,16 @@ export default function Upcoming() {
       logoUrl: item.sport?.logo,
       team: item.sport?.teamName,
       where: league?.label,
+      // ESPN's kickoff time, cached as the precise airstamp (same field shows use).
+      time: formatAirTime(g.airstamp),
+      at: g.airstamp ? Date.parse(g.airstamp) : undefined,
       season: g.season,
       episode: g.episode,
     }
-    if (g.airDate >= today) {
+    // Prefer the precise kickoff time: a game that has already started today
+    // belongs in "recently aired", not still-upcoming. Falls back to the local
+    // date compare when no airstamp is cached (older rows).
+    if (!hasAiredByTime(g.airDate, g.airstamp)) {
       upcoming.push({ ...base, aired: false })
     } else if (
       inAiredWindow(g.airDate) &&
@@ -325,8 +331,14 @@ export default function Upcoming() {
     }
   }
 
-  upcoming.sort((a, b) => a.date.localeCompare(b.date))
-  aired.sort((a, b) => a.date.localeCompare(b.date)) // oldest first, newest nearest "This week"
+  // Order by day, then by the precise start time within a day (so a Sunday's games
+  // and episodes read 2:00 → 5:30 → 7:00 → 9:00). Entries with no known time (e.g.
+  // a movie release) fall back to the day's start, sorting ahead of timed ones.
+  const startOf = (e: FeedEntry) => e.at ?? Date.parse(`${e.date}T00:00:00`)
+  const byDateTime = (a: FeedEntry, b: FeedEntry) =>
+    a.date.localeCompare(b.date) || startOf(a) - startOf(b)
+  upcoming.sort(byDateTime)
+  aired.sort(byDateTime) // oldest first, newest nearest "This week"
 
   // Filter, scoped to this list. Supports name / episode name plus genre:/service:.
   // Our list isn't date-capped, so a match shows however far out it is.

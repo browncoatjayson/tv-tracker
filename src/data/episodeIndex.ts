@@ -7,9 +7,11 @@ import {
   runtimeOf,
   watchNames,
 } from '../api/tmdb'
+import { getEspnRaceSchedule, getEspnTeamSchedule, leagueByKey } from '../api/espn'
 import { db } from './db'
 import { cacheTraktAirstamps, getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
 import { setItemMeta, setStatus } from './library'
+import { cacheSportGames, parseSportId } from './sports'
 import { queryClient } from './queryClient'
 import { todayLocal } from '../utils/watchedDate'
 import type { TrackedItem } from './types'
@@ -83,10 +85,43 @@ export function useIndexProgress(): IndexState {
   return useSyncExternalStore(subscribe, () => state, () => state)
 }
 
-/** Index one title: backfill genres/providers, and (for shows) cache episodes. */
+/**
+ * Refresh a tracked team's / series' current-season games from ESPN into the
+ * episode cache (and warm the shared schedule query the detail page reads), so the
+ * Library and Upcoming feeds stay current without opening each team's page. Uses
+ * the same query key + fetchers as SportDetail, so it also fixes stale rows written
+ * by an older app version (the games are re-cached through the current logic).
+ * Best-effort: a failed fetch just skips this pass and retries next launch.
+ */
+async function indexSport(item: TrackedItem): Promise<void> {
+  const parsed = parseSportId(item.id)
+  const lg = leagueByKey(parsed?.league)
+  if (!parsed || !lg) return
+  const season = new Date().getFullYear()
+  const isRace = lg.kind === 'races'
+  try {
+    const schedule = await queryClient.fetchQuery({
+      queryKey: ['espn-schedule', parsed.league, parsed.teamId, season],
+      queryFn: () =>
+        isRace
+          ? getEspnRaceSchedule(parsed.league, season)
+          : getEspnTeamSchedule(parsed.league, parsed.teamId, season),
+      staleTime: HOUR,
+    })
+    if (schedule.games.length) await cacheSportGames(item.id, season, schedule.games)
+  } catch {
+    // ESPN unavailable — keep the existing cache; the next pass retries.
+  }
+}
+
+/** Index one title: backfill genres/providers, and cache episodes (shows) or
+ *  games (sports). */
 async function indexItem(item: TrackedItem): Promise<void> {
-  // Sports carry no TMDB metadata — games are fetched from ESPN on the detail page.
-  if (item.mediaType === 'sport') return
+  // Sports carry no TMDB metadata — refresh their games from ESPN instead.
+  if (item.mediaType === 'sport') {
+    await indexSport(item)
+    return
+  }
   if (item.mediaType === 'movie') {
     // Fetch through the shared query cache (same key the detail/Upcoming views
     // use) so indexing also warms them — not just the Dexie episode cache.
@@ -205,8 +240,13 @@ export async function startIndexing(
         const item = todo[cursor++]
         try {
           await indexItem(item)
-          done.add(item.id)
-          saveDone(done)
+          // Sports aren't marked "done": their schedules/scores change, so they
+          // refresh on every pass (and re-cache through current logic), while
+          // shows/movies are cached once and then skipped.
+          if (item.mediaType !== 'sport') {
+            done.add(item.id)
+            saveDone(done)
+          }
           // Clear a stale failure flag now that it succeeded.
           if (item.indexFailed) {
             try {

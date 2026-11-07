@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import ToastOverlay from './ToastOverlay'
-import { recordSynced, syncNow } from '../data/driveSync'
+import { connectDrive, recordSynced, syncNow } from '../data/driveSync'
 import { awardBadges, badgeById } from '../data/badges'
 import { showBadgeToast } from '../utils/badgeToast'
 
@@ -24,15 +24,28 @@ export default function DriveReauthPrompt({ onDone }: { onDone: () => void }) {
     setBusy(true)
     setError(null)
     try {
-      const r = await syncNow(true) // user gesture → popup allowed, not blocked
-      recordSynced(r.syncedAt)
+      // Only the auth handshake is on the critical path. The library is already on
+      // screen (this prompt only shows when there's a non-empty local library), so
+      // the moment we're authorized the user is "signed in and ready" — celebrate
+      // and dismiss now instead of waiting on the full Drive round-trip.
+      await connectDrive() // user gesture → popup allowed, not blocked
       // "Welcome Back!" doubles as a "signed in and ready" notification each time
-      // you log in for the day. It's re-awarded here (and deleted at launch when a
-      // new session has no token — see Layout) and never synced to the backup.
-      void awardBadges(['welcome-back'])
+      // you log in for the day. Show it the instant we're authorized — that's the
+      // snappy feedback — but PERSIST the badge only after the background sync
+      // (below) finishes: its replace-apply clears the badges table, so awarding
+      // before it ran would just get wiped. (It's deleted at launch when a new
+      // session has no token — see Layout — and never synced to the backup.)
       const b = badgeById('welcome-back')
       if (b) showBadgeToast(b)
       onDone()
+      // Pull / merge / apply / upload (+ episode cache) in the background. It
+      // reuses the token just cached by connectDrive(), so no second popup; the
+      // library refreshes via liveQuery when the merge lands, and recordSynced
+      // updates the "In the Cloud" / last-synced labels when it finishes.
+      void syncNow(false)
+        .then((r) => recordSynced(r.syncedAt))
+        .catch(() => {})
+        .finally(() => void awardBadges(['welcome-back']))
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed.')
       setBusy(false)

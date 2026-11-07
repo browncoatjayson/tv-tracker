@@ -68,7 +68,7 @@ export async function requestNotifyPermission(): Promise<NotifyPermission> {
 
 // --- Grouping ---------------------------------------------------------------
 
-/** One upcoming episode that could be notified about. */
+/** One upcoming episode (or game) that could be notified about. */
 export interface AiringEntry {
   showTitle: string
   season: number
@@ -76,6 +76,9 @@ export interface AiringEntry {
   epName?: string
   /** Full ISO datetime with timezone. */
   airstamp: string
+  /** 'game' formats as "Team · matchup" (no SxEx) and titles the notification for
+   *  sports; omitted/'episode' keeps the show wording. */
+  kind?: 'episode' | 'game'
 }
 
 /** A grouped notification: all shows airing at one time. */
@@ -104,14 +107,26 @@ export function buildNotifyGroups(
   for (const [airstamp, list] of byStamp) {
     const time = compactAirTime(airstamp) ?? ''
     list.sort((a, b) => a.showTitle.localeCompare(b.showTitle))
-    const lines = list.map(
-      (e) =>
-        `• ${e.showTitle} S${e.season}E${e.episode}${e.epName ? ` · ${e.epName}` : ''}`,
+    const lines = list.map((e) =>
+      // Games read as "Team · matchup" (the SxEx index is meaningless for sports);
+      // episodes keep "Show SxEx · title".
+      e.kind === 'game'
+        ? `• ${e.showTitle}${e.epName ? ` · ${e.epName}` : ''}`
+        : `• ${e.showTitle} S${e.season}E${e.episode}${e.epName ? ` · ${e.epName}` : ''}`,
     )
+    // Title reflects what's in the group: episodes, games, or a mix.
+    const hasGame = list.some((e) => e.kind === 'game')
+    const hasEp = list.some((e) => e.kind !== 'game')
+    const title =
+      hasGame && hasEp
+        ? 'Starting soon'
+        : hasGame
+          ? 'Games starting soon'
+          : 'New episodes starting soon'
     groups.push({
       tag: `airing-${airstamp}`,
       fireAt: Date.parse(airstamp) - LEAD_MS,
-      title: 'New episodes starting soon',
+      title,
       body: `At ${time}:\n${lines.join('\n')}`,
     })
   }
