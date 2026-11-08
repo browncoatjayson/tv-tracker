@@ -209,6 +209,18 @@ async function indexItem(item: TrackedItem): Promise<void> {
 }
 
 let running = false
+let cancelled = false
+
+/**
+ * Request that an in-progress index stop. The workers check between items, so any
+ * in-flight fetch finishes but no new titles start. Resumable: titles not yet
+ * completed aren't marked done, so a later startIndexing() picks them up. Also
+ * used before an account reset so a running index can't keep writing rows into
+ * tables that are being cleared. No-op when nothing is running.
+ */
+export function cancelIndexing(): void {
+  if (running) cancelled = true
+}
 
 /**
  * Start (or resume) indexing. Safe to call repeatedly; no-ops while running.
@@ -222,6 +234,7 @@ export async function startIndexing(
   const { full = false, concurrency = 3 } = opts
   if (running) return
   running = true
+  cancelled = false
   try {
     const done = loadDone()
     const allItems = await db.trackedItems.toArray()
@@ -247,6 +260,7 @@ export async function startIndexing(
     let cursor = 0
     const worker = async () => {
       while (cursor < todo.length) {
+        if (cancelled) break
         const item = todo[cursor++]
         try {
           await indexItem(item)
@@ -280,7 +294,13 @@ export async function startIndexing(
     }
 
     await Promise.all(Array.from({ length: Math.min(concurrency, todo.length) }, worker))
-    setState({ status: 'done', done: all.length, total: all.length })
+    // A cancelled run returns to idle and is resumable (unfinished titles weren't
+    // marked done); only a full pass reports "done".
+    if (cancelled) {
+      setState({ status: 'idle', done: doneCount, total: all.length })
+    } else {
+      setState({ status: 'done', done: all.length, total: all.length })
+    }
   } finally {
     running = false
   }

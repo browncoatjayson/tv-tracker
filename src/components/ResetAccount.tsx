@@ -2,6 +2,8 @@ import { useState } from 'react'
 import { db } from '../data/db'
 import { downloadBackup } from '../data/exportImport'
 import { deleteRemoteBackup, disconnect, wasConnected } from '../data/driveSync'
+import { cancelIndexing } from '../data/episodeIndex'
+import { beginBadgeSuppression, endBadgeSuppression } from '../hooks/useBadgeWatcher'
 
 // Must match the key DriveSync uses for its "last synced" timestamp.
 const LAST_SYNCED_KEY = 'tvtracker.lastSynced'
@@ -24,6 +26,12 @@ export default function ResetAccount() {
   async function doReset() {
     setBusy(true)
     setError(null)
+    // Stop any in-flight background index first, so it can't keep writing rows
+    // into the tables we're about to clear (the "zombie index" after a reset).
+    cancelIndexing()
+    // Silence badge toasts while the tables are cleared + the watcher re-evaluates
+    // the emptied state, so a reset doesn't flash a set of already-earned badges.
+    beginBadgeSuppression()
     try {
       // Delete the cloud copy FIRST — if that fails (or sign-in is cancelled) we
       // stop before wiping local, so we never leave local empty but Drive intact
@@ -84,6 +92,7 @@ export default function ResetAccount() {
       )
     } finally {
       setBusy(false)
+      endBadgeSuppression()
     }
   }
 
@@ -105,7 +114,7 @@ export default function ResetAccount() {
             {done ? (
               <>
                 <h3>Done</h3>
-                <p className="badge badge--ok">{done}</p>
+                <p style={{ color: 'var(--danger)' }}>{done}</p>
                 <div className="modal__actions">
                   <button className="btn" onClick={close}>
                     Close

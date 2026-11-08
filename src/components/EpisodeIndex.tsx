@@ -1,4 +1,4 @@
-import { startIndexing, useIndexProgress } from '../data/episodeIndex'
+import { cancelIndexing, startIndexing, useIndexProgress } from '../data/episodeIndex'
 
 export default function EpisodeIndex() {
   const { status, done, total } = useIndexProgress()
@@ -15,9 +15,20 @@ export default function EpisodeIndex() {
         passes.
       </p>
 
-      <button className="btn" disabled={running} onClick={() => void startIndexing({ full: true })}>
-        {running ? `Indexing… ${done}/${total}` : 'Build / update index'}
-      </button>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        <button
+          className="btn"
+          disabled={running}
+          onClick={() => void startIndexing({ full: true })}
+        >
+          {running ? `Indexing… ${done}/${total}` : 'Build / update index'}
+        </button>
+        {running && (
+          <button className="btn btn--ghost" onClick={() => cancelIndexing()}>
+            Stop
+          </button>
+        )}
+      </div>
 
       {running && (
         <div className="progress-bar" style={{ marginTop: 10 }}>

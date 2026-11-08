@@ -30,18 +30,41 @@ function setPrimed(): void {
   }
 }
 
-/**
- * Clear the "primed" flag so the next badge evaluation silently adopts whatever's
- * already met (no toasts). Call this right before a restore (Welcome sign-in /
- * import) so previously-earned badges that come back in the backup — e.g.
- * "Signed In" — don't re-celebrate; only the explicit "Welcome Back!" toasts.
- */
-export function resetBadgePriming(): void {
-  try {
-    localStorage.removeItem(PRIMED_KEY)
-  } catch {
-    // ignore
+// --- Restore / reset toast suppression ---------------------------------------
+// A Drive restore, backup import, or account reset writes to Dexie in several
+// steps, so the watcher below re-evaluates many times as data streams in. The old
+// one-shot "clear primed" trick only silenced the FIRST of those evaluations, so
+// every one after it toasted the newly-qualified badges — the "4, then 6, then 8"
+// flood on sign-in, and the stray set on reset. Instead we bracket the whole
+// operation: while suppression is active, met badges are adopted silently, and a
+// short tail after endBadgeSuppression() covers Dexie's async live-query callbacks
+// that fire just after the final write. "Welcome Back!" is unaffected — the
+// restore flow toasts it explicitly, not through this watcher.
+let suppressed = false
+let suppressTimer: ReturnType<typeof setTimeout> | null = null
+
+/** Start silently adopting earned badges (no toasts). Pair with
+ *  endBadgeSuppression() in a finally, around a bulk restore/import/reset. */
+export function beginBadgeSuppression(): void {
+  suppressed = true
+  if (suppressTimer) {
+    clearTimeout(suppressTimer)
+    suppressTimer = null
   }
+}
+
+/** Stop suppressing after a short tail, long enough for the live-query callbacks
+ *  from the operation's last write to land (and be adopted silently). */
+export function endBadgeSuppression(tailMs = 2500): void {
+  if (suppressTimer) clearTimeout(suppressTimer)
+  suppressTimer = setTimeout(() => {
+    suppressed = false
+    suppressTimer = null
+  }, tailMs)
+}
+
+function isSuppressed(): boolean {
+  return suppressed
 }
 
 /**
@@ -92,10 +115,11 @@ export function useBadgeWatcher(): void {
     const have = new Set(earned.map((b) => b.id))
     const newly = [...met].filter((id) => !have.has(id) && !toastedRef.current.has(id))
 
-    // First-ever evaluation on this device: adopt whatever's already earned
-    // silently (no flood), and mark primed even if nothing qualified yet — so a
-    // brand-new user's *next* badge is the first one that actually celebrates.
-    if (!isPrimed()) {
+    // Adopt silently (no toast) on the first-ever evaluation on this device (a
+    // user adopting the feature with a full library) OR while a restore/import/
+    // reset is in progress. Either way the badges are still recorded, so they
+    // won't re-celebrate once normal evaluation resumes.
+    if (!isPrimed() || isSuppressed()) {
       setPrimed()
       if (newly.length) {
         newly.forEach((id) => toastedRef.current.add(id))

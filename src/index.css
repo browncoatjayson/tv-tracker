@@ -3321,14 +3321,19 @@ input[type='file'] {
   display: flex;
   flex-direction: column;
 }
-.tl-list > li + li .tl-row {
+.tl-li {
+  display: flex;
+  align-items: center;
+}
+.tl-list > li + li {
   border-top: 1px solid var(--surface-2);
 }
 .tl-row {
   display: flex;
   align-items: center;
   gap: 12px;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
   padding: 9px 2px;
   text-align: left;
   text-decoration: none;
@@ -3341,6 +3346,9 @@ input[type='file'] {
 }
 .tl-row:hover {
   background: var(--surface-2);
+  /* The row highlight is enough — skip the global a:hover underline, which
+     just makes the title + subtitle harder to read. */
+  text-decoration: none;
 }
 .tl-row__img {
   width: 38px;
@@ -3386,6 +3394,56 @@ input[type='file'] {
   font-size: 0.75rem;
   white-space: nowrap;
   flex-shrink: 0;
+}
+/* Right-side cluster: watched-date editor + the date label (list mode). */
+.tl-row__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  padding-right: 2px;
+}
+.tl-row__cal-wrap {
+  position: relative;
+  display: inline-flex;
+}
+.tl-row__cal {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 4px;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 6px;
+}
+.tl-row__cal:hover {
+  color: var(--accent);
+  background: var(--surface-2);
+}
+/* List mode: the button also carries the date label, for a bigger click target. */
+.tl-row__cal--labeled {
+  padding: 4px 7px;
+}
+.tl-row__cal-date {
+  font-size: 0.75rem;
+  white-space: nowrap;
+}
+/* The real date input sits (invisibly) under the button so the native picker
+   anchors to it; the button is what the user clicks. */
+.tl-row__dateinput {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
 }
 .tl-more {
   display: block;

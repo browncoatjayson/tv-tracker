@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { db } from '../data/db'
 import { badgeById } from '../data/badges'
 import { markFlag } from '../data/appFlags'
+import { setEpisodeWatchedDate, setMovieWatchedDate } from '../data/library'
 import { reviewBadgeToast } from '../utils/badgeToast'
 import {
   buildTimeline,
@@ -243,6 +244,93 @@ function TimelineHeader({
   )
 }
 
+/**
+ * Apply a new watched day (YYYY-MM-DD) to a timeline entry, reusing the existing
+ * library editors so stats/sync stay consistent (episodes/games -> episodeStates,
+ * movies -> trackedItems; the append-only watch log is left as-is, same as the
+ * detail-page date editors). The original time-of-day is preserved — only the
+ * calendar date moves — so intra-day ordering is kept.
+ */
+async function setWatchedDay(e: TimelineEntry, day: string): Promise<void> {
+  const d = new Date(e.at)
+  const [y, m, dd] = day.split('-').map(Number)
+  d.setFullYear(y, m - 1, dd)
+  const ts = d.getTime()
+  if (e.kind === 'movie' && e.itemId) {
+    await setMovieWatchedDate(e.itemId, ts, 'day')
+  } else if (
+    (e.kind === 'episode' || e.kind === 'game') &&
+    e.itemId &&
+    e.season != null &&
+    e.episode != null
+  ) {
+    await setEpisodeWatchedDate(e.itemId, e.season, e.episode, ts, 'day')
+  }
+}
+
+/** Calendar button + hidden native date input to change a row's watched date. */
+function WatchedDateEditor({ e, dateLabel }: { e: TimelineEntry; dateLabel?: string }) {
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function openPicker() {
+    const el = inputRef.current
+    if (!el) return
+    // showPicker() reliably opens the native date popup from a custom button;
+    // fall back to focus+click on engines that don't support it.
+    if (typeof el.showPicker === 'function') {
+      try {
+        el.showPicker()
+        return
+      } catch {
+        // some engines refuse outside a trusted gesture — fall through
+      }
+    }
+    el.focus()
+    el.click()
+  }
+
+  return (
+    <span className="tl-row__cal-wrap">
+      <button
+        type="button"
+        className={`tl-row__cal${dateLabel ? ' tl-row__cal--labeled' : ''}`}
+        title="Change watched date"
+        aria-label="Change watched date"
+        onClick={openPicker}
+      >
+        <svg
+          width="15"
+          height="15"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <rect x="3" y="4" width="18" height="18" rx="2" />
+          <line x1="16" y1="2" x2="16" y2="6" />
+          <line x1="8" y1="2" x2="8" y2="6" />
+          <line x1="3" y1="10" x2="21" y2="10" />
+        </svg>
+        {dateLabel && <span className="tl-row__cal-date">{dateLabel}</span>}
+      </button>
+      <input
+        ref={inputRef}
+        type="date"
+        className="tl-row__dateinput"
+        defaultValue={e.date}
+        onChange={(ev) => {
+          if (ev.target.value) void setWatchedDay(e, ev.target.value)
+        }}
+        aria-label="Watched date"
+        tabIndex={-1}
+      />
+    </span>
+  )
+}
+
 function EntryRow({ e, showDate }: { e: TimelineEntry; showDate?: boolean }) {
   const art = e.poster ? (
     <img
@@ -268,29 +356,47 @@ function EntryRow({ e, showDate }: { e: TimelineEntry; showDate?: boolean }) {
           </span>
         )}
       </span>
-      {showDate && <span className="tl-row__date muted">{shortDay(e.date)}</span>}
     </>
   )
 
-  if (e.kind === 'badge') {
-    const def = badgeById(e.badgeId ?? '')
-    return (
-      <li>
-        <button
-          className="tl-row tl-row--badge"
-          title="See how you earned this badge"
-          onClick={() => def && reviewBadgeToast(def, e.at)}
-        >
-          {body}
-        </button>
-      </li>
-    )
-  }
-  return (
-    <li>
+  // Watched items (episodes, games, movies) can have their date corrected here;
+  // badges record when they were earned, so they aren't editable.
+  const editable = e.kind !== 'badge'
+
+  const row =
+    e.kind === 'badge' ? (
+      <button
+        className="tl-row tl-row--badge"
+        title="See how you earned this badge"
+        onClick={() => {
+          const def = badgeById(e.badgeId ?? '')
+          if (def) reviewBadgeToast(def, e.at)
+        }}
+      >
+        {body}
+      </button>
+    ) : (
       <Link className="tl-row" to={`/item/${encodeURIComponent(e.itemId ?? '')}`}>
         {body}
       </Link>
+    )
+
+  return (
+    <li className="tl-li">
+      {row}
+      {(editable || showDate) && (
+        <div className="tl-row__meta">
+          {editable ? (
+            <WatchedDateEditor
+              key={e.date}
+              e={e}
+              dateLabel={showDate ? shortDay(e.date) : undefined}
+            />
+          ) : (
+            showDate && <span className="tl-row__date muted">{shortDay(e.date)}</span>
+          )}
+        </div>
+      )}
     </li>
   )
 }

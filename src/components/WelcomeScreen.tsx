@@ -5,7 +5,7 @@ import { importBackup } from '../data/exportImport'
 import { awardBadges, badgeById } from '../data/badges'
 import { showBadgeToast } from '../utils/badgeToast'
 import { markFlag } from '../data/appFlags'
-import { resetBadgePriming } from '../hooks/useBadgeWatcher'
+import { beginBadgeSuppression, endBadgeSuppression } from '../hooks/useBadgeWatcher'
 
 /**
  * First-run / empty-library welcome. Explains the app and, for returning users
@@ -36,7 +36,7 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
     setBusy('drive')
     setError(null)
     // Adopt restored badges silently — only "Welcome Back!" should celebrate.
-    resetBadgePriming()
+    beginBadgeSuppression()
     try {
       const r = await syncNow(true)
       recordSynced(r.syncedAt)
@@ -45,6 +45,8 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed.')
       setBusy(null)
+    } finally {
+      endBadgeSuppression()
     }
   }
 
@@ -52,7 +54,7 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
     setBusy('import')
     setError(null)
     // Adopt restored badges silently — only "Welcome Back!" should celebrate.
-    resetBadgePriming()
+    beginBadgeSuppression()
     try {
       const counts = await importBackup(await file.text(), 'merge')
       celebrateRestore(counts.items)
@@ -62,6 +64,7 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
       setBusy(null)
     } finally {
       if (fileInput.current) fileInput.current.value = ''
+      endBadgeSuppression()
     }
   }
 
