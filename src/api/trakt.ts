@@ -13,6 +13,10 @@ const AUTHORIZE_URL = 'https://trakt.tv/oauth/authorize'
 // .trim() guards against a stray newline/space in the .env value or repo secret
 // (a trailing newline makes Trakt reject the authorize request as "invalid client").
 const CLIENT_ID = import.meta.env.VITE_TRAKT_CLIENT_ID?.trim()
+// Optional Trakt proxy worker (worker-trakt): when set, public reads go through it
+// as simple GETs (no custom headers → no CORS preflight) and are edge-cached. A
+// trailing slash is tolerated. Authed calls always go direct (see traktFetch).
+const PROXY = import.meta.env.VITE_TRAKT_PROXY?.trim().replace(/\/+$/, '') || undefined
 const TOKEN_KEY = 'tvtracker.trakt'
 const PKCE_KEY = 'tvtracker.trakt.pkce'
 const LAST_SYNC_KEY = 'tvtracker.traktLastSync'
@@ -45,17 +49,69 @@ function baseHeaders(accessToken?: string): Record<string, string> {
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
+// --- Client-side request pacing + 429 handling ------------------------------
+// Trakt's public API caps GETs hard (~1000 / 5 min ≈ 3.3/s), and a cold full
+// index fires ~2 public reads per show (TMDB->Trakt id lookup + /seasons air
+// times) — ~2000 GETs against that cap, so the Trakt phase is floor-bound at
+// ~10-13 min no matter what. Two lessons from benchmarking shaped this:
+//
+//  1. An ADAPTIVE (AIMD) limiter is the wrong tool for a hard sliding-window
+//     cap. It can only find the ceiling by probing INTO it, so it oscillates:
+//     speed up -> 429 -> back off -> speed up -> 429. Each cycle costs a 429 and
+//     a retry sleep, and the gentler the tuning the MORE it thrashes. A run with
+//     it took 2+ hours; the same work with NO proactive limiter finished in
+//     ~12 min (3 workers + network latency already pace near the sustainable
+//     rate). So we don't probe — we hold a FLAT spacing a comfortable margin
+//     under the cap and never move it.
+//  2. Honouring Trakt's `Retry-After` verbatim is a trap: it can be tens to
+//     hundreds of seconds (the remaining window), and one of them freezes a
+//     worker for that whole time — the "big gaps" in a stalled index. We cap the
+//     wait low: a short retry, then let the caller fall back to TVmaze, rather
+//     than idle for minutes.
+//
+// One global slot reservation (shared across the indexer's workers) spaces calls
+// at VITE_TRAKT_MIN_INTERVAL_MS (default 400ms ≈ 150/min, ~25% under the cap).
+// Cold runs stay steady at ~12-15 min with few, clean, retriable 429s; warm runs
+// are far faster, since the proxy worker serves most of these from its edge cache.
+const MIN_INTERVAL_MS = Number(import.meta.env.VITE_TRAKT_MIN_INTERVAL_MS) || 400
+// Hard cap on how long a single 429 may pause a worker (Trakt's Retry-After can
+// be huge; we'd rather retry soon or fall back to TVmaze than idle for minutes).
+const MAX_RETRY_WAIT_MS = 8000
+let nextSlot = 0
+async function rateLimit(): Promise<void> {
+  const now = Date.now()
+  const slot = Math.max(now, nextSlot)
+  nextSlot = slot + MIN_INTERVAL_MS
+  const wait = slot - now
+  if (wait > 0) await sleep(wait)
+}
+
 /**
- * fetch() that retries Trakt's rate-limit (429) responses, honouring Retry-After.
- * A full index fires many public read calls at once (two per show), so without
- * this they silently fail under the limit and air times never get cached.
+ * fetch() for Trakt public reads: paces requests to a flat spacing below the
+ * rate cap, routes through the proxy worker when configured (simple GET → no
+ * CORS preflight, edge-cached), and retries 429s a few times with a short,
+ * capped backoff before giving up (callers then fall back to TVmaze). It never
+ * widens the pace on a 429 — see the note above on why probing a hard window
+ * only makes the run slower.
  */
 async function traktFetch(url: string, init?: RequestInit, retries = 3): Promise<Response> {
+  // Route non-authed public reads through the proxy worker (simple GET → no CORS
+  // preflight; the worker adds the key/version and edge-caches). Authed calls (an
+  // Authorization header) stay direct — they're user-specific and must never touch
+  // the shared edge cache.
+  let target = url
+  let opts = init
+  if (PROXY && url.startsWith(BASE) && !new Headers(init?.headers).has('Authorization')) {
+    target = PROXY + url.slice(BASE.length)
+    opts = { ...init, headers: { accept: 'application/json' } }
+  }
   for (let attempt = 0; ; attempt++) {
-    const res = await fetch(url, init)
+    await rateLimit()
+    const res = await fetch(target, opts)
     if (res.status === 429 && attempt < retries) {
       const retryAfter = Number(res.headers.get('Retry-After'))
-      await sleep(retryAfter > 0 ? retryAfter * 1000 : Math.min(4000, 500 * 2 ** attempt))
+      const wait = retryAfter > 0 ? retryAfter * 1000 : 500 * 2 ** attempt
+      await sleep(Math.min(MAX_RETRY_WAIT_MS, wait))
       continue
     }
     return res

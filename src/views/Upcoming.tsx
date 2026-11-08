@@ -26,7 +26,7 @@ import { markMovieWatched, setItemMeta } from '../data/library'
 import { markGameWithCatchUp } from '../data/sports'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
 import { useTrackedItems } from '../hooks/useTrackedItems'
-import type { MediaType } from '../data/types'
+import type { MediaType, TrackedItem } from '../data/types'
 import FilterBar from '../components/FilterBar'
 import UpcomingCalendar from '../components/UpcomingCalendar'
 
@@ -120,15 +120,38 @@ export default function Upcoming() {
   const shows = tracked.filter((i) => i.mediaType === 'show')
   const movies = tracked.filter((i) => i.mediaType === 'movie')
 
+  const today = todayLocal()
+  const windowStart = localDateValue(Date.now() - AIRED_WINDOW_DAYS * 86400000)
+  const inAiredWindow = (date: string) => date >= windowStart && date <= today
+
+  // Gate the per-item detail fan-out to titles that can actually contribute a feed
+  // entry — but only for MOVIES. A movie released long ago with no future date can
+  // never sprout new episodes, so skipping its detail changes no output here and
+  // just trims the fan-out (this was ~1,000 `['movie']` queries on this page).
+  //
+  // Shows are deliberately NOT gated. A "completed" show can be revived — cancelled,
+  // then renewed a season later — and TMDB only reveals that through the series
+  // detail itself (status flips to "Returning Series", next_episode_to_air fills in).
+  // If we skipped settled shows we'd never re-fetch them, so we'd never learn about
+  // the renewal and they'd be stuck out of Upcoming permanently. Fetching every
+  // non-dropped show (staleTime 1h) and writing the dates back is exactly what makes
+  // a revival resurface on the next visit — so we keep doing it.
+  const movieNeedsDetails = (i: TrackedItem): boolean =>
+    !!i.nextAirDate ||
+    (i.lastAirDate != null && i.lastAirDate >= windowStart) ||
+    (i.lastAirDate == null && i.nextAirDate == null)
+  const showsToFetch = shows
+  const moviesToFetch = movies.filter(movieNeedsDetails)
+
   const showResults = useQueries({
-    queries: shows.map((s) => ({
+    queries: showsToFetch.map((s) => ({
       queryKey: ['tv', s.tmdbId],
       queryFn: () => getTvDetailsCached(s.id, s.tmdbId),
       staleTime: HOUR,
     })),
   })
   const movieResults = useQueries({
-    queries: movies.map((m) => ({
+    queries: moviesToFetch.map((m) => ({
       queryKey: ['movie', m.tmdbId],
       queryFn: () => getMovieDetails(m.tmdbId),
       staleTime: HOUR,
@@ -136,7 +159,8 @@ export default function Upcoming() {
   })
 
   // Air times from TVmaze (TMDB has none) — matched by IMDb id, keyed by episode.
-  const tvShows = shows.filter((s) => s.imdbId)
+  // Only the shows we're actually surfacing need them.
+  const tvShows = showsToFetch.filter((s) => s.imdbId)
   const tvmazeResults = useQueries({
     queries: tvShows.map((s) => ({
       queryKey: ['tvmaze', s.imdbId],
@@ -153,7 +177,7 @@ export default function Upcoming() {
     airstampByImdb.set(s.imdbId as string, m)
   })
   // Prefer precise Trakt times cached on the episode rows over TVmaze.
-  const cachedStamp = useCachedAirstamps(shows.map((s) => s.id))
+  const cachedStamp = useCachedAirstamps(showsToFetch.map((s) => s.id))
   // Raw precise airstamp (Trakt-cached, else TVmaze) for an episode, if known.
   const airStamp = (
     itemId: string,
@@ -174,14 +198,10 @@ export default function Upcoming() {
     (watchEvents ?? []).filter((e) => e.episodeId === null).map((e) => e.itemId),
   )
 
-  const today = todayLocal()
-  const windowStart = localDateValue(Date.now() - AIRED_WINDOW_DAYS * 86400000)
-  const inAiredWindow = (date: string) => date >= windowStart && date <= today
-
   const upcoming: FeedEntry[] = []
   const aired: FeedEntry[] = []
 
-  shows.forEach((s, i) => {
+  showsToFetch.forEach((s, i) => {
     const details = showResults[i]?.data
     if (!details) return
     const where = whereToWatch(details)
@@ -253,7 +273,7 @@ export default function Upcoming() {
     pushAired(details.last_episode_to_air)
   })
 
-  movies.forEach((m, i) => {
+  moviesToFetch.forEach((m, i) => {
     const md = movieResults[i]?.data
     const release = md?.release_date
     if (!release || !md) return
@@ -375,22 +395,23 @@ export default function Upcoming() {
     !movieResults.some((r) => r.isLoading)
 
   // Persist each title's next/last air dates back onto the tracked item. Upcoming
-  // is the one view that already fetches this for every non-dropped title, so a
-  // visit here keeps the Library "last episode" sort and Released filter accurate
-  // (and fresh as episodes air) without a manual reindex. Signature deps mean we
+  // fetches live details for the active titles, so a visit here keeps the Library
+  // "last episode" sort and Released filter accurate (and fresh as episodes air)
+  // without a manual reindex. Only the fetched (active) set is iterated — the titles
+  // we skip are settled, so their stored dates don't change. Signature deps mean we
   // only write when the fetched dates actually change.
-  const showDateSig = shows
+  const showDateSig = showsToFetch
     .map((s, i) => {
       const d = showResults[i]?.data
       return `${s.id}|${d?.last_episode_to_air?.air_date ?? ''}|${d?.next_episode_to_air?.air_date ?? ''}`
     })
     .join(',')
-  const movieDateSig = movies
+  const movieDateSig = moviesToFetch
     .map((m, i) => `${m.id}|${movieResults[i]?.data?.release_date ?? ''}`)
     .join(',')
   useEffect(() => {
     const todayStr = todayLocal()
-    shows.forEach((s, i) => {
+    showsToFetch.forEach((s, i) => {
       const d = showResults[i]?.data
       if (!d) return
       const last = d.last_episode_to_air?.air_date ?? undefined
@@ -399,7 +420,7 @@ export default function Upcoming() {
         void setItemMeta(s.id, { lastAirDate: last, nextAirDate: next })
       }
     })
-    movies.forEach((m, i) => {
+    moviesToFetch.forEach((m, i) => {
       const rel = movieResults[i]?.data?.release_date
       if (!rel) return
       const last = rel <= todayStr ? rel : undefined

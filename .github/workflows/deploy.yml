@@ -47,6 +47,11 @@ jobs:
           # Trakt API client ID for reviews + Trakt sync (PKCE, no secret).
           # Add as repo secret VITE_TRAKT_CLIENT_ID.
           VITE_TRAKT_CLIENT_ID: ${{ secrets.VITE_TRAKT_CLIENT_ID }}
+          # Trakt proxy worker URL (worker-trakt). When set, the indexer's public
+          # Trakt reads go through it as preflight-free GETs — no CORS "429" storm
+          # during a big sync. Leave unset to call Trakt directly (still paced +
+          # retried client-side). Add as repo secret VITE_TRAKT_PROXY.
+          VITE_TRAKT_PROXY: ${{ secrets.VITE_TRAKT_PROXY }}
           # Web Push: VAPID public key + Cloudflare Worker URL (both public).
           # Optional — leave unset to keep in-app-only notifications. See
           # worker/README.md. Add as repo secrets VITE_VAPID_PUBLIC / VITE_PUSH_API.

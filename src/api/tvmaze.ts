@@ -50,12 +50,22 @@ export async function getTvmazeEpisodesByImdb(imdbId: string): Promise<TvmazeEpi
   const show = (await lookup.json()) as { id: number }
   const epsRes = await tvmazeFetch(`${BASE}/shows/${show.id}/episodes`)
   if (!epsRes) return []
-  const eps = (await epsRes.json()) as TvmazeEpisode[]
-  // When TVmaze has no release time (airtime empty), its airstamp is a noon-UTC
-  // placeholder — drop it so callers fall back to Trakt or a date-only check
-  // instead of showing/comparing a bogus time (e.g. a streaming drop at "6am").
-  for (const e of eps) if (!e.airtime) e.airstamp = undefined
-  return eps
+  const raw = (await epsRes.json()) as TvmazeEpisode[]
+  // Keep ONLY the fields the app actually reads (season/number/name/airstamp).
+  // TVmaze's raw episode objects also carry a summary (HTML), image URLs, _links,
+  // rating, etc. — none of which we use, but all of which would otherwise be held
+  // in memory and written to the persisted query cache, bloating it ~10x. Slimming
+  // here keeps that cache small without changing any downstream behaviour.
+  // (airtime is only consulted below to validate airstamp; it isn't retained.)
+  return raw.map((e) => ({
+    season: e.season,
+    number: e.number,
+    name: e.name,
+    // When TVmaze has no release time (airtime empty), its airstamp is a noon-UTC
+    // placeholder — drop it so callers fall back to Trakt or a date-only check
+    // instead of showing/comparing a bogus time (e.g. a streaming drop at "6am").
+    airstamp: e.airtime ? e.airstamp : undefined,
+  }))
 }
 
 /**

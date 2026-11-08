@@ -27,7 +27,13 @@ function render() {
     <StrictMode>
       <PersistQueryClientProvider
         client={queryClient}
-        persistOptions={{ persister, maxAge: DAY, buster: 'v4' }}
+        persistOptions={{
+          persister,
+          maxAge: DAY,
+          // Bumped from v4 so the old, bloated (pre-slim) cache is discarded once
+          // on upgrade; it then rebuilds from the slimmed detail/episode payloads.
+          buster: 'v5',
+        }}
       >
         <HashRouter>
           <App />

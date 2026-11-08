@@ -1,4 +1,10 @@
-import { getSeasonEpisodes, getTvDetails, type TmdbEpisode, type TmdbTvDetails } from '../api/tmdb'
+import {
+  getSeasonEpisodes,
+  getSeasonsBatched,
+  getTvDetails,
+  type TmdbEpisode,
+  type TmdbTvDetails,
+} from '../api/tmdb'
 import { getTraktEpisodeTimes } from '../api/trakt'
 import { db, episodeKey } from './db'
 import type { CachedEpisode } from './types'
@@ -73,6 +79,42 @@ export async function getSeasonEpisodesCached(
     // Caching is best-effort; ignore storage failures.
   }
   return episodes
+}
+
+/**
+ * Fetch several seasons at once (one TMDB request via append_to_response) and
+ * store all their episodes in the local cache in a single bulk write. Returns
+ * seasonNumber → episodes so the caller can read them (e.g. for a runtime
+ * fallback). Best-effort on the write, like getSeasonEpisodesCached.
+ */
+export async function cacheSeasonsBatched(
+  itemId: string,
+  tmdbId: number,
+  seasonNumbers: number[],
+): Promise<Map<number, TmdbEpisode[]>> {
+  const bySeason = await getSeasonsBatched(tmdbId, seasonNumbers)
+  const rows: CachedEpisode[] = []
+  for (const episodes of bySeason.values()) {
+    for (const e of episodes) {
+      rows.push({
+        id: episodeKey(itemId, e.season_number, e.episode_number),
+        itemId,
+        season: e.season_number,
+        episode: e.episode_number,
+        name: e.name,
+        airDate: e.air_date,
+      })
+    }
+  }
+  if (rows.length) {
+    try {
+      await preserveAirstamps(rows)
+      await db.episodeCache.bulkPut(rows)
+    } catch {
+      // Caching is best-effort; ignore storage failures.
+    }
+  }
+  return bySeason
 }
 
 /**

@@ -9,7 +9,7 @@ import {
 } from '../api/tmdb'
 import { getEspnRaceSchedule, getEspnTeamSchedule, leagueByKey } from '../api/espn'
 import { db } from './db'
-import { cacheTraktAirstamps, getSeasonEpisodesCached, getTvDetailsCached } from './episodeCache'
+import { cacheSeasonsBatched, cacheTraktAirstamps, getTvDetailsCached } from './episodeCache'
 import { setItemMeta, setStatus } from './library'
 import { cacheSportGames, parseSportId } from './sports'
 import { queryClient } from './queryClient'
@@ -175,21 +175,31 @@ async function indexItem(item: TrackedItem): Promise<void> {
   // Dropped shows (only reached on a full rebuild) get their stats metadata but
   // skip the per-season episode caching — episode search isn't needed for them.
   if (item.status === 'dropped') return
-  for (const season of details.seasons) {
-    if (season.episode_count <= 0) continue
-    const have = await db.episodeCache
-      .where('[itemId+season]')
-      .equals([item.id, season.season_number])
-      .count()
-    if (have >= season.episode_count) continue // already cached
-    const episodes = await getSeasonEpisodesCached(item.id, item.tmdbId, season.season_number)
+  // Tally what's already cached in ONE read, then fetch every stale season in a
+  // single batched TMDB request (append_to_response) — instead of a per-season
+  // count + a per-season request.
+  const wanted = details.seasons.filter((s) => s.episode_count > 0)
+  const cached = await db.episodeCache.where('itemId').equals(item.id).toArray()
+  const haveBySeason = new Map<number, number>()
+  for (const r of cached) haveBySeason.set(r.season, (haveBySeason.get(r.season) ?? 0) + 1)
+  const stale = wanted.filter((s) => (haveBySeason.get(s.season_number) ?? 0) < s.episode_count)
+  if (stale.length) {
+    const bySeason = await cacheSeasonsBatched(
+      item.id,
+      item.tmdbId,
+      stale.map((s) => s.season_number),
+    )
     // Shows often lack episode_run_time; fall back to a real episode's runtime —
     // but only from a regular season (specials can be minisodes/recaps).
-    if (runtime === undefined && season.season_number > 0) {
-      const r = episodes.find((e) => e.runtime && e.runtime > 0)?.runtime
-      if (r) {
-        runtime = r
-        await setItemMeta(item.id, { runtime })
+    if (runtime === undefined) {
+      for (const s of stale) {
+        if (s.season_number <= 0) continue
+        const r = bySeason.get(s.season_number)?.find((e) => e.runtime && e.runtime > 0)?.runtime
+        if (r) {
+          runtime = r
+          await setItemMeta(item.id, { runtime })
+          break
+        }
       }
     }
   }

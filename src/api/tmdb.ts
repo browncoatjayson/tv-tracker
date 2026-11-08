@@ -54,6 +54,38 @@ function backoffMs(attempt: number): number {
   return Math.min(4000, 300 * 2 ** attempt) + Math.random() * 300
 }
 
+// --- Adaptive client-side rate limiter ---------------------------------------
+// The shared proxy worker throttles aggressively under the indexer's burst
+// (concurrency × [detail + batched seasons + Trakt] per title). Past ~10 min of a
+// full sync it starts returning 429s, and a 429 on the CORS preflight surfaces as
+// a "CORS error" plus a wasted round-trip. The retry loop below already *reacts*
+// to 429s, but reacting isn't enough — every worker keeps re-tripping the limit,
+// so the sync crawls. Instead we PACE every proxy request to a minimum spacing so
+// we stay under the limit and 429s rarely fire, which also finishes the sync
+// sooner (no retry churn). The spacing is adaptive (AIMD): a 429 doubles it up to
+// a ceiling, and each success decays it back toward the floor.
+const RATE_FLOOR_MS = Number(import.meta.env.VITE_TMDB_MIN_INTERVAL_MS) || 60
+const RATE_CEIL_MS = 2000
+let minIntervalMs = RATE_FLOOR_MS
+let nextSlot = 0
+
+// Reserve the next evenly-spaced slot and wait for it. Concurrent callers queue in
+// arrival order, so N parallel indexer workers still emit just one request per slot.
+async function rateLimit(): Promise<void> {
+  if (!proxy) return // the direct-token dev path isn't the bottleneck
+  const now = Date.now()
+  const slot = Math.max(now, nextSlot)
+  nextSlot = slot + minIntervalMs
+  const wait = slot - now
+  if (wait > 0) await sleep(wait)
+}
+function widenOnThrottle(): void {
+  minIntervalMs = Math.min(RATE_CEIL_MS, Math.round(minIntervalMs * 2))
+}
+function relaxOnSuccess(): void {
+  if (minIntervalMs > RATE_FLOOR_MS) minIntervalMs = Math.max(RATE_FLOOR_MS, minIntervalMs - 5)
+}
+
 /**
  * Fetch JSON from TMDB with retries. Bulk operations (e.g. importing a large
  * library) can trip TMDB's abuse protection with 429s and dropped connections;
@@ -76,6 +108,7 @@ async function tmdbGet<T>(
     : { Authorization: `Bearer ${token}`, accept: 'application/json' }
 
   for (let attempt = 0; ; attempt++) {
+    await rateLimit()
     let res: Response
     try {
       // Bypass the browser's HTTP cache — TanStack Query handles caching/dedup in
@@ -90,10 +123,14 @@ async function tmdbGet<T>(
       continue
     }
 
-    if (res.ok) return res.json() as Promise<T>
+    if (res.ok) {
+      relaxOnSuccess()
+      return res.json() as Promise<T>
+    }
 
     // Throttling / transient server errors are retryable.
     if ((res.status === 429 || res.status >= 500) && attempt < retries) {
+      if (res.status === 429) widenOnThrottle()
       const retryAfter = Number(res.headers.get('Retry-After'))
       await sleep(retryAfter > 0 ? retryAfter * 1000 : backoffMs(attempt))
       continue
@@ -606,8 +643,53 @@ export async function getTrending(
   return (data.results ?? []).map((r) => ({ ...r, media_type: mediaType }))
 }
 
+// TMDB's `watch/providers` returns ~50 regions, each with flatrate/rent/buy/ads/
+// free lists of full provider objects (logos, ids, display order). We only ever
+// read one region's flatrate/ads/free provider NAMES (see watchNames), so keep
+// just those. On a large library this is a big slice of the persisted cache.
+function slimWatchProviders(
+  wp: TmdbWatchProviders | undefined,
+  region = 'US',
+): TmdbWatchProviders | undefined {
+  const r = wp?.results?.[region]
+  if (!r) return undefined
+  const names = (list?: ProviderRef[]): ProviderRef[] | undefined =>
+    list?.map((p) => ({ provider_name: p.provider_name }))
+  const slim: { flatrate?: ProviderRef[]; ads?: ProviderRef[]; free?: ProviderRef[] } = {}
+  if (r.flatrate?.length) slim.flatrate = names(r.flatrate)
+  if (r.ads?.length) slim.ads = names(r.ads)
+  if (r.free?.length) slim.free = names(r.free)
+  return { results: { [region]: slim } }
+}
+
+// TMDB `credits` carries the full cast AND crew — a film's crew alone can be
+// hundreds of entries, and each cast member brings fields (popularity, gender,
+// known_for_department, …) we never show. Keep only the top-billed cast we render
+// (name / character / photo, see CastRow) and drop crew entirely.
+function slimCredits(credits: TmdbCredits | undefined, limit = 20): TmdbCredits | undefined {
+  if (!credits?.cast) return undefined
+  const cast = [...credits.cast]
+    .sort((a, b) => (a.order ?? 999) - (b.order ?? 999))
+    .slice(0, limit)
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      character: c.character,
+      order: c.order,
+      profile_path: c.profile_path,
+    }))
+  return { cast }
+}
+
 export async function getTvDetails(tmdbId: number): Promise<TmdbTvDetails> {
-  return tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, { append_to_response: 'watch/providers,credits' })
+  const d = await tmdbGet<TmdbTvDetails>(`/tv/${tmdbId}`, {
+    append_to_response: 'watch/providers,credits',
+  })
+  // Strip the appended sub-resources down to the fields the app actually reads,
+  // before this object is handed to (and persisted by) the query cache.
+  d.credits = slimCredits(d.credits)
+  d['watch/providers'] = slimWatchProviders(d['watch/providers'])
+  return d
 }
 
 export interface TmdbMovieDetails {
@@ -631,9 +713,12 @@ export interface TmdbMovieDetails {
 }
 
 export async function getMovieDetails(tmdbId: number): Promise<TmdbMovieDetails> {
-  return tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`, {
+  const d = await tmdbGet<TmdbMovieDetails>(`/movie/${tmdbId}`, {
     append_to_response: 'watch/providers,credits',
   })
+  d.credits = slimCredits(d.credits)
+  d['watch/providers'] = slimWatchProviders(d['watch/providers'])
+  return d
 }
 
 /** A single entry in a movie collection (franchise). */
@@ -750,6 +835,30 @@ export async function getSeasonEpisodes(
 ): Promise<TmdbEpisode[]> {
   const data = await tmdbGet<{ episodes: TmdbEpisode[] }>(`/tv/${tmdbId}/season/${seasonNumber}`)
   return data.episodes
+}
+
+/**
+ * Fetch several seasons' episodes in ONE request via append_to_response (TMDB
+ * caps appended sub-resources at 20, so larger shows chunk into a few requests).
+ * Returns seasonNumber → episodes for the seasons TMDB returned. This replaces one
+ * `/season/{n}` round-trip per season when indexing a multi-season show.
+ */
+export async function getSeasonsBatched(
+  tmdbId: number,
+  seasonNumbers: number[],
+): Promise<Map<number, TmdbEpisode[]>> {
+  const out = new Map<number, TmdbEpisode[]>()
+  for (let i = 0; i < seasonNumbers.length; i += 20) {
+    const chunk = seasonNumbers.slice(i, i + 20)
+    const data = await tmdbGet<Record<string, unknown>>(`/tv/${tmdbId}`, {
+      append_to_response: chunk.map((n) => `season/${n}`).join(','),
+    })
+    for (const n of chunk) {
+      const season = data[`season/${n}`] as { episodes?: TmdbEpisode[] } | undefined
+      if (season?.episodes) out.set(n, season.episodes)
+    }
+  }
+  return out
 }
 
 export interface TmdbCredit {

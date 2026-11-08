@@ -58,7 +58,9 @@ export default function NotificationScheduler() {
       ? sportTeams.map((s) => {
           const lg = leagueByKey(s.sport?.league)
           return {
-            queryKey: ['espn-notify', s.sport?.league, s.sport?.teamId, sportSeason],
+            // Same key the detail page + indexer use, so the schedule is fetched
+            // once and shared instead of pulled again just for notifications.
+            queryKey: ['espn-schedule', s.sport?.league, s.sport?.teamId, sportSeason],
             queryFn: () =>
               lg?.kind === 'races'
                 ? getEspnRaceSchedule(s.sport!.league, sportSeason)
