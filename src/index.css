@@ -464,6 +464,7 @@ a:hover {
   transition: opacity 0.12s ease;
 }
 .poster-cell:hover .fav-star,
+.list-card-cell:hover .fav-star,
 .fav-star--on,
 .fav-star:focus-visible {
   opacity: 1;
@@ -507,6 +508,12 @@ a:hover {
   align-items: center;
   justify-content: center;
   font-size: 2rem;
+}
+/* Sports logos aren't 2:3 posters — contain them on a light tile, don't crop. */
+.poster-card__img--logo {
+  object-fit: contain;
+  background: #fff;
+  padding: 10px;
 }
 .poster-card__title {
   font-size: 0.82rem;
@@ -678,6 +685,67 @@ input[type='file'] {
 /* "Watch next" shuffle suggestion card (Search, empty query). */
 .watch-next {
   margin-bottom: 16px;
+  position: relative;
+}
+/* Corner actions on the Watch Next card: a favorite toggle (browse) or an
+   "Add to list" button (add-to-list mode). */
+/* A ☆/★ favorite toggle (matches the poster-card fav star), not a reroll. */
+.watch-next__fav {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-content: center;
+  border: none;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.7);
+  color: var(--warn);
+  font-size: 1.15rem;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+.watch-next__fav:hover {
+  background: rgba(15, 23, 42, 0.9);
+}
+.watch-next__action {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 6px 12px;
+  border: 1px solid var(--surface-2);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.8);
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.watch-next__action:disabled {
+  color: var(--muted);
+  cursor: default;
+}
+/* The blue "Watch Next" shuffle tile — stands in for poster art in Favorites /
+   lists (sized by the poster-card__img or lib-chip__img class it also carries). */
+.wn-poster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #06283a;
+  background: var(--accent);
+}
+.wn-poster__icon {
+  display: grid;
+  place-content: center;
+}
+.wn-poster__label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 .watch-next__card {
   display: flex;
@@ -1710,6 +1778,347 @@ input[type='file'] {
   align-items: flex-start;
 }
 /* Favorite-actor grid on the Stats page. */
+/* ---- Custom Lists ---------------------------------------------------------- */
+/* Stats "Lists" row: list cards (poster collages) + a "＋ New list" card. */
+.lists-row {
+  display: flex;
+  gap: 14px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+/* Wrapper that lets the favorite star overlay the list card's cover. */
+.list-card-cell {
+  position: relative;
+  flex: 0 0 auto;
+}
+.list-card-cell .fav-star {
+  top: 6px;
+  right: 6px;
+}
+.list-card {
+  flex: 0 0 auto;
+  width: 108px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* Shared list cover collage (Stats card + list page view-mode poster fallback). */
+.list-collage {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.list-collage[data-count='0'] {
+  place-items: center;
+}
+.list-collage[data-count='2'] {
+  grid-template-columns: 1fr 1fr;
+}
+.list-collage[data-count='3'],
+.list-collage[data-count='4'] {
+  grid-template: 1fr 1fr / 1fr 1fr;
+}
+.list-collage__poster {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.list-collage__poster--ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  background: var(--surface);
+}
+.list-collage__empty {
+  font-size: 2rem;
+}
+/* On the list page the collage stands in for the 120px hero poster. */
+.list-poster-collage {
+  border-radius: 10px;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+/* A list's custom poster, when set, replaces the collage on the Stats card. */
+.list-card__cover {
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: cover;
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.list-card__name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.2;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+.list-card__count {
+  font-size: 0.72rem;
+}
+.list-card--new .list-card__plus {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  aspect-ratio: 2 / 3;
+  font-size: 2.6rem;
+  color: var(--muted);
+  border: 2px dashed var(--surface-2);
+  border-radius: var(--radius);
+}
+.list-card--new:hover .list-card__plus {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+/* List detail page — reuses the shared .hero layout (backdrop + topbar + body),
+   with a customizable 2:3 .hero__poster on the left and count pills in the meta. */
+.list-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+/* List edit mode: the Edit/Save (+ Delete) pills, editable fields, remove/add.
+   The pills sit at the right of the hero top row (where the link pills would). */
+.list-hero__actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+/* Poster column. In edit mode it holds an <ImageDrop> sized to the poster. */
+.list-poster {
+  width: 120px;
+  flex-shrink: 0;
+  align-self: flex-start;
+}
+
+/* Reusable image drop/upload field (list poster + backdrop, Stats avatar). An
+   image shows with a "−" remove in the bottom-right corner; empty shows a dashed
+   dropzone with an upload icon, label and hint. */
+.img-drop {
+  position: relative;
+  display: block;
+}
+.img-drop--poster {
+  width: 120px;
+  aspect-ratio: 2 / 3;
+}
+.img-drop__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 10px;
+}
+.img-drop--poster .img-drop__img {
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.5);
+}
+.img-drop__zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  height: 100%;
+  min-height: 120px;
+  padding: 8px;
+  border: 2px dashed var(--surface-2);
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.35);
+  color: var(--muted);
+  cursor: pointer;
+  text-align: center;
+}
+.img-drop__zone:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.img-drop__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+.img-drop__hint {
+  font-size: 0.66rem;
+  line-height: 1.3;
+  opacity: 0.85;
+}
+.img-drop__remove {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  z-index: 2;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: rgba(2, 6, 23, 0.72);
+  color: #fff;
+  font-size: 1.3rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.img-drop__remove:hover {
+  background: var(--danger);
+}
+
+/* Backdrop controls on the list hero: when empty, a dropzone anchored to the
+   right edge just below the Save/Delete buttons, its left edge faded out (the
+   backdrop spans the whole hero, so it "continues" past the control). When set,
+   the shared "−" sits at the hero's bottom-right. Absolutely positioned so the
+   layout doesn't shift between view and edit mode. */
+.list-backdrop-drop {
+  position: absolute;
+  top: 58px;
+  right: 8px;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  width: 230px;
+  padding: 39px 14px;
+  border: 2px dashed var(--surface-2);
+  border-bottom: 0;
+  border-radius: 10px;
+  background: rgba(2, 6, 23, 0.5);
+  color: var(--muted);
+  cursor: pointer;
+  /* Fade the left and bottom edges (intersect the two gradients) so the backdrop
+     reads as continuing into the hero; top + right keep their dashed border. */
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 22%),
+    linear-gradient(to top, transparent, #000 28%);
+  -webkit-mask-composite: source-in;
+  mask-image: linear-gradient(to right, transparent, #000 22%),
+    linear-gradient(to top, transparent, #000 28%);
+  mask-composite: intersect;
+}
+.list-backdrop-drop:hover {
+  color: var(--accent);
+}
+/* The Stats header is shorter than the list hero, so it needs less vertical room. */
+.list-backdrop-drop.stats-drop {
+  padding: 18px 14px;
+}
+.list-backdrop-remove {
+  right: 10px;
+  bottom: 10px;
+}
+.list-hero__actions .ext-link {
+  cursor: pointer;
+  font-family: inherit;
+}
+.list-hero__delete,
+.list-hero__delete:hover {
+  color: var(--danger);
+  border-color: var(--danger);
+}
+.list-hero__name-input,
+.list-hero__desc-input {
+  width: 100%;
+  max-width: 480px;
+  background: rgba(2, 6, 23, 0.55);
+  border: 1px solid var(--surface-2);
+  border-radius: 8px;
+  color: var(--text);
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  font: inherit;
+}
+.list-hero__name-input {
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+.list-hero__desc-input {
+  font-size: 0.9rem;
+  resize: vertical;
+}
+.list-remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  border: none;
+  background: var(--danger);
+  color: #fff;
+  font-size: 1.2rem;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.poster-add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  aspect-ratio: 2 / 3;
+  border: 2px dashed var(--surface-2);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+}
+.poster-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.poster-add__plus {
+  font-size: 2.4rem;
+  line-height: 1;
+}
+.poster-add__label {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+/* Search "add to list" mode banner. */
+.addlist-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--accent) 16%, var(--surface));
+  border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.addlist-banner__text {
+  font-size: 0.9rem;
+}
+/* Teams surfaced inline in add-to-list search results. */
+.list-teams-group {
+  margin-bottom: 10px;
+}
+.list-teams-group .section-title {
+  margin-bottom: 6px;
+}
+
 .fav-actors {
   display: flex;
   flex-wrap: wrap;
@@ -2570,10 +2979,85 @@ input[type='file'] {
   flex-direction: column;
   gap: 16px;
 }
+/* Stats profile header: a hero banner with avatar + name + stat pills, and a
+   customizable backdrop + avatar icon in "Customize" (edit) mode. */
 .stats__head {
+  position: relative;
+  display: flex;
+  align-items: flex-end;
+  gap: 14px;
+  min-height: 150px;
+  padding: 16px;
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--surface);
+}
+.stats__backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.4;
+}
+.stats__head-overlay {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(15, 23, 42, 0.3) 0%, var(--bg) 100%);
+}
+.stats__avatar-wrap {
+  position: relative;
+  z-index: 1;
+  flex-shrink: 0;
+}
+.stats__avatar-edit,
+.stats__avatar-reset {
+  position: absolute;
+  z-index: 2;
+  bottom: -4px;
+  width: 26px;
+  height: 26px;
   display: flex;
   align-items: center;
-  gap: 14px;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid var(--bg);
+  border-radius: 999px;
+  cursor: pointer;
+}
+.stats__avatar-edit {
+  right: -4px;
+  background: var(--accent);
+  color: #04121f;
+}
+.stats__avatar-edit svg {
+  width: 14px;
+  height: 14px;
+}
+.stats__avatar-reset {
+  left: -4px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+.stats__head-meta {
+  position: relative;
+  z-index: 1;
+  min-width: 0;
+}
+.stats__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.stats__head-edit-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+  cursor: pointer;
+  font-family: inherit;
 }
 .stats__indexing {
   margin: 0;
@@ -2586,20 +3070,54 @@ input[type='file'] {
   object-fit: cover;
   flex-shrink: 0;
 }
-.stats__avatar--placeholder {
+/* Placeholder (no avatar image) — used by the shared <UserAvatar> everywhere. */
+.user-avatar--ph {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   background: var(--surface-2);
   color: var(--muted);
 }
-.stats__avatar--placeholder svg {
-  width: 30px;
-  height: 30px;
-}
 .stats__name {
   margin: 0;
   font-size: 1.3rem;
+}
+/* Customize mode: the name becomes an editable field with a "use Google name"
+   revert (↺), mirroring the avatar's reset control. */
+.stats__name-edit {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.stats__name-input {
+  min-width: 0;
+  flex: 1 1 auto;
+  padding: 4px 8px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text);
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid var(--surface-2);
+  border-radius: 8px;
+}
+.stats__name-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.stats__name-reset {
+  flex-shrink: 0;
+  width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  font-size: 0.95rem;
+  color: var(--text);
+  background: var(--surface-2);
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
 }
 
 .stat-hero {

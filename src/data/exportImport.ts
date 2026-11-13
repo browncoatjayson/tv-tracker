@@ -1,10 +1,13 @@
 import { db } from './db'
+import { applyExtrasPayload, buildExtrasPayload } from './extras'
 import type {
   CachedEpisode,
+  CustomList,
   EarnedBadge,
   EpisodeState,
   FavoritePerson,
   FavoriteService,
+  ProfileData,
   TrackedItem,
   Tombstone,
   WatchEvent,
@@ -25,7 +28,10 @@ const UNSYNCED_BADGES = new Set(['welcome-back'])
 // v6 adds `episodeCache` (the TMDB episode name/date cache, so a restore has its
 // index ready instead of waiting to rebuild). Older files still import — the
 // newer arrays default to [] — so these bumps are backward compatible.
-export const BACKUP_VERSION = 6 as const
+// v7 adds `lists` (+ `listTombstones`) and `profile` — custom lists with their
+// images and the profile avatar/backdrop. These sync to Drive as their own file
+// (keeping routine syncs small) and are embedded only in the full manual export.
+export const BACKUP_VERSION = 7 as const
 
 export interface BackupData {
   app: 'tv-tracker'
@@ -45,6 +51,12 @@ export interface BackupData {
   /** Disposable TMDB episode-name/date cache (absent in pre-v6 backups). Carried
    *  so a restored library's Upcoming/episode search works without a reindex. */
   episodeCache?: CachedEpisode[]
+  /** Custom lists with their images (absent in pre-v7 backups). Synced to Drive as
+   *  their own file; embedded here only in the full manual export. */
+  lists?: CustomList[]
+  listTombstones?: Tombstone[]
+  /** Profile customization — avatar + backdrop (absent in pre-v7 backups). */
+  profile?: ProfileData
 }
 
 /**
@@ -73,6 +85,9 @@ export async function buildBackup(includeCache = true): Promise<BackupData> {
     db.badges.toArray(),
     includeCache ? db.episodeCache.toArray() : Promise.resolve(undefined),
   ])
+  // The full export also carries the "extras" (custom lists + profile images);
+  // the core Drive push (includeCache=false) omits them — they sync separately.
+  const extras = includeCache ? await buildExtrasPayload() : undefined
   return {
     app: 'tv-tracker',
     version: BACKUP_VERSION,
@@ -85,6 +100,9 @@ export async function buildBackup(includeCache = true): Promise<BackupData> {
     favoriteServices,
     badges: badges.filter((b) => !UNSYNCED_BADGES.has(b.id)),
     episodeCache,
+    ...(extras
+      ? { lists: extras.lists, listTombstones: extras.listTombstones, profile: extras.profile }
+      : {}),
   }
 }
 
@@ -206,13 +224,26 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
       }
     },
   )
+
+  // Custom lists + profile ride along only in the full (manual) backup; a
+  // core-only sync file won't carry them, so apply them only when present.
+  if (data.lists !== undefined) {
+    await applyExtrasPayload(
+      {
+        lists: data.lists,
+        listTombstones: data.listTombstones ?? [],
+        profile: data.profile ?? { updatedAt: 0 },
+      },
+      mode,
+    )
+  }
 }
 
 /** Parse and import a backup file's text. Returns counts for a confirmation message. */
 export async function importBackup(
   json: string,
   mode: ImportMode,
-): Promise<{ items: number; events: number; episodes: number }> {
+): Promise<{ items: number; events: number; episodes: number; lists: number }> {
   const parsed: unknown = JSON.parse(json)
   if (!isBackup(parsed)) {
     throw new Error('This file is not a valid TV Tracker backup.')
@@ -227,6 +258,7 @@ export async function importBackup(
     items: parsed.trackedItems.length,
     events: parsed.watchEvents.length,
     episodes: parsed.episodeStates.length,
+    lists: parsed.lists?.length ?? 0,
   }
 }
 

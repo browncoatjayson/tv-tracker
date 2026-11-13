@@ -84,7 +84,7 @@
 
     <main class="page">
       <h1>Privacy Policy</h1>
-      <p class="updated">TV Tracker · Last updated 27 October 2026</p>
+      <p class="updated">TV Tracker · Last updated 9 November 2026</p>
 
       <p>
         TV Tracker is a personal, offline-first app for tracking the shows, movies, and sports you
@@ -104,7 +104,11 @@
           <strong>We have no accounts and no server database.</strong> There is nothing to sign up
           for, and we do not collect, sell, or share personal information.
         </li>
-        <li><strong>No analytics, advertising, or third-party trackers</strong> are used.</li>
+        <li>
+          <strong>No advertising, and no third-party analytics or trackers.</strong> The only usage
+          data collected is an anonymous, aggregate install count (see “Anonymous usage counts”
+          below).
+        </li>
       </ul>
 
       <h2>Optional Google Drive sync</h2>
@@ -125,6 +129,17 @@
         anonymous endpoint, not your identity) and the next reminder times are stored by a
         self-hosted Cloudflare Worker so it can send “airing soon” reminders. No watch history or
         personal data is sent. Disabling notifications removes the subscription.
+      </p>
+
+      <h2>Anonymous usage counts</h2>
+      <p>
+        Because there are no accounts, there's otherwise no way to tell how many people use the app.
+        So the app sends a small, anonymous “ping” to a self-hosted Cloudflare Worker about once a
+        day. It contains only a <strong>random identifier</strong> your browser generates — no name,
+        email, account, location, or anything about what you watch — used solely to count unique
+        installs and how many are active each day. The worker stores just that identifier and a date;
+        it does <strong>not</strong> keep your IP address or link the ping to your Google or Trakt
+        sign-in. Clearing your site data resets the identifier.
       </p>
 
       <h2>Third-party services</h2>

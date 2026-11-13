@@ -103,9 +103,17 @@ export async function applyImport(
   if (mode === 'replace') {
     await applyBackup(incoming, 'replace')
   } else {
-    // Merge with current data the same way sync does (idempotent, no dupes).
     const local = await buildBackup()
-    await applyBackup(mergeBackups(local, incoming), 'replace')
+    const merged = mergeBackups(local, incoming)
+    // An import must not rewrite titles you already track: re-importing shouldn't
+    // flip a show you completed back to "watching", or pull a watchlisted show
+    // into it. The import stamps every item updatedAt=now, so a last-write-wins
+    // merge would always let it win — so here we keep the LOCAL copy of any title
+    // already present, and let only genuinely new titles take the imported status.
+    // (New watched episodes/events still merge in additively above.)
+    const localById = new Map(local.trackedItems.map((i) => [i.id, i]))
+    merged.trackedItems = merged.trackedItems.map((i) => localById.get(i.id) ?? i)
+    await applyBackup(merged, 'replace')
   }
   return {
     items: incoming.trackedItems.length,

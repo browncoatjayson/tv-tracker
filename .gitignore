@@ -17,6 +17,14 @@ dist-ssr
 .env.*
 !.env.example
 
+# Wrangler local secrets (worker dev, e.g. STATS_ADMIN_KEY) — never commit
+.dev.vars
+.dev.vars.*
+
+# Claude Code local tooling (dev-server launch config, local settings) — not
+# project source; regenerated as needed. Remove the "/" to track shared config.
+.claude/
+
 # PWA generated files
 dev-dist
 

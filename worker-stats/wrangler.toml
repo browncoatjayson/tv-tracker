@@ -1,0 +1,19 @@
+name = "tvtracker-stats"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+[vars]
+# Origins allowed to POST a ping (the app). The admin GET /stats is guarded by a
+# secret instead, so it isn't listed here.
+ALLOWED_ORIGINS = "https://tvtracker.alteriorfantasy.com,https://browncoatjayson.github.io,http://localhost:5173,http://localhost:5174"
+
+# Anonymous-usage KV store. Create it once, then paste the id below:
+#   cd worker-stats
+#   wrangler kv namespace create STATS
+# (optionally also: wrangler kv namespace create STATS --preview, for `wrangler dev`)
+[[kv_namespaces]]
+binding = "STATS"
+id = "82ba8b897d7f40b89769d4323c3a0788"
+
+# The admin key that guards GET /stats is a secret, NOT a var:
+#   wrangler secret put STATS_ADMIN_KEY

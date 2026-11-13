@@ -22,7 +22,9 @@ export default function Settings() {
       const text = await file.text()
       const counts = await importBackup(text, mode)
       setMessage(
-        `Imported ${counts.items} titles, ${counts.events} watch events, ${counts.episodes} episodes.`,
+        `Imported ${counts.items} titles, ${counts.events} watch events, ${counts.episodes} episodes${
+          counts.lists > 0 ? `, ${counts.lists} list${counts.lists === 1 ? '' : 's'}` : ''
+        }.`,
       )
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Import failed.')

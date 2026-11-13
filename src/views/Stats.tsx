@@ -1,13 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
 import { imageUrl } from '../api/tmdb'
 import { db } from '../data/db'
 import { useFavoritePeople } from '../data/favorites'
+import ListsSection from '../components/ListsSection'
+import UserAvatar from '../components/UserAvatar'
+import { UploadIcon } from '../components/ImageDrop'
 import { BADGES, useEarnedBadges } from '../data/badges'
 import { reviewBadgeToast } from '../utils/badgeToast'
 import { getGoogleProfile, type GoogleProfile } from '../data/driveSync'
+import {
+  getProfileAvatar,
+  getProfileBackdrop,
+  getProfileName,
+  setProfileAvatar,
+  setProfileBackdrop,
+  setProfileName,
+} from '../data/profileImages'
+import { LIST_BANNER_MAX, PROFILE_AVATAR_MAX, resizeImageToDataUrl } from '../utils/image'
 import { markFlag } from '../data/appFlags'
 import { LAST_EXPORT_KEY } from '../data/exportImport'
 import { itemNeedsIndex, startIndexing, useIndexProgress } from '../data/episodeIndex'
@@ -50,11 +62,57 @@ export default function Stats() {
   const earnedBadges = useEarnedBadges()
 
   const [profile, setProfile] = useState<GoogleProfile | null>(getGoogleProfile())
+  const [avatarCustom, setAvatarCustom] = useState(getProfileAvatar())
+  const [backdrop, setBackdrop] = useState(getProfileBackdrop())
+  const [nameCustom, setNameCustom] = useState(getProfileName())
+  const [nameDraft, setNameDraft] = useState('')
+  const [headEditing, setHeadEditing] = useState(false)
+  const avatarInputRef = useRef<HTMLInputElement>(null)
+  const backdropInputRef = useRef<HTMLInputElement>(null)
   useEffect(() => {
-    const onProfile = () => setProfile(getGoogleProfile())
+    const onProfile = () => {
+      setProfile(getGoogleProfile())
+      setAvatarCustom(getProfileAvatar())
+      setBackdrop(getProfileBackdrop())
+      setNameCustom(getProfileName())
+    }
     window.addEventListener('tvtracker:profile', onProfile)
     return () => window.removeEventListener('tvtracker:profile', onProfile)
   }, [])
+
+  // The display name: a custom override, else the Google name, else a generic label.
+  const displayName = nameCustom ?? profile?.name ?? 'Your profile'
+  // Commit the edited name (empty clears the override, falling back to the Google
+  // name). Called on blur and when leaving Customize mode.
+  function commitName(): void {
+    const trimmed = nameDraft.trim()
+    if (trimmed === (getProfileName() ?? '')) return
+    setProfileName(trimmed || null)
+  }
+  function toggleHeadEdit(): void {
+    setHeadEditing((v) => {
+      if (v) commitName()
+      else setNameDraft(getProfileName() ?? '')
+      return !v
+    })
+  }
+
+  async function uploadAvatar(file: File | undefined): Promise<void> {
+    if (!file) return
+    try {
+      setProfileAvatar(await resizeImageToDataUrl(file, PROFILE_AVATAR_MAX.w, PROFILE_AVATAR_MAX.h))
+    } catch {
+      // Ignore an unsupported/corrupt file.
+    }
+  }
+  async function uploadBackdrop(file: File | undefined): Promise<void> {
+    if (!file) return
+    try {
+      setProfileBackdrop(await resizeImageToDataUrl(file, LIST_BANNER_MAX.w, LIST_BANNER_MAX.h))
+    } catch {
+      // Ignore an unsupported/corrupt file.
+    }
+  }
 
   // Earns "It's Full of Stars" the first time you open this page.
   useEffect(() => markFlag('openedStats'), [])
@@ -249,15 +307,137 @@ export default function Stats() {
         </p>
       )}
 
-      <div className="stats__head">
-        <Avatar profile={profile} />
-        <div>
-          <h2 className="stats__name">{profile?.name ?? 'Your profile'}</h2>
-          <p className="muted">
-            {items.length} titles tracked · {shows.length} shows · {movies.length} movies
-            {sportTeams.length > 0 && ` · ${sportTeams.length} teams`}
-          </p>
+      <div
+        className={`stats__head${headEditing ? ' stats__head--edit' : ''}`}
+        onDragOver={headEditing ? (e) => e.preventDefault() : undefined}
+        onDrop={
+          headEditing
+            ? (e) => {
+                e.preventDefault()
+                void uploadBackdrop(e.dataTransfer.files?.[0])
+              }
+            : undefined
+        }
+      >
+        {backdrop && <img className="stats__backdrop" src={backdrop} alt="" />}
+        <div className="stats__head-overlay" />
+        <input
+          ref={backdropInputRef}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            void uploadBackdrop(e.target.files?.[0])
+            e.target.value = ''
+          }}
+        />
+        {headEditing && backdrop && (
+          <button
+            type="button"
+            className="img-drop__remove list-backdrop-remove"
+            title="Remove backdrop"
+            aria-label="Remove backdrop"
+            onClick={() => setProfileBackdrop(null)}
+          >
+            −
+          </button>
+        )}
+        {headEditing && !backdrop && (
+          <button
+            type="button"
+            className="list-backdrop-drop stats-drop"
+            onClick={() => backdropInputRef.current?.click()}
+            title="Upload backdrop"
+          >
+            <UploadIcon />
+            <span className="img-drop__label">Backdrop</span>
+            <span className="img-drop__hint">16:9 · ~1280×720 · ≤5 MB</span>
+          </button>
+        )}
+
+        <div className="stats__avatar-wrap">
+          <UserAvatar className="stats__avatar" />
+          {headEditing && (
+            <>
+              <button
+                type="button"
+                className="stats__avatar-edit"
+                title="Upload icon"
+                aria-label="Upload icon"
+                onClick={() => avatarInputRef.current?.click()}
+              >
+                <UploadIcon />
+              </button>
+              {avatarCustom && (
+                <button
+                  type="button"
+                  className="stats__avatar-reset"
+                  title="Use Google icon"
+                  aria-label="Use Google icon"
+                  onClick={() => setProfileAvatar(null)}
+                >
+                  ↺
+                </button>
+              )}
+              <input
+                ref={avatarInputRef}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  void uploadAvatar(e.target.files?.[0])
+                  e.target.value = ''
+                }}
+              />
+            </>
+          )}
         </div>
+
+        <div className="stats__head-meta">
+          {headEditing ? (
+            <div className="stats__name-edit">
+              <input
+                className="stats__name-input"
+                value={nameDraft}
+                onChange={(e) => setNameDraft(e.target.value)}
+                onBlur={commitName}
+                placeholder={profile?.name ?? 'Your name'}
+                aria-label="Display name"
+                maxLength={40}
+              />
+              {nameCustom && profile?.name && (
+                <button
+                  type="button"
+                  className="stats__name-reset"
+                  title="Use Google name"
+                  aria-label="Use Google name"
+                  onClick={() => {
+                    setProfileName(null)
+                    setNameDraft('')
+                  }}
+                >
+                  ↺
+                </button>
+              )}
+            </div>
+          ) : (
+            <h2 className="stats__name">{displayName}</h2>
+          )}
+          <div className="stats__pills">
+            <span className="where-pill">{items.length} tracked</span>
+            <span className="where-pill">{shows.length} shows</span>
+            <span className="where-pill">{movies.length} movies</span>
+            {sportTeams.length > 0 && <span className="where-pill">{sportTeams.length} teams</span>}
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="ext-link stats__head-edit-btn"
+          onClick={toggleHeadEdit}
+        >
+          {headEditing ? 'Done' : 'Customize'}
+        </button>
       </div>
 
       {/* Hero: total watch time */}
@@ -413,6 +593,9 @@ export default function Stats() {
         </section>
       )}
 
+      {/* Custom lists */}
+      <ListsSection />
+
       {/* Favorite actors */}
       {favoriteActors && favoriteActors.length > 0 && (
         <section className="card">
@@ -563,22 +746,3 @@ function StatTile({ value, label }: { value: string; label: string }) {
   )
 }
 
-function Avatar({ profile }: { profile: GoogleProfile | null }) {
-  if (profile?.picture) {
-    return <img className="stats__avatar" src={profile.picture} alt="" referrerPolicy="no-referrer" />
-  }
-  return (
-    <span className="stats__avatar stats__avatar--placeholder" aria-hidden="true">
-      <UserGlyph />
-    </span>
-  )
-}
-
-/** A simple user silhouette. */
-export function UserGlyph() {
-  return (
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-      <path d="M12 12a5 5 0 1 0 0-10 5 5 0 0 0 0 10Zm0 2c-4.42 0-8 2.69-8 6v1a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-1c0-3.31-3.58-6-8-6Z" />
-    </svg>
-  )
-}

@@ -52,6 +52,10 @@ jobs:
           # during a big sync. Leave unset to call Trakt directly (still paced +
           # retried client-side). Add as repo secret VITE_TRAKT_PROXY.
           VITE_TRAKT_PROXY: ${{ secrets.VITE_TRAKT_PROXY }}
+          # Anonymous usage-stats worker (worker-stats). When set, the app sends a
+          # once-per-day, PII-free "active install" ping for install/DAU counts.
+          # Leave the secret unset to ship with no telemetry. Add as VITE_STATS_API.
+          VITE_STATS_API: ${{ secrets.VITE_STATS_API }}
           # Web Push: VAPID public key + Cloudflare Worker URL (both public).
           # Optional — leave unset to keep in-app-only notifications. See
           # worker/README.md. Add as repo secrets VITE_VAPID_PUBLIC / VITE_PUSH_API.

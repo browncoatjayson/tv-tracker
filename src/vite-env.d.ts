@@ -21,6 +21,9 @@ interface ImportMetaEnv {
   readonly VITE_TMDB_MIN_INTERVAL_MS?: string
   /** Min ms between Trakt requests — flat client pacing (no adaptation). Default 400. */
   readonly VITE_TRAKT_MIN_INTERVAL_MS?: string
+  /** Anonymous usage-stats worker URL. When set, the app sends a once-per-day,
+   *  PII-free "active install" ping (see worker-stats/). Unset = no ping. */
+  readonly VITE_STATS_API?: string
 }
 
 interface ImportMeta {

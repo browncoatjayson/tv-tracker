@@ -3,6 +3,7 @@ import type { ImportMode } from '../data/exportImport'
 import { applyImport } from '../data/importers/build'
 import { resolveTmdbIds } from '../data/importers/resolve'
 import { parseTvTimeZip } from '../data/importers/tvtime'
+import { importTvTimeLists, parseTvTimeListsFromZip } from '../data/importers/lists'
 import { parseTraktJson } from '../data/importers/trakt'
 import type { ImportItem } from '../data/importers/types'
 
@@ -42,9 +43,19 @@ export default function ImportTracker() {
       setPhase('saving')
       const summary = await applyImport(resolved, mode)
 
+      // TV Time also exports custom Lists (lists.json). Import those into our own
+      // lists, reusing the TMDB resolution just done for the library items.
+      let listCount = 0
+      if (source === 'tvtime') {
+        const parsedLists = await parseTvTimeListsFromZip(file)
+        listCount = await importTvTimeLists(parsedLists, mode, resolved)
+      }
+
       setUnmatched(unmatched.map((u) => u.title))
       setResult(
-        `Imported ${summary.items} titles · ${summary.episodes} episodes · ${summary.events} watch events.`,
+        `Imported ${summary.items} titles · ${summary.episodes} episodes · ${summary.events} watch events` +
+          (listCount ? ` · ${listCount} list${listCount === 1 ? '' : 's'}` : '') +
+          '.',
       )
       setPhase('done')
     } catch (e) {

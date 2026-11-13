@@ -2,14 +2,13 @@ import { useEffect, useState } from 'react'
 import { Link, NavLink, Outlet } from 'react-router-dom'
 import { db } from '../data/db'
 import { startIndexing, useIndexProgress } from '../data/episodeIndex'
+import { pingStats } from '../data/stats'
 import {
-  getGoogleProfile,
   hasGoogleClientId,
   hasLiveToken,
   recordSynced,
   syncNow,
   wasConnected,
-  type GoogleProfile,
 } from '../data/driveSync'
 import UpdatePrompt from './UpdatePrompt'
 import DriveReauthPrompt from './DriveReauthPrompt'
@@ -17,7 +16,7 @@ import ConfirmHost from './ConfirmHost'
 import BadgeToastHost from './BadgeToastHost'
 import NotificationScheduler from './NotificationScheduler'
 import { useBadgeWatcher } from '../hooks/useBadgeWatcher'
-import { UserGlyph } from '../views/Stats'
+import UserAvatar from './UserAvatar'
 
 // Tabs shown in the nav bar. A single source of truth keeps the markup tidy.
 const TABS = [
@@ -37,6 +36,8 @@ export default function Layout() {
   // opening Stats. No-ops when everything is already indexed.
   useEffect(() => {
     void startIndexing()
+    // Anonymous once-per-day usage ping (no-op unless VITE_STATS_API is set).
+    void pingStats()
   }, [])
 
   // On launch: ask the browser to persist our storage (so it isn't auto-evicted
@@ -114,21 +115,11 @@ export default function Layout() {
   )
 }
 
-/** Header avatar button → personal stats. Shows the Google photo when synced. */
+/** Header avatar button → personal stats. Shows the custom/Google avatar. */
 function UserButton() {
-  const [profile, setProfile] = useState<GoogleProfile | null>(getGoogleProfile())
-  useEffect(() => {
-    const onProfile = () => setProfile(getGoogleProfile())
-    window.addEventListener('tvtracker:profile', onProfile)
-    return () => window.removeEventListener('tvtracker:profile', onProfile)
-  }, [])
   return (
     <Link to="/stats" className="user-btn" aria-label="Your stats" title="Your stats">
-      {profile?.picture ? (
-        <img className="user-btn__img" src={profile.picture} alt="" referrerPolicy="no-referrer" />
-      ) : (
-        <UserGlyph />
-      )}
+      <UserAvatar className="user-btn__img" />
     </Link>
   )
 }

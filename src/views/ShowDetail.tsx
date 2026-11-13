@@ -19,6 +19,7 @@ import {
 } from '../api/tmdb'
 import { getShowAkas } from '../api/tvmaze'
 import { getSeasonEpisodesCached, getTvDetailsCached } from '../data/episodeCache'
+import { useScrollToResume } from '../hooks/useScrollToResume'
 import { classifySpecials } from '../data/specials'
 import { hasTraktClientId, resolveTraktId } from '../api/trakt'
 import {
@@ -295,6 +296,24 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
       .sort((a, b) => (a.air_date ?? '').localeCompare(b.air_date ?? ''))
   }, [episodesQuery.data, activeTab])
 
+  // The next unwatched (un-skipped) episode in the open season — the card the row
+  // scrolls to once it loads, so a long season opens where you left off. null when
+  // you're caught up / nothing's marked (row stays at the start). Not memoized:
+  // stateMap is a fresh Map each render, so a memo wouldn't help.
+  const resumeEp = visibleEpisodes.find((ep) => {
+    const st = stateMap.get(`${ep.season_number}:${ep.episode_number}`)
+    const wc = st?.watchCount ?? (st?.watched ? 1 : 0)
+    return wc === 0 && !st?.skipped
+  })
+  const resumeKey = resumeEp ? `${resumeEp.season_number}:${resumeEp.episode_number}` : null
+
+  // Scroll the row to the resume card once the (auto-picked) season's episodes
+  // load. Gated on `picked === null` so it only auto-scrolls the default season —
+  // if you pick a season yourself, your scroll position is left alone.
+  const episodeRowRef = useScrollToResume<HTMLDivElement>(
+    picked === null && !episodesQuery.isLoading && visibleEpisodes.length > 0,
+  )
+
   if (detailsQuery.isError && !d) {
     return (
       <div className="placeholder">
@@ -534,7 +553,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
           )}
 
           {episodesQuery.isLoading && <p className="muted">Loading episodes…</p>}
-          <div className="hscroll episode-row">
+          <div className="hscroll episode-row" ref={episodeRowRef}>
             {visibleEpisodes.map((ep) => {
               const key = `${ep.season_number}:${ep.episode_number}`
               const st = stateMap.get(key)
@@ -551,6 +570,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
                 <div
                   key={ep.episode_number}
                   className="ep-card"
+                  data-resume={key === resumeKey ? '' : undefined}
                   role="button"
                   tabIndex={0}
                   onClick={go}

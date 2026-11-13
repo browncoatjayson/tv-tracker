@@ -83,6 +83,7 @@ export function useBadgeWatcher(): void {
   const earned = useLiveQuery(() => db.badges.toArray(), [])
   const favPeople = useLiveQuery(() => db.favoritePeople.filter((p) => !p.removed).count(), [])
   const favServices = useLiveQuery(() => db.favoriteServices.filter((s) => !s.removed).count(), [])
+  const listCount = useLiveQuery(() => db.lists.count(), [])
   const trakt = useTraktAuth()
 
   // Re-check on account actions that only touch localStorage (export, sync,
@@ -110,6 +111,7 @@ export function useBadgeWatcher(): void {
     const ctx = buildBadgeContext(items, states, events, trakt.signedIn, {
       favoritePeople: favPeople ?? 0,
       favoriteServices: favServices ?? 0,
+      lists: listCount ?? 0,
     })
     const met = evaluateBadges(ctx)
     const have = new Set(earned.map((b) => b.id))
@@ -141,5 +143,5 @@ export function useBadgeWatcher(): void {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, states, events, earned, favPeople, favServices, trakt.signedIn, tick])
+  }, [items, states, events, earned, favPeople, favServices, listCount, trakt.signedIn, tick])
 }

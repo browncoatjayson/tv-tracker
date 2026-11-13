@@ -5,6 +5,7 @@ import { LAST_EXPORT_KEY } from './exportImport'
 import { isNotifyEnabled } from './notifications'
 import { DEFAULT_LEAGUE_KEYS, getEnabledLeagues } from './sportPrefs'
 import { getFlag } from './appFlags'
+import { getProfileData } from './profileImages'
 import type { EarnedBadge, EpisodeState, TrackedItem, WatchEvent } from './types'
 
 // ---------------------------------------------------------------------------
@@ -54,6 +55,12 @@ export interface BadgeContext {
   openedStats: boolean
   openedTimeline: boolean
   searched: boolean
+  /** Set a custom Stats avatar or backdrop. */
+  customizedStats: boolean
+  /** Rolled the Search page's "Watch next" random picker at least once. */
+  pickedRandom: boolean
+  /** Number of custom lists created. */
+  listsCreated: number
   hasExported: boolean
   googleLinked: boolean
   hasSynced: boolean
@@ -85,6 +92,8 @@ export const BADGES: BadgeDef[] = [
   { id: 'searched', name: "They're All Here", description: 'Run your first search.', emoji: '🔍', group: 'App', earned: (c) => c.searched },
   { id: 'fav-service-1', name: 'Your Choice', description: 'Pick at least one favorite service.', emoji: '📡', group: 'App', earned: (c) => c.favoriteServices >= 1 },
   { id: 'league-1', name: 'Sportsball', description: 'Enable a sports league beyond the defaults.', emoji: '🏈', group: 'App', earned: (c) => c.extraLeagues >= 1 },
+  { id: 'stats-custom', name: 'Home Sweet Home', description: 'Customize the Stats page.', emoji: '🏠', group: 'App', earned: (c) => c.customizedStats },
+  { id: 'random-pick', name: "Dealer's Choice", description: 'Pick a random show to watch next.', emoji: '🎲', group: 'App', earned: (c) => c.pickedRandom },
   { id: 'pwa', name: 'Locked and Loaded', description: 'Launch the installed app (PWA).', emoji: '🚀', group: 'App', earned: (c) => c.isPwa },
 
   // --- TV Watch ----------------------------------------------------------
@@ -135,6 +144,8 @@ export const BADGES: BadgeDef[] = [
   { id: 'fav-show-1', name: "I'm a Fan", description: 'Favorite a show.', emoji: '💖', group: 'Favorites', earned: (c) => c.favoriteShows >= 1 },
   { id: 'fav-show-5', name: 'Fandom', description: 'Favorite 5 shows.', emoji: '🎉', group: 'Favorites', earned: (c) => c.favoriteShows >= 5 },
   { id: 'franchise', name: 'Franchise', description: 'Favorite 3+ titles from one Related group.', emoji: '🧩', group: 'Favorites', earned: (c) => c.franchiseFavs >= 3 },
+  { id: 'list-1', name: 'You Made the Cut', description: 'Create a list.', emoji: '✂️', group: 'Favorites', earned: (c) => c.listsCreated >= 1 },
+  { id: 'list-5', name: 'Cataloger', description: 'Create 5 lists.', emoji: '🗂️', group: 'Favorites', earned: (c) => c.listsCreated >= 5 },
 
   // --- Connected ---------------------------------------------------------
   { id: 'backup', name: 'Safekeeper', description: 'Export a backup.', emoji: '💾', group: 'Connected', earned: (c) => c.hasExported },
@@ -170,6 +181,8 @@ function isStandalone(): boolean {
 export interface BadgeCounts {
   favoritePeople: number
   favoriteServices: number
+  /** Number of custom lists that currently exist. */
+  lists: number
 }
 
 /** Build the evaluation snapshot from the raw tables + account flags. Counting
@@ -236,6 +249,10 @@ export function buildBadgeContext(
     // ignore storage access errors
   }
 
+  // "Home Sweet Home": any custom Stats image set counts as customizing.
+  const profile = getProfileData()
+  const customizedStats = !!(profile.avatar || profile.backdrop)
+
   return {
     episodesWatched,
     episodesSkipped,
@@ -259,6 +276,9 @@ export function buildBadgeContext(
     openedStats: getFlag('openedStats'),
     openedTimeline: getFlag('openedTimeline'),
     searched: getFlag('searched'),
+    customizedStats,
+    pickedRandom: getFlag('pickedRandom'),
+    listsCreated: counts.lists,
     hasExported,
     googleLinked: !!getGoogleProfile(),
     hasSynced,

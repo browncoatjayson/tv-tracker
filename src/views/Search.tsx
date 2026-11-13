@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useQueries, useQuery } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import {
   discover,
   getCreditEpisodes,
@@ -29,6 +29,7 @@ import {
 } from '../api/tmdb'
 import { db, itemKey } from '../data/db'
 import { addItem, seenState } from '../data/library'
+import { addToList, listContains } from '../data/lists'
 import { useDebouncedValue } from '../hooks/useDebouncedValue'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import { matchesFilter, parseQuery } from '../utils/filter'
@@ -39,6 +40,8 @@ import { useCachedAirstamps } from '../hooks/useShowAirstamps'
 import { hasAiredByTime } from '../utils/airTime'
 import { localDateOfIso } from '../utils/watchedDate'
 import { pickWatchNext, type WatchNextCandidate } from '../utils/watchNext'
+import { WATCH_NEXT_ID, WATCH_NEXT_TITLE, useWatchNextFav } from '../data/watchNext'
+import { setWatchNextFav } from '../data/profileImages'
 import {
   ESPN_LEAGUES,
   espnGameUrl,
@@ -107,6 +110,38 @@ export default function Search() {
     if (q !== null) setInput(q)
   }, [searchParams])
 
+  // Add-to-list mode (reached from a list's "＋ Add titles"): while active, tapping
+  // a result adds it to that list instead of opening it. A banner + Done returns.
+  const navigate = useNavigate()
+  const addToListId = searchParams.get('addToList') || undefined
+  const addTarget = useLiveQuery(
+    async () => (addToListId ? db.lists.get(addToListId) : undefined),
+    [addToListId],
+  )
+  async function addResultToList(r: TmdbMediaResult): Promise<void> {
+    if (!addToListId) return
+    const mt = toMediaType(r)
+    await addToList(addToListId, {
+      id: itemKey(mt, r.id),
+      mediaType: mt,
+      title: resultTitle(r),
+      poster: r.poster_path ?? undefined,
+    })
+  }
+
+  // Arriving via the "Watch Next" shortcut (?shuffle=1): clear any saved filter
+  // and roll a fresh suggestion once the candidate data has loaded. The roll runs
+  // in a later effect (candidates come from async live queries); the param is
+  // stripped immediately so a refresh or back-nav doesn't re-fire it.
+  const [pendingShuffle, setPendingShuffle] = useState(false)
+  useEffect(() => {
+    if (searchParams.get('shuffle') === null) return
+    setInput('')
+    setPendingShuffle(true)
+    navigate('/search', { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
   // A new query collapses the list back to the first page.
   useEffect(() => {
     setVisibleCount(PAGE)
@@ -150,7 +185,9 @@ export default function Search() {
   const sportSearch = useQuery({
     queryKey: ['espn-team-search', sportQuery, teamSearchKeys.join(',')],
     queryFn: () => searchEspnTeams(sportQuery, teamSearchKeys),
-    enabled: sportMode && !gameBrowse && sportQuery.length >= 2,
+    // Also search teams in add-to-list mode (even without a team: prefix) so a
+    // plain query like "Illinois" surfaces the team alongside movies/shows.
+    enabled: (sportMode || !!addToListId) && !gameBrowse && sportQuery.length >= 2,
     staleTime: HOUR,
   })
 
@@ -368,7 +405,9 @@ export default function Search() {
   }
   const [watchNext, setWatchNext] = useState<WatchNextCandidate | 'none' | null>(null)
   const [watchNextShown, setWatchNextShown] = useState<Set<string>>(() => new Set())
+  const watchNextFav = useWatchNextFav()
   const rollWatchNext = () => {
+    markFlag('pickedRandom') // earns "Dealer's Choice"
     const exclude =
       watchNext && watchNext !== 'none' ? new Set([watchNext.item.id]) : new Set<string>()
     // Re-rolling excludes the current pick; once everything's been shown, start over.
@@ -387,6 +426,28 @@ export default function Search() {
       return next
     })
   }
+  // Fire the pending shuffle (arrived via the Favorites/list shortcut) once the
+  // candidate data is actually ready. The library + episode/state live queries
+  // resolve in stages after navigation, and the Watching-episode query briefly
+  // returns [] before the library loads — rolling then would always land on
+  // "none". So we roll as soon as real candidates exist; if none have appeared
+  // once everything has loaded, a short grace window lets the episode cache
+  // settle before we accept "no suggestions".
+  useEffect(() => {
+    if (!pendingShuffle) return
+    if (libraryItems === undefined || wnEpisodes === undefined || wnStates === undefined) return
+    if (watchNextCandidates.length > 0) {
+      rollWatchNext()
+      setPendingShuffle(false)
+      return
+    }
+    const t = setTimeout(() => {
+      rollWatchNext()
+      setPendingShuffle(false)
+    }, 700)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingShuffle, libraryItems, wnEpisodes, wnStates, watchNextCandidates.length])
 
   const ratedCount = (libraryItems ?? []).filter((i) => i.userRating !== undefined).length
   const recSeeds = (libraryItems ?? [])
@@ -655,6 +716,9 @@ export default function Search() {
   // Discover (filter-only) and text/actor/series search feed the same list.
   const results = discoverActive ? discoverMerged : searchResults
   const visibleResults = results.slice(0, discoverActive ? discoverVisible : visibleCount)
+  // In add-to-list mode, drop result stubs that have no poster — these are almost
+  // always one-off sports-broadcast "games", which just clutter list-building.
+  const shownResults = addToListId ? visibleResults.filter((r) => r.poster_path) : visibleResults
   const hasMore = discoverActive
     ? discoverVisible < discoverMerged.length || discoverPages < discoverTotalPages
     : results.length > visibleResults.length
@@ -732,6 +796,20 @@ export default function Search() {
 
   return (
     <div className="search">
+      {addToListId && (
+        <div className="addlist-banner">
+          <span className="addlist-banner__text">
+            Adding to <strong>{addTarget?.name ?? 'list'}</strong> — tap a result to add it.
+          </span>
+          <button
+            type="button"
+            className="btn btn--small"
+            onClick={() => navigate(`/list/${addToListId}`)}
+          >
+            Done
+          </button>
+        </div>
+      )}
       <FilterBar
         value={input}
         onChange={setInput}
@@ -819,6 +897,36 @@ export default function Search() {
               </div>
             </Link>
           )}
+          {addToListId ? (
+            <button
+              type="button"
+              className="watch-next__action"
+              disabled={listContains(addTarget, WATCH_NEXT_ID)}
+              onClick={() =>
+                void addToList(addToListId, {
+                  id: WATCH_NEXT_ID,
+                  mediaType: 'show',
+                  title: WATCH_NEXT_TITLE,
+                })
+              }
+              title="Add the Watch Next shortcut to this list"
+            >
+              {listContains(addTarget, WATCH_NEXT_ID) ? '✓ In list' : '＋ Add to list'}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={`watch-next__fav${watchNextFav ? ' watch-next__fav--on' : ''}`}
+              onClick={() => setWatchNextFav(!watchNextFav)}
+              title={watchNextFav ? 'Remove Watch Next from Favorites' : 'Add Watch Next to Favorites'}
+              aria-label={
+                watchNextFav ? 'Remove Watch Next from Favorites' : 'Add Watch Next to Favorites'
+              }
+              aria-pressed={watchNextFav}
+            >
+              {watchNextFav ? '★' : '☆'}
+            </button>
+          )}
         </section>
       )}
 
@@ -830,9 +938,24 @@ export default function Search() {
           hits={sportSearch.data ?? []}
           fetching={sportSearch.isFetching}
           trackedSet={trackedSet}
+          addToListId={addToListId}
+          isInList={(teamId) => listContains(addTarget, teamId)}
         />
       ) : (
        <>
+      {addToListId && (sportSearch.data?.length ?? 0) > 0 && (
+        <div className="list-teams-group">
+          <h3 className="section-title">Teams</h3>
+          <SportTeamResults
+            query={sportQuery}
+            hits={sportSearch.data ?? []}
+            fetching={false}
+            trackedSet={trackedSet}
+            addToListId={addToListId}
+            isInList={(teamId) => listContains(addTarget, teamId)}
+          />
+        </div>
+      )}
       {(isFetching || discoverFetching) && <p className="muted">Searching…</p>}
       {isError && (
         <p className="badge badge--warn">
@@ -851,7 +974,7 @@ export default function Search() {
       )}
 
       <ul className="result-list">
-        {visibleResults.map((r) => {
+        {shownResults.map((r) => {
           const id = itemKey(toMediaType(r), r.id)
           const added = trackedSet.has(id)
           const poster = imageUrl(r.poster_path ?? undefined, 'w92')
@@ -883,18 +1006,39 @@ export default function Search() {
           return (
             <li key={`${r.media_type}:${r.id}`} className="result-item">
               <div className="result-row">
-                {/* Tiles always link to the detail page — a preview before adding,
-                    the full tracking view once in the library. */}
-                <Link to={`/item/${encodeURIComponent(id)}`} className="result-row__link">
+                {/* Normally link to the detail page (a preview). In add-to-list
+                    mode, a tap adds to the list instead of navigating. */}
+                <Link
+                  to={`/item/${encodeURIComponent(id)}`}
+                  className="result-row__link"
+                  onClick={
+                    addToListId
+                      ? (e) => {
+                          e.preventDefault()
+                          void addResultToList(r)
+                        }
+                      : undefined
+                  }
+                >
                   {inner}
                 </Link>
-                <button
-                  className="btn btn--small"
-                  disabled={added || addingId === r.id}
-                  onClick={() => void handleAdd(r)}
-                >
-                  {added ? '✓ In library' : addingId === r.id ? 'Adding…' : 'Add'}
-                </button>
+                {addToListId ? (
+                  <button
+                    className="btn btn--small"
+                    disabled={listContains(addTarget, id)}
+                    onClick={() => void addResultToList(r)}
+                  >
+                    {listContains(addTarget, id) ? '✓ In list' : 'Add to list'}
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn--small"
+                    disabled={added || addingId === r.id}
+                    onClick={() => void handleAdd(r)}
+                  >
+                    {added ? '✓ In library' : addingId === r.id ? 'Adding…' : 'Add'}
+                  </button>
+                )}
               </div>
               {appearances.length > 0 && (
                 <div className="appearances">
@@ -1001,13 +1145,26 @@ function SportTeamResults({
   hits,
   fetching,
   trackedSet,
+  addToListId,
+  isInList,
 }: {
   query: string
   hits: EspnTeamHit[]
   fetching: boolean
   trackedSet: Set<string>
+  addToListId?: string
+  isInList?: (id: string) => boolean
 }) {
   const [addingId, setAddingId] = useState<string | null>(null)
+  async function addTeam(h: EspnTeamHit): Promise<void> {
+    if (!addToListId) return
+    await addToList(addToListId, {
+      id: sportItemId(h.leagueKey, h.teamId),
+      mediaType: 'sport',
+      title: h.teamName,
+      poster: h.logo,
+    })
+  }
   if (query.length < 2) {
     return <p className="muted">Type a team name to find a team (e.g. Nebraska).</p>
   }
@@ -1023,7 +1180,18 @@ function SportTeamResults({
           return (
             <li key={addKey} className="result-item">
               <div className="result-row">
-                <Link to={`/item/${encodeURIComponent(id)}`} className="result-row__link">
+                <Link
+                  to={`/item/${encodeURIComponent(id)}`}
+                  className="result-row__link"
+                  onClick={
+                    addToListId
+                      ? (e) => {
+                          e.preventDefault()
+                          void addTeam(h)
+                        }
+                      : undefined
+                  }
+                >
                   {h.logo ? (
                     <img className="result-row__poster" src={h.logo} alt="" loading="lazy" />
                   ) : (
@@ -1038,21 +1206,31 @@ function SportTeamResults({
                     </span>
                   </div>
                 </Link>
-                <button
-                  className="btn btn--small"
-                  disabled={added || addingId === addKey}
-                  onClick={() => {
-                    setAddingId(addKey)
-                    void addSportTeam({
-                      league: h.leagueKey,
-                      teamId: h.teamId,
-                      teamName: h.teamName,
-                      logo: h.logo,
-                    }).finally(() => setAddingId(null))
-                  }}
-                >
-                  {added ? '✓ In library' : addingId === addKey ? 'Adding…' : 'Add'}
-                </button>
+                {addToListId ? (
+                  <button
+                    className="btn btn--small"
+                    disabled={!!isInList?.(id)}
+                    onClick={() => void addTeam(h)}
+                  >
+                    {isInList?.(id) ? '✓ In list' : 'Add to list'}
+                  </button>
+                ) : (
+                  <button
+                    className="btn btn--small"
+                    disabled={added || addingId === addKey}
+                    onClick={() => {
+                      setAddingId(addKey)
+                      void addSportTeam({
+                        league: h.leagueKey,
+                        teamId: h.teamId,
+                        teamName: h.teamName,
+                        logo: h.logo,
+                      }).finally(() => setAddingId(null))
+                    }}
+                  >
+                    {added ? '✓ In library' : addingId === addKey ? 'Adding…' : 'Add'}
+                  </button>
+                )}
               </div>
             </li>
           )

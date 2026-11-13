@@ -25,6 +25,7 @@ import DetailHero from '../components/DetailHero'
 import { appConfirm } from '../utils/confirm'
 import { clockTime } from '../utils/airTime'
 import { localDateOfIso } from '../utils/watchedDate'
+import { useScrollToResume } from '../hooks/useScrollToResume'
 
 const HOUR = 1000 * 60 * 60
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
@@ -72,6 +73,13 @@ export default function SportDetail({ itemId }: { itemId: string }) {
     [states],
   )
 
+  // Scroll the games row to the next unwatched game once the schedule loads (see
+  // the show page). Gated to the default (current) season, so switching seasons
+  // yourself leaves your scroll position alone. Must run before the early return.
+  const episodeRowRef = useScrollToResume<HTMLDivElement>(
+    season === SEASONS[0] && !schedule.isLoading && (schedule.data?.games?.length ?? 0) > 0,
+  )
+
   if (!parsed || !league) {
     return (
       <div className="placeholder">
@@ -86,6 +94,8 @@ export default function SportDetail({ itemId }: { itemId: string }) {
   const logo = item?.sport?.logo ?? schedule.data?.logo
   const games = schedule.data?.games ?? []
   const watchedInSeason = games.filter((_, i) => watchedSet.has(`${season}:${i + 1}`)).length
+  // The first unwatched game — the card the row scrolls to on open (-1 = none).
+  const resumeIdx = games.findIndex((_, i) => !watchedSet.has(`${season}:${i + 1}`))
 
   // Season summary shown beside the status control. Rewatching a season is rare,
   // so the space carries the win/loss record and rank instead.
@@ -245,7 +255,7 @@ export default function SportDetail({ itemId }: { itemId: string }) {
           <p className="muted">No games found for the {season} season.</p>
         )}
 
-        <div className="hscroll episode-row">
+        <div className="hscroll episode-row" ref={episodeRowRef}>
           {games.map((g, i) => {
             const epNo = i + 1
             const watched = watchedSet.has(`${season}:${epNo}`)
@@ -272,6 +282,7 @@ export default function SportDetail({ itemId }: { itemId: string }) {
               <div
                 key={g.id}
                 className="ep-card"
+                data-resume={i === resumeIdx ? '' : undefined}
                 role="button"
                 tabIndex={0}
                 onClick={openGame}

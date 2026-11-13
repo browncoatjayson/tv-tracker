@@ -7,6 +7,13 @@ import {
   readEpisodeCache,
   type BackupData,
 } from './exportImport'
+import {
+  applyExtrasPayload,
+  buildExtrasPayload,
+  isExtrasFile,
+  mergeExtrasPayload,
+  toExtrasFile,
+} from './extras'
 import type { CachedEpisode } from './types'
 
 // ---------------------------------------------------------------------------
@@ -32,6 +39,9 @@ const SCOPE =
 // routine "mark watched" doesn't re-upload the whole episode cache.
 const CORE_FILE = 'tvtracker-backup.json'
 const CACHE_FILE = 'tvtracker-cache.json'
+// Custom lists (with their images) + profile customization — their own file so
+// the base64 artwork never bloats the frequently-pushed core file.
+const EXTRAS_FILE = 'tvtracker-extras.json'
 // Remembers the cache's row count at its last upload, so an unchanged cache
 // isn't re-uploaded. (A disposable, regenerable cache — count is a good-enough
 // change signal; a content change with the same count self-heals via reindex.)
@@ -177,9 +187,41 @@ function loadGis(): Promise<void> {
 }
 
 // A GIS access token is valid ~1 hour and there's no refresh token in this flow,
-// so we cache it in memory and reuse it — otherwise every change would request a
-// new token (and prompt). Cleared on disconnect.
-let cachedToken: { token: string; expiresAt: number } | null = null
+// so we cache it and reuse it — otherwise every change would request a new token
+// (and prompt). We also persist it to sessionStorage so a page REFRESH can reuse a
+// still-valid token instead of forcing a fresh sign-in (GIS tokens are otherwise
+// memory-only, so a reload drops the token and prompts re-auth). sessionStorage
+// clears when the app/tab closes, so a genuine cold start still re-authenticates,
+// and the token stays off disk. Cleared on disconnect.
+const TOKEN_KEY = 'tvtracker.googleToken'
+
+interface CachedToken {
+  token: string
+  expiresAt: number
+}
+
+function loadCachedToken(): CachedToken | null {
+  try {
+    const v = sessionStorage.getItem(TOKEN_KEY)
+    if (!v) return null
+    const t = JSON.parse(v) as CachedToken
+    // Only reuse a token still inside its validity window.
+    return t && typeof t.token === 'string' && Date.now() < t.expiresAt ? t : null
+  } catch {
+    return null
+  }
+}
+
+function storeCachedToken(t: CachedToken | null): void {
+  try {
+    if (t) sessionStorage.setItem(TOKEN_KEY, JSON.stringify(t))
+    else sessionStorage.removeItem(TOKEN_KEY)
+  } catch {
+    // ignore storage errors (private mode, etc.)
+  }
+}
+
+let cachedToken: CachedToken | null = loadCachedToken()
 
 /**
  * True when we hold an access token that's still valid — i.e. a silent sync can
@@ -222,6 +264,7 @@ async function getAccessToken(interactive: boolean): Promise<string> {
           // Cache with a 1-minute safety margin before the real expiry.
           const ttl = (resp.expires_in ?? 3600) * 1000
           cachedToken = { token: resp.access_token, expiresAt: Date.now() + ttl - 60_000 }
+          storeCachedToken(cachedToken)
           resolve(resp.access_token)
         } else reject(new Error(resp.error || 'Authorization failed.'))
       },
@@ -344,6 +387,25 @@ function rememberCacheSig(count: number): void {
   }
 }
 
+/**
+ * Sync the extras file (custom lists + profile images) — its own Drive file so
+ * these (and their base64 artwork) never bloat the frequently-pushed core file.
+ * Pull, merge (deterministic last-write-wins + list tombstones), apply the merged
+ * result locally, and push it back. Best-effort: never fails the core sync.
+ */
+async function syncExtras(token: string): Promise<void> {
+  try {
+    const local = await buildExtrasPayload()
+    const fileId = await findFileId(token, EXTRAS_FILE)
+    const remote = fileId ? await downloadJson<unknown>(token, fileId) : null
+    const merged = isExtrasFile(remote) ? mergeExtrasPayload(local, remote) : local
+    await applyExtrasPayload(merged, 'replace')
+    await uploadJson(token, toExtrasFile(merged), EXTRAS_FILE, fileId)
+  } catch {
+    // Best-effort; a failed extras sync must not break the core sync.
+  }
+}
+
 export interface SyncResult {
   items: number
   episodes: number
@@ -392,6 +454,10 @@ export async function syncNow(interactive: boolean): Promise<SyncResult> {
   // Episode cache (large, regenerable): its own file, synced only when changed.
   await syncCache(token)
 
+  // Custom lists + profile customization: their own file, so this keeps the core
+  // file small. (Only reached on a full sync — launch, manual, restore.)
+  await syncExtras(token)
+
   return {
     items: merged.trackedItems.length,
     episodes: merged.episodeStates.length,
@@ -437,6 +503,7 @@ export function disconnect(): void {
   setGoogleProfile(null)
   setLoginHint(null)
   cachedToken = null
+  storeCachedToken(null)
 }
 
 export type DeleteRemoteResult = 'deleted' | 'none' | 'skipped'
@@ -458,13 +525,15 @@ async function deleteFile(token: string, fileId: string): Promise<void> {
 export async function deleteRemoteBackup(interactive: boolean): Promise<DeleteRemoteResult> {
   if (!hasGoogleClientId()) return 'skipped'
   const token = await getAccessToken(interactive)
-  const [coreId, cacheId] = await Promise.all([
+  const [coreId, cacheId, extrasId] = await Promise.all([
     findFileId(token, CORE_FILE),
     findFileId(token, CACHE_FILE),
+    findFileId(token, EXTRAS_FILE),
   ])
-  if (!coreId && !cacheId) return 'none'
+  if (!coreId && !cacheId && !extrasId) return 'none'
   if (coreId) await deleteFile(token, coreId)
   if (cacheId) await deleteFile(token, cacheId)
+  if (extrasId) await deleteFile(token, extrasId)
   try {
     localStorage.removeItem(CACHE_SIG_KEY)
   } catch {

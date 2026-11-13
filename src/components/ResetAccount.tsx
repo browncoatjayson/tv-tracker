@@ -3,6 +3,7 @@ import { db } from '../data/db'
 import { downloadBackup } from '../data/exportImport'
 import { deleteRemoteBackup, disconnect, wasConnected } from '../data/driveSync'
 import { cancelIndexing } from '../data/episodeIndex'
+import { clearProfileData } from '../data/profileImages'
 import { beginBadgeSuppression, endBadgeSuppression } from '../hooks/useBadgeWatcher'
 
 // Must match the key DriveSync uses for its "last synced" timestamp.
@@ -58,6 +59,8 @@ export default function ResetAccount() {
           db.favoritePeople,
           db.favoriteServices,
           db.badges,
+          db.lists,
+          db.listTombstones,
         ],
         async () => {
           await Promise.all([
@@ -69,11 +72,14 @@ export default function ResetAccount() {
             db.favoritePeople.clear(),
             db.favoriteServices.clear(),
             db.badges.clear(),
+            db.lists.clear(),
+            db.listTombstones.clear(),
           ])
         },
       )
 
       disconnect()
+      clearProfileData()
       try {
         localStorage.removeItem(LAST_SYNCED_KEY)
         localStorage.removeItem('tvtracker.indexedShows')

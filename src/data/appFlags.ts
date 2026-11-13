@@ -7,7 +7,12 @@
 // what syncs. buildBadgeContext reads them; marking one nudges the badge watcher.
 // ---------------------------------------------------------------------------
 
-export type AppFlag = 'welcomed' | 'openedStats' | 'openedTimeline' | 'searched'
+export type AppFlag =
+  | 'welcomed'
+  | 'openedStats'
+  | 'openedTimeline'
+  | 'searched'
+  | 'pickedRandom'
 
 const PREFIX = 'tvtracker.flag.'
 

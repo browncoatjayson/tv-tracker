@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useRef, useState } from 'react'
+import { Fragment, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useQueries } from '@tanstack/react-query'
 import { useLiveQuery } from 'dexie-react-hooks'
 import { Link } from 'react-router-dom'
@@ -9,8 +9,11 @@ import { sportAirState } from '../data/sports'
 import { getTvmazeEpisodesByImdb } from '../api/tvmaze'
 import { airsToday, compactAirTime, hasAiredByTime } from '../utils/airTime'
 import { markEpisode, seenState, toggleFavorite } from '../data/library'
-import type { CachedEpisode, EpisodeState, TrackedItem, WatchStatus } from '../data/types'
+import type { CachedEpisode, CustomList, EpisodeState, TrackedItem, WatchStatus } from '../data/types'
 import { matchesFilter, parseQuery } from '../utils/filter'
+import { WATCH_NEXT_LINK, useWatchNextFav } from '../data/watchNext'
+import ListCollage from '../components/ListCollage'
+import WatchNextPoster from '../components/WatchNextCard'
 import { usePersistentFilter } from '../hooks/usePersistentFilter'
 import { useCachedAirstamps } from '../hooks/useShowAirstamps'
 import { useTrackedItems } from '../hooks/useTrackedItems'
@@ -45,9 +48,19 @@ interface Section {
   items: TrackedItem[]
   /** Watching shows get the "next episode" strip (full view only). */
   watching?: boolean
+  /** For a mixed section (Favorites), only items this returns true for get the
+   *  next-episode strip — so a favorited show/team you're Watching shows its next
+   *  episode while favorited movies / finished shows stay plain. Omitted = all. */
+  showNextCard?: (item: TrackedItem) => boolean
   /** Gets a "Hide" toggle in the full view so you can tuck it away (In Hiatus,
    *  Completed, Dropped). */
   collapsible?: boolean
+  /** Extra cards shown before the items (Favorites: the Watch Next shortcut and
+   *  favorited lists, which aren't TrackedItems). Full view / collapsed view. */
+  leadingCards?: ReactNode[]
+  leadingChips?: ReactNode[]
+  /** Count of the leading cards, added to the section's header total. */
+  leadingCount?: number
 }
 
 /** Placeholder emoji for a title (sports use their league icon). */
@@ -160,6 +173,17 @@ function comparator(sort: SortKey): (a: TrackedItem, b: TrackedItem) => number {
 
 export default function Library() {
   const items = useTrackedItems()
+  // Favorited custom lists + the "Watch Next" shortcut — surfaced as extra cards
+  // at the top of the Favorites section (browse mode only).
+  const favLists = useLiveQuery(
+    () =>
+      db.lists
+        .filter((l) => !!l.favorite)
+        .toArray()
+        .then((rows) => rows.sort((a, b) => b.updatedAt - a.updatedAt)),
+    [],
+  )
+  const watchNextFav = useWatchNextFav()
   const [welcomeDismissed, setWelcomeDismissed] = useState(() => welcomeSeen)
   const dismissWelcome = () => {
     welcomeSeen = true
@@ -368,6 +392,13 @@ export default function Library() {
   const upcomingOnly = parsed.released.length === 1 && parsed.released[0] === 'upcoming'
   const pickNextEp = upcomingOnly ? nextUpcoming : nextUnwatched
 
+  // Fallback for the Watching card: a show kept out of Hiatus because its next
+  // episode is coming soon (nextAirDate) but not yet in the episode cache would
+  // otherwise read "Nothing scheduled". Surface that known air date instead, so
+  // the card agrees with the hiatus logic (both already consider nextAirDate).
+  const scheduledAir = (i: TrackedItem): string | undefined =>
+    i.mediaType === 'show' && i.nextAirDate && i.nextAirDate >= today ? i.nextAirDate : undefined
+
   // When searching, keep only titles matching the query/filters; otherwise all.
   const matched = searching
     ? sorted.filter((i) =>
@@ -401,10 +432,55 @@ export default function Library() {
 
   // Keep the status groups in both modes so results stay in context. Favorites
   // get their own section only when browsing (not mixed into search results).
+  // Favorited lists + the Watch Next shortcut lead the Favorites section (browse
+  // mode only — they aren't TrackedItems and aren't mixed into search results).
+  const specialFavCards: ReactNode[] = []
+  const specialFavChips: ReactNode[] = []
+  if (!searching) {
+    if (watchNextFav) {
+      specialFavCards.push(
+        <li key="__wn" className="poster-cell">
+          <Link
+            to={WATCH_NEXT_LINK}
+            className="poster-card"
+            title="Watch Next — shuffle a suggestion"
+          >
+            <WatchNextPoster className="poster-card__img" />
+            <span className="poster-card__title">Watch Next</span>
+          </Link>
+        </li>,
+      )
+      specialFavChips.push(
+        <Link key="__wn" to={WATCH_NEXT_LINK} className="lib-chip" title="Watch Next">
+          <WatchNextPoster className="lib-chip__img" />
+          <span className="lib-chip__title">Watch Next</span>
+        </Link>,
+      )
+    }
+    for (const list of favLists ?? []) {
+      specialFavCards.push(<FavListCard key={list.id} list={list} />)
+      specialFavChips.push(<FavListChip key={list.id} list={list} />)
+    }
+  }
+  const specialFavCount = specialFavCards.length
+
   const sections: Section[] = []
   if (!searching) {
     const favs = matched.filter((i) => i.favorite)
-    if (favs.length > 0) sections.push({ key: 'fav', label: '★ Favorites', items: favs })
+    if (favs.length > 0 || specialFavCount > 0)
+      sections.push({
+        key: 'fav',
+        label: '★ Favorites',
+        items: favs,
+        // Favorites is a mixed section; render it like Watching but show the
+        // next-episode strip only for a favorited show/team you're Watching.
+        watching: true,
+        showNextCard: (i) =>
+          (i.mediaType === 'show' || i.mediaType === 'sport') && i.status === 'watching',
+        leadingCards: specialFavCards,
+        leadingChips: specialFavChips,
+        leadingCount: specialFavCount,
+      })
   }
   for (const status of STATUS_ORDER) {
     const group = matched.filter((i) => i.status === status && (searching || !i.favorite))
@@ -487,6 +563,7 @@ export default function Library() {
               hidden={hidden.has(sec.key)}
               onToggleHidden={toggleHidden}
               pickNextEp={pickNextEp}
+              scheduledAir={scheduledAir}
               airstampOf={airstampOf}
             />
           ))
@@ -544,21 +621,24 @@ function FullSection({
   hidden,
   onToggleHidden,
   pickNextEp,
+  scheduledAir,
   airstampOf,
 }: {
   sec: Section
   hidden: boolean
   onToggleHidden: (key: string, v: boolean) => void
   pickNextEp: (id: string) => CachedEpisode | null
+  scheduledAir: (i: TrackedItem) => string | undefined
   airstampOf: (itemId: string, season: number, episode: number) => string | undefined
 }) {
   // In the full view, collapsible sections (In Hiatus, Completed, Dropped) can be
   // hidden behind a "Hide" toggle.
   const isHidden = !!sec.collapsible && hidden
+  const total = sec.items.length + (sec.leadingCount ?? 0)
   return (
     <section className="library__section">
       <h2 className={`section-title${sec.collapsible ? ' section-title--row' : ''}`}>
-        {sec.label} <span className="count">{sec.items.length}</span>
+        {sec.label} <span className="count">{total}</span>
         {sec.collapsible && (
           <label className="lib-hide">
             <input
@@ -571,11 +651,18 @@ function FullSection({
         )}
       </h2>
       {isHidden ? (
-        <p className="muted lib-hidden-note">{sec.items.length} hidden</p>
+        <p className="muted lib-hidden-note">{total} hidden</p>
       ) : sec.watching ? (
-        <WatchingGrid items={sec.items} pickNextEp={pickNextEp} airstampOf={airstampOf} />
+        <WatchingGrid
+          items={sec.items}
+          pickNextEp={pickNextEp}
+          scheduledAir={scheduledAir}
+          airstampOf={airstampOf}
+          showNextCard={sec.showNextCard}
+          leading={sec.leadingCards}
+        />
       ) : (
-        <PosterGrid items={sec.items} />
+        <PosterGrid items={sec.items} leading={sec.leadingCards} />
       )}
     </section>
   )
@@ -601,11 +688,12 @@ function CollapsedList({
             <SectionDivider
               className="section-divider--lib"
               label={sec.label}
-              count={sec.items.length}
+              count={sec.items.length + (sec.leadingCount ?? 0)}
               countNoun="Title"
               hidden={isHidden}
               onToggleHide={(v) => onToggleHidden(sec.key, v)}
             />
+            {!isHidden && sec.leadingChips}
             {!isHidden && sec.items.map((item) => <LibChip key={item.id} item={item} />)}
           </Fragment>
         )
@@ -631,6 +719,36 @@ function LibChip({ item }: { item: TrackedItem }) {
         <div className="lib-chip__img lib-chip__img--ph">{mediaEmoji(item)}</div>
       )}
       <span className="lib-chip__title">{item.title}</span>
+    </Link>
+  )
+}
+
+/** A favorited custom list as a full-view poster card (links to the list page). */
+function FavListCard({ list }: { list: CustomList }) {
+  return (
+    <li className="poster-cell">
+      <Link to={`/list/${list.id}`} className="poster-card" title={list.name}>
+        {list.poster ? (
+          <img className="poster-card__img" src={list.poster} alt="" loading="lazy" />
+        ) : (
+          <ListCollage items={list.items} className="poster-card__img" />
+        )}
+        <span className="poster-card__title">{list.name}</span>
+      </Link>
+    </li>
+  )
+}
+
+/** A favorited custom list as a compact collapsed-view chip. */
+function FavListChip({ list }: { list: CustomList }) {
+  return (
+    <Link to={`/list/${list.id}`} className="lib-chip" title={list.name}>
+      {list.poster ? (
+        <img className="lib-chip__img" src={list.poster} alt="" loading="lazy" />
+      ) : (
+        <ListCollage items={list.items} className="lib-chip__img" />
+      )}
+      <span className="lib-chip__title">{list.name}</span>
     </Link>
   )
 }
@@ -738,9 +856,10 @@ function SortMenu({ sort, onChange }: { sort: SortKey; onChange: (s: SortKey) =>
   )
 }
 
-function PosterGrid({ items }: { items: TrackedItem[] }) {
+function PosterGrid({ items, leading }: { items: TrackedItem[]; leading?: ReactNode }) {
   return (
     <ul className="poster-grid">
+      {leading}
       {items.map((item) => (
         <li key={item.id} className="poster-cell">
           <Link
@@ -772,17 +891,34 @@ function PosterGrid({ items }: { items: TrackedItem[] }) {
 function WatchingGrid({
   items,
   pickNextEp,
+  scheduledAir,
   airstampOf,
+  showNextCard,
+  leading,
 }: {
   items: TrackedItem[]
   pickNextEp: (id: string) => CachedEpisode | null
+  scheduledAir: (i: TrackedItem) => string | undefined
   airstampOf: (itemId: string, season: number, episode: number) => string | undefined
+  /** Which items get the next-episode strip. Omitted = every item (the Watching
+   *  and Hiatus sections); Favorites passes a predicate so only watching shows/
+   *  teams show it. */
+  showNextCard?: (item: TrackedItem) => boolean
+  /** Extra cards rendered before the items (Favorites' lists + Watch Next). */
+  leading?: ReactNode
 }) {
   return (
     <ul className="poster-grid">
+      {leading}
       {items.map((item) => {
+        const wantsCard = showNextCard ? showNextCard(item) : true
         const next =
-          item.mediaType === 'show' || item.mediaType === 'sport' ? pickNextEp(item.id) : null
+          wantsCard && (item.mediaType === 'show' || item.mediaType === 'sport')
+            ? pickNextEp(item.id)
+            : null
+        // No cached next episode? Fall back to a known upcoming air date (a show
+        // kept active by nextAirDate) rather than "Nothing scheduled".
+        const scheduled = next ? undefined : scheduledAir(item)
         const to = `/item/${encodeURIComponent(item.id)}`
         return (
           <li key={item.id} className="poster-cell watching-cell">
@@ -797,15 +933,28 @@ function WatchingGrid({
             >
               {item.favorite ? '★' : '☆'}
             </button>
-            {/* Next-episode card tucked behind the poster, then the title.
-                Always rendered (even empty) so every card is the same height. */}
-            {next ? (
-              <NextEpCard item={item} ep={next} airstamp={airstampOf(item.id, next.season, next.episode)} />
-            ) : (
-              <div className="next-ep next-ep--empty">
-                <span className="next-ep__label">Nothing scheduled</span>
-              </div>
-            )}
+            {/* Next-episode card tucked behind the poster, then the title. In the
+                Watching/Hiatus sections every item gets it (even "Nothing
+                scheduled") so cards stay the same height; Favorites shows it only
+                for a watching show/team, so other favorites render just the
+                poster. */}
+            {wantsCard &&
+              (next ? (
+                <NextEpCard
+                  item={item}
+                  ep={next}
+                  airstamp={airstampOf(item.id, next.season, next.episode)}
+                />
+              ) : scheduled ? (
+                <div className="next-ep">
+                  <span className="next-ep__label">Next episode</span>
+                  <span className="next-ep__date">{formatNextAir(scheduled)}</span>
+                </div>
+              ) : (
+                <div className="next-ep next-ep--empty">
+                  <span className="next-ep__label">Nothing scheduled</span>
+                </div>
+              ))}
             <Link to={to} className="poster-card__title watching-title" title={item.title}>
               {item.title}
             </Link>

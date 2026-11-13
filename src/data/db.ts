@@ -1,6 +1,7 @@
 import Dexie, { type Table } from 'dexie'
 import type {
   CachedEpisode,
+  CustomList,
   EarnedBadge,
   EpisodeState,
   FavoritePerson,
@@ -30,6 +31,8 @@ export class TvTrackerDB extends Dexie {
   favoritePeople!: Table<FavoritePerson, number>
   favoriteServices!: Table<FavoriteService, string>
   badges!: Table<EarnedBadge, string>
+  lists!: Table<CustomList, string>
+  listTombstones!: Table<Tombstone, string>
 
   constructor() {
     super('tvtracker')
@@ -75,6 +78,17 @@ export class TvTrackerDB extends Dexie {
     // v6: earned gamification badges (synced).
     this.version(6).stores({
       badges: 'id, earnedAt',
+    })
+    // v7: user-created Lists (own store). Kept OUT of the core backup — uploaded
+    // banners would bloat routine syncs, so lists sync as their own file (wired
+    // up later). Ordered by updatedAt for the Stats "Lists" row.
+    this.version(7).stores({
+      lists: 'id, updatedAt',
+    })
+    // v8: delete markers for lists, so removing a list and then syncing doesn't
+    // resurrect it from another device's stale copy (mirrors `tombstones`).
+    this.version(8).stores({
+      listTombstones: 'id, deletedAt',
     })
   }
 }

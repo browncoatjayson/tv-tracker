@@ -202,6 +202,59 @@ export interface FavoriteService {
   removed?: boolean
 }
 
+/**
+ * One title inside a {@link CustomList} — a lightweight snapshot so the list
+ * renders without re-fetching every title. `id` is the title's route key
+ * (`"show:1396"` | `"movie:603"` | `"sport:cfb-158"`), which also opens its
+ * detail page. The title can be anything, whether or not it's in the library.
+ */
+export interface ListItem {
+  id: string
+  mediaType: MediaType
+  title: string
+  /** TMDB poster path (shows/movies, combine with an image base) or a full logo
+   *  URL (sports). `mediaType` tells callers which. */
+  poster?: string
+  addedAt: number
+}
+
+/** User profile customization: an avatar (overrides the Google photo app-wide)
+ *  and a Stats backdrop, with a timestamp for last-write-wins sync. Also carries
+ *  the "Watch Next" favorite flag — a one-bit shortcut that rides the same synced
+ *  file as the avatar rather than needing its own. */
+export interface ProfileData {
+  avatar?: string
+  backdrop?: string
+  /** Custom display name shown on the Stats page, overriding the Google name. */
+  name?: string
+  /** Whether the "Watch Next" shuffle shortcut is pinned to Library Favorites. */
+  watchNext?: boolean
+  updatedAt: number
+}
+
+/**
+ * A user-created list of titles (movies, shows, teams) — TV Time-style Lists.
+ * Lists live in their OWN store, deliberately kept out of the core backup: an
+ * uploaded banner (stored as a resized base64 data URL) would bloat routine
+ * syncs, so lists are synced as their own file (that part is wired up later).
+ * Merge/sync is last-write-wins by `updatedAt`.
+ */
+export interface CustomList {
+  id: string
+  name: string
+  description?: string
+  /** Uploaded backdrop/banner as a resized base64 data URL (the hero background). */
+  banner?: string
+  /** Uploaded 2:3 poster as a resized base64 data URL. Shown on the list page and
+   *  reused as the Stats card; falls back to a collage of member posters when unset. */
+  poster?: string
+  /** Pinned to the Library's Favorites section as a shortcut to the list. */
+  favorite?: boolean
+  items: ListItem[]
+  createdAt: number
+  updatedAt: number
+}
+
 /** A gamification badge the user has earned. Append-only — a badge is never
  *  un-earned (deleting titles can't take it back), so merges keep the earliest
  *  earnedAt and there are no tombstones. */

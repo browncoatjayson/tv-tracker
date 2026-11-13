@@ -15,7 +15,7 @@ import {
   type TraktComment,
 } from '../api/trakt'
 import { useTraktAuth } from '../hooks/useTraktAuth'
-import { UserGlyph } from '../views/Stats'
+import { UserGlyph } from './UserAvatar'
 
 /** Collapsible reviews/discussion section (Trakt) for the bottom of detail pages. */
 export default function Reviews({ target, poweredBy }: { target: ReviewTarget; poweredBy?: boolean }) {
