@@ -152,12 +152,13 @@ async function indexItem(item: TrackedItem): Promise<void> {
     staleTime: HOUR,
   })
   let runtime = runtimeOf(details)
+  const ended = isEndedStatus(details.status)
   await setItemMeta(item.id, {
     genres: genreNames(details),
     language: details.original_language,
     providers: watchNames(details),
     cast: castNames(details),
-    ended: isEndedStatus(details.status),
+    ended,
     runtime,
     episodeCount: details.number_of_episodes,
     tmdbRating: details.vote_average,
@@ -166,11 +167,26 @@ async function indexItem(item: TrackedItem): Promise<void> {
     // Next *upcoming* episode — powers Released:upcoming for shows mid-run.
     nextAirDate: details.next_episode_to_air?.air_date ?? undefined,
   })
-  // A show you marked Completed but that has a new episode scheduled (returning
-  // soon) goes back to Watching, so it resurfaces instead of staying "done".
-  const nextAir = details.next_episode_to_air?.air_date
-  if (item.status === 'completed' && nextAir && nextAir >= today()) {
-    await setStatus(item.id, 'watching')
+  // Reconcile the show's tracked status with reality on a full index:
+  //  • A returning series must never sit in Completed — it belongs in Watching,
+  //    and falls to "In Hiatus" on its own once nothing new is scheduled. This
+  //    also covers a show that was finished but has since been renewed.
+  //  • An ended show with every episode watched is genuinely done → Completed.
+  // "Dropped" is a deliberate choice, so it's left untouched.
+  if (item.status !== 'dropped') {
+    if (!ended) {
+      if (item.status === 'completed') await setStatus(item.id, 'watching')
+    } else {
+      const total = details.number_of_episodes ?? 0
+      const watchedCount = await db.episodeStates
+        .where('itemId')
+        .equals(item.id)
+        .filter((s) => s.watched)
+        .count()
+      if (total > 0 && watchedCount >= total && item.status !== 'completed') {
+        await setStatus(item.id, 'completed')
+      }
+    }
   }
   // Dropped shows (only reached on a full rebuild) get their stats metadata but
   // skip the per-season episode caching — episode search isn't needed for them.

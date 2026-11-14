@@ -1,5 +1,6 @@
 import { db, episodeKey, itemKey } from './db'
 import { scheduleAutoSync } from './autoSync'
+import { hasAired } from '../api/tmdb'
 import type { MediaType, TrackedItem, WatchStatus } from './types'
 
 // ---------------------------------------------------------------------------
@@ -309,6 +310,50 @@ export async function clearWatchedEpisodes(itemId: string): Promise<number> {
   })
   scheduleAutoSync()
   return watched.length
+}
+
+/**
+ * Mark every aired, not-yet-watched, non-skipped episode of a show watched — the
+ * "catch me up" action (used when completing an ongoing series, which really just
+ * means "I'm current"). Draws on the cached episode list, skips specials and
+ * deliberately-skipped episodes, and leaves the show's status alone. Returns how
+ * many episodes were newly marked. One transaction + one sync.
+ */
+export async function markAllAiredWatched(itemId: string): Promise<number> {
+  const eps = await db.episodeCache.where('itemId').equals(itemId).toArray()
+  const now = Date.now()
+  let marked = 0
+  await db.transaction('rw', db.episodeStates, db.watchEvents, db.trackedItems, async () => {
+    for (const e of eps) {
+      if (e.season === 0) continue // skip specials
+      if (!hasAired(e.airDate)) continue
+      const id = episodeKey(itemId, e.season, e.episode)
+      const prev = await db.episodeStates.get(id)
+      if (prev?.skipped) continue // respect a deliberate skip
+      if ((prev?.watchCount ?? (prev?.watched ? 1 : 0)) > 0) continue // already watched
+      await db.episodeStates.put({
+        id,
+        itemId,
+        season: e.season,
+        episode: e.episode,
+        watched: true,
+        watchCount: 1,
+        watchedAt: now,
+        userRating: prev?.userRating,
+        updatedAt: now,
+      })
+      await db.watchEvents.add({
+        itemId,
+        episodeId: `${e.season}x${e.episode}`,
+        watchedAt: now,
+        isRewatch: false,
+      })
+      marked++
+    }
+    await db.trackedItems.update(itemId, { updatedAt: now })
+  })
+  if (marked) scheduleAutoSync()
+  return marked
 }
 
 /** Log a (re)watch of a movie. */

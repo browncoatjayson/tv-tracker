@@ -25,6 +25,7 @@ import { hasTraktClientId, resolveTraktId } from '../api/trakt'
 import {
   addItem,
   clearWatchedEpisodes,
+  markAllAiredWatched,
   markEpisode,
   removeItem,
   setEpisodeSkipped,
@@ -246,10 +247,18 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
     }
   }, [item?.id, d])
 
-  // Auto-complete an ended show once every episode is watched. (watchlist ->
-  // watching is handled in the data layer whenever any episode is marked.)
+  // Keep a show's status valid against reality:
+  //  • An ongoing (not ended) series can't truly be "Completed" — that's an
+  //    invalid state (use Dropped to set one aside). Flip it back to Watching; it
+  //    lands in "In Hiatus" once fully caught up. Mirrors the full-index pass.
+  //  • An ended show auto-completes once every episode is watched.
+  // (watchlist -> watching is handled in the data layer when any episode is marked.)
   useEffect(() => {
-    if (!item || !d || item.status === 'dropped' || item.status === 'completed') return
+    if (!item || !d || item.status === 'dropped') return
+    if (item.status === 'completed') {
+      if (!isEndedStatus(d.status)) void setStatus(item.id, 'watching')
+      return
+    }
     const total = d.number_of_episodes ?? 0
     const watched = (states ?? []).filter((s) => s.watched).length
     if (total > 0 && watched >= total && isEndedStatus(d.status)) {
@@ -382,10 +391,26 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
 
   // Changing status out of "Completed". Leaving for Watching/Watchlist offers to
   // wipe the watched marks (undo an accidental "mark all watched") so you can
-  // re-mark where you are. Declining keeps the marks — and if everything's still
-  // watched, there's nothing to watch, so it stays Completed.
+  // re-mark where you are. Declining keeps the marks. For an *ended* show that's
+  // still fully watched there's nothing left to watch, so it stays Completed; a
+  // returning series, though, belongs in Watching even when fully caught up (it
+  // then shows as In Hiatus), so the status change always goes through.
   async function handleStatusChange(next: WatchStatus) {
     if (!item) return
+    // An ongoing (not ended) series can't truly be "Completed". Offer to catch it
+    // up instead — mark all aired episodes watched — which lands it in Watching /
+    // In Hiatus, a valid "all caught up" state. (Use Dropped to set one aside.)
+    if (next === 'completed' && d && !ended) {
+      const ok = await appConfirm(
+        'This series is still ongoing, so it can’t be marked Completed. Mark all aired episodes as watched instead?',
+        { confirmLabel: 'Mark all watched', cancelLabel: 'Cancel' },
+      )
+      if (ok) {
+        await markAllAiredWatched(item.id)
+        if (item.status !== 'watching') await setStatus(item.id, 'watching')
+      }
+      return
+    }
     const leavingComplete =
       item.status === 'completed' && (next === 'watching' || next === 'watchlist')
     const watchedCount = (states ?? []).filter((s) => (s.watchCount ?? (s.watched ? 1 : 0)) > 0).length
@@ -397,10 +422,11 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
       if (clear) {
         await clearWatchedEpisodes(item.id)
         await setStatus(item.id, next)
-      } else if (!fullyWatched) {
+      } else if (!fullyWatched || !ended) {
         await setStatus(item.id, next)
       }
-      // else: declined and everything's watched — keep Completed (no change).
+      // else: ended, declined, and everything's watched — genuinely done, so it
+      // stays Completed (no change).
       return
     }
     await setStatus(item.id, next)
