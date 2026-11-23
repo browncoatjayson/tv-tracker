@@ -22,6 +22,9 @@ export interface ParsedQuery {
   /** Services to exclude (a `service:-x` token). */
   servicesExclude: string[]
   actors: string[]
+  /** Soundtrack song titles / artists to match (e.g. "africa", "toto") — only
+   *  matches titles whose cached soundtrack carries the term. */
+  songs: string[]
   /** Movie franchise names to match (e.g. "halloween"). */
   series: string[]
   /** Sports team names to match (e.g. "nebraska") — only affects sport items. */
@@ -70,6 +73,7 @@ export function parseQuery(raw: string): ParsedQuery {
   const services: string[] = []
   const servicesExclude: string[] = []
   const actors: string[] = []
+  const songs: string[] = []
   const series: string[] = []
   const teams: string[] = []
   const games: string[] = []
@@ -86,7 +90,7 @@ export function parseQuery(raw: string): ParsedQuery {
   let rating: number | undefined
   for (const part of raw.split(',').map((s) => s.trim()).filter(Boolean)) {
     const m = part.match(
-      /^(genre|service|actor|series|team|game|type|status|released|seen|hiatus|language|lang|length|year|rating):(.+)$/i,
+      /^(genre|service|actor|song|series|team|game|type|status|released|seen|hiatus|language|lang|length|year|rating):(.+)$/i,
     )
     if (!m) {
       text.push(part.toLowerCase())
@@ -103,6 +107,7 @@ export function parseQuery(raw: string): ParsedQuery {
     if (key === 'genre') (negate ? genresExclude : genres).push(val.toLowerCase())
     else if (key === 'service') (negate ? servicesExclude : services).push(val.toLowerCase())
     else if (key === 'actor') actors.push(val.toLowerCase())
+    else if (key === 'song') songs.push(val.toLowerCase())
     else if (key === 'series') series.push(val.toLowerCase())
     else if (key === 'team') teams.push(val.toLowerCase())
     else if (key === 'game') (negate ? gamesExclude : games).push(val.toLowerCase())
@@ -151,6 +156,7 @@ export function parseQuery(raw: string): ParsedQuery {
     services,
     servicesExclude,
     actors,
+    songs,
     series,
     teams,
     games,
@@ -175,6 +181,9 @@ export interface FilterTarget {
   genres?: string[]
   providers?: string[]
   cast?: string[]
+  /** Soundtrack search terms — each cached song's title and artist (for the song:
+   *  filter). Undefined = no soundtrack cached, so a song: filter can't keep it. */
+  songs?: string[]
   /** Movie franchise / collection name (for the series: filter). */
   series?: string
   /** Wikidata shared-universe name (also matched by series:, across media). */
@@ -324,6 +333,12 @@ export function matchesFilter(target: FilterTarget, q: ParsedQuery): boolean {
   }
   for (const a of q.actors) {
     if (!(target.cast ?? []).some((x) => x.toLowerCase().includes(a))) return false
+  }
+  // Song: a title's cached soundtrack (track title or artist) must carry the term.
+  // No soundtrack cached (undefined) can't be confirmed, so it's hidden — a song:
+  // filter naturally narrows to titles whose soundtrack has been looked up.
+  for (const s of q.songs) {
+    if (!(target.songs ?? []).some((x) => x.toLowerCase().includes(s))) return false
   }
   for (const s of q.series) {
     // Matches the TMDB collection OR the Wikidata shared universe (cross-media).

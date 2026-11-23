@@ -556,6 +556,13 @@ a:hover {
   z-index: 2;
   display: block;
 }
+/* A poster <img> is inline by default, leaving a ~4px baseline gap below it, so an
+   img-poster card ends up taller than a <div>-poster card (Randomize / list
+   collage). Block the image so every card's art — and thus the card — matches.
+   Scoped to <img> so it doesn't override the flex/grid <div> posters. */
+.watching-art img {
+  display: block;
+}
 .fav-star {
   z-index: 3;
 }
@@ -608,6 +615,22 @@ a:hover {
 }
 .next-ep__check:hover {
   border-color: var(--accent);
+}
+/* Static "already watched" tick (a movie you've seen / finished title). */
+.next-ep__done {
+  flex-shrink: 0;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-content: center;
+  border-radius: 5px;
+  color: var(--ok, #4ade80);
+  line-height: 1;
+  font-size: 0.9rem;
+}
+/* Title count under a favorited list's card. */
+.lib-fav-count {
+  font-size: 0.72rem;
 }
 .next-ep__date {
   flex-shrink: 0;
@@ -2676,6 +2699,113 @@ input[type='file'] {
   padding: 0 14px 12px;
 }
 
+/* ---- Movie editions checklist -------------------------------------------- */
+.editions {
+  margin-top: 12px;
+}
+.editions__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 14px 4px;
+}
+.editions__row {
+  padding: 3px 0;
+}
+.editions__label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+}
+.editions__label input {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.editions__name {
+  font-weight: 500;
+}
+/* An edition with its own TMDB entry is a link that opens that version. */
+.editions__link {
+  color: var(--text);
+  text-decoration: none;
+}
+.editions__link:hover {
+  text-decoration: none;
+}
+.editions__link:hover .editions__name {
+  color: var(--accent);
+}
+.editions__open {
+  width: 16px;
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--accent);
+}
+.editions__kind {
+  font-size: 0.8rem;
+}
+.editions__foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 4px 14px 12px;
+}
+.editions__foot .reviews__powered {
+  margin-left: auto;
+}
+
+/* ---- Movie soundtrack (MusicBrainz) -------------------------------------- */
+.music {
+  margin-top: 12px;
+}
+.music__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 14px 4px;
+}
+.music__row {
+  border-top: 1px solid var(--surface-2);
+}
+.music__row:first-child {
+  border-top: none;
+}
+.music__link {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 0;
+  color: var(--text);
+  text-decoration: none;
+}
+.music__link:hover {
+  text-decoration: none;
+}
+.music__link:hover .music__title {
+  color: var(--accent);
+}
+.music__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+.music__title {
+  font-weight: 500;
+}
+.music__artist {
+  font-size: 0.8rem;
+}
+.music__open {
+  flex-shrink: 0;
+  color: var(--accent);
+}
+.music__empty {
+  padding: 2px 14px 8px;
+}
+
 /* ---- Reviews panel (Trakt) ----------------------------------------------- */
 .reviews-panel {
   display: flex;
@@ -3647,6 +3777,19 @@ input[type='file'] {
   justify-content: flex-end;
   gap: 10px;
   margin-top: 16px;
+}
+/* Split footer: a destructive action (e.g. "Remove date") sits bottom-left while
+ *  Cancel/Save stay bottom-right. */
+.modal__actions--spread {
+  justify-content: space-between;
+  align-items: center;
+}
+.modal__actions-group {
+  display: flex;
+  gap: 10px;
+}
+.watched-date__remove {
+  color: var(--danger, #e5534b);
 }
 .reset-confirm {
   margin: 16px 0 4px;

@@ -18,14 +18,15 @@ import {
 import { buildBrowseSequence } from '../data/specials'
 import { getTraktEpisodeTime, hasTraktClientId, resolveTraktId } from '../api/trakt'
 import {
+  clearEpisodeWatched,
   markEpisode,
   setEpisodeRating,
   setEpisodeSkipped,
   setEpisodeWatchedDate,
 } from '../data/library'
 import { markWatchedWithCatchUp, skipWithCatchUp } from '../utils/watchActions'
-import { airTimeOrDate, hasAiredByTime } from '../utils/airTime'
-import { useShowAirstamps } from '../hooks/useShowAirstamps'
+import { airTimeOrDate, earlierDate, hasAiredByTime } from '../utils/airTime'
+import { useShowAirdates, useShowAirstamps } from '../hooks/useShowAirstamps'
 import ExternalLinks from '../components/ExternalLinks'
 import { WherePills } from '../components/DetailHero'
 import CastRow from '../components/CastRow'
@@ -116,6 +117,7 @@ export default function EpisodePage() {
   )
   const inLibrary = !!item
   const airstampOf = useShowAirstamps(itemId, item?.imdbId)
+  const airdateOf = useShowAirdates(item?.imdbId)
 
   // Persist the freshly-fetched Trakt time so the Show page / Upcoming reuse it.
   useEffect(() => {
@@ -157,6 +159,9 @@ export default function EpisodePage() {
   // Prefer the just-fetched Trakt time, then the cached/TVmaze lookup.
   const airstamp = traktTime.data ?? airstampOf(seasonNum, episodeNum)
   const aired = hasAiredByTime(ep.air_date, airstamp)
+  // Display the earliest known release date — TVmaze often has an earlier streaming
+  // date than TMDB's later linear-network date (both bare dates, so no TZ issues).
+  const shownDate = earlierDate(ep.air_date, airdateOf(seasonNum, episodeNum))
   const watched = !!epState?.watched
   const skipped = !!epState?.skipped
   const average =
@@ -208,7 +213,7 @@ export default function EpisodePage() {
   if (directors.length) facts.push({ label: 'Directed by', value: [...new Set(directors)].join(', ') })
   if (writers.length) facts.push({ label: 'Written by', value: [...new Set(writers)].join(', ') })
   if (ep.air_date)
-    facts.push({ label: aired ? 'Aired' : 'Airs', value: aired ? ep.air_date : airTimeOrDate(ep.air_date, airstamp) })
+    facts.push({ label: aired ? 'Aired' : 'Airs', value: aired ? (shownDate ?? ep.air_date) : airTimeOrDate(shownDate ?? ep.air_date, airstamp) })
   if (ep.runtime) facts.push({ label: 'Runtime', value: `${ep.runtime} min` })
   if (guests.length) facts.push({ label: 'Guest stars', value: String(guests.length) })
 
@@ -258,7 +263,7 @@ export default function EpisodePage() {
               <span className="genre-badge">{aired ? 'Aired' : 'Airs'}</span>
               {ep.air_date && (
                 <span className="genre-badge">
-                  {aired ? ep.air_date : airTimeOrDate(ep.air_date, airstamp)}
+                  {aired ? (shownDate ?? ep.air_date) : airTimeOrDate(shownDate ?? ep.air_date, airstamp)}
                 </span>
               )}
               {ep.runtime ? <span className="genre-badge">{ep.runtime} min</span> : null}
@@ -277,7 +282,6 @@ export default function EpisodePage() {
           <div className="episode-watch">
             <SplitButton
               label={watched ? '✓ Watched' : skipped ? '✗ Skipped' : 'Mark as watched'}
-              disabled={!aired && !watched && !skipped}
               onClick={() =>
                 void (watched
                   ? markEpisode(itemId, seasonNum, episodeNum, false)
@@ -313,6 +317,7 @@ export default function EpisodePage() {
                 onChange={(ms, p) =>
                   void setEpisodeWatchedDate(itemId, seasonNum, episodeNum, ms, p)
                 }
+                onRemove={() => void clearEpisodeWatched(itemId, seasonNum, episodeNum)}
                 label="Watched on"
                 className="episode__watched"
               />

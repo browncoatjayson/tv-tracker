@@ -20,12 +20,16 @@ export default function WatchedDateField({
   watchedAt,
   precision = 'day',
   onChange,
+  onRemove,
   label = 'Watched',
   className = 'watched-date',
 }: {
   watchedAt?: number
   precision?: DatePrecision
   onChange: (ms: number, precision: DatePrecision) => void
+  /** When provided, the Select-date dialog shows a "Remove date" button that
+   *  clears the watched mark (unwatches the item). */
+  onRemove?: () => void
   label?: string
   className?: string
 }) {
@@ -72,6 +76,14 @@ export default function WatchedDateField({
             onChange(ms, p)
             setEditing(false)
           }}
+          onRemove={
+            onRemove
+              ? () => {
+                  onRemove()
+                  setEditing(false)
+                }
+              : undefined
+          }
         />
       )}
     </span>
@@ -82,10 +94,12 @@ function SelectDateDialog({
   initial,
   onCancel,
   onSave,
+  onRemove,
 }: {
   initial?: { year: number; month: number; day: number }
   onCancel: () => void
   onSave: (year: number, month: number, day: number) => void
+  onRemove?: () => void
 }) {
   const [year, setYear] = useState(() => String(initial?.year ?? new Date().getFullYear()))
   const [month, setMonth] = useState(() => String(initial?.month ?? 0))
@@ -160,13 +174,22 @@ function SelectDateDialog({
             : 'Enter a valid year.'}
           {dayWithoutMonth && ' (a day needs a month, so only the year is kept)'}
         </p>
-        <div className="modal__actions">
-          <button className="btn btn--ghost" onClick={onCancel}>
-            Cancel
-          </button>
-          <button className="btn" disabled={!validYear} onClick={save}>
-            Save
-          </button>
+        <div className="modal__actions modal__actions--spread">
+          {onRemove ? (
+            <button type="button" className="btn btn--ghost watched-date__remove" onClick={onRemove}>
+              Remove date
+            </button>
+          ) : (
+            <span />
+          )}
+          <div className="modal__actions-group">
+            <button type="button" className="btn btn--ghost" onClick={onCancel}>
+              Cancel
+            </button>
+            <button type="button" className="btn" disabled={!validYear} onClick={save}>
+              Save
+            </button>
+          </div>
         </div>
       </div>
     </div>

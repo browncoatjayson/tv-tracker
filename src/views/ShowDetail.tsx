@@ -46,8 +46,8 @@ import Related from '../components/Related'
 import SplitButton from '../components/SplitButton'
 import { markWatchedWithCatchUp } from '../utils/watchActions'
 import { appConfirm } from '../utils/confirm'
-import { airsToday, clockTime, hasAiredByTime } from '../utils/airTime'
-import { useShowAirstamps } from '../hooks/useShowAirstamps'
+import { airsToday, clockTime, earlierDate, hasAiredByTime } from '../utils/airTime'
+import { useShowAirdates, useShowAirstamps } from '../hooks/useShowAirstamps'
 
 const HOUR = 1000 * 60 * 60
 const STATUSES: WatchStatus[] = ['watchlist', 'watching', 'completed', 'dropped']
@@ -219,6 +219,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
   })
   // Precise air times so an episode airing later today reads as upcoming.
   const airstampOf = useShowAirstamps(itemId, item?.imdbId)
+  const airdateOf = useShowAirdates(item?.imdbId)
 
   useEffect(() => {
     if (!item || item.imdbId) return
@@ -589,6 +590,8 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
               const checked = rewatching ? inCurrentPass : everWatched
               const airstamp = airstampOf(ep.season_number, ep.episode_number)
               const aired = hasAiredByTime(ep.air_date, airstamp)
+              // Earliest known release date (TVmaze streaming date can beat TMDB's).
+              const shownDate = earlierDate(ep.air_date, airdateOf(ep.season_number, ep.episode_number))
               const still = imageUrl(ep.still_path ?? undefined, 'w300')
               const go = () =>
                 navigate(`/item/${encodeURIComponent(itemId)}/episode/${ep.season_number}/${ep.episode_number}`)
@@ -621,7 +624,7 @@ export default function ShowDetail({ itemId, tmdbId }: { itemId: string; tmdbId:
                       <span
                         className={`ep-card__datepill${aired ? '' : ' ep-card__datepill--upcoming'}`}
                       >
-                        {ep.air_date || 'TBA'}
+                        {shownDate || 'TBA'}
                       </span>
                     )}
                     <p className="ep-card__summary muted">

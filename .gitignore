@@ -38,3 +38,7 @@ dev-dist
 *.njsproj
 *.sln
 *.sw?
+
+# Cloudflare Workers local dev cache
+.wrangler/
+worker-*/.wrangler/

@@ -267,8 +267,8 @@ export default function Stats() {
   }
 
   // --- Badges --------------------------------------------------------------
-  // "Welcome Back!" is a sign-in notification, not a collectible — hide it here.
-  const HIDDEN_BADGES = new Set(['welcome-back'])
+  // "Welcome Back!" is now a normal one-time badge, shown alongside the rest.
+  const HIDDEN_BADGES = new Set<string>()
   const visibleBadges = BADGES.filter((b) => !HIDDEN_BADGES.has(b.id))
   const earnedAt = new Map(
     (earnedBadges ?? []).filter((b) => !HIDDEN_BADGES.has(b.id)).map((b) => [b.id, b.earnedAt]),

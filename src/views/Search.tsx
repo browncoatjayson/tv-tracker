@@ -343,15 +343,18 @@ export default function Search() {
     const st = statusById.get(itemKey(toMediaType(r), r.id))
     return st ? seenState(st) : 'unwatched'
   }
-  // --- "Watch next" (random) --------------------------------------------------
-  // A pseudo-random next-unwatched episode from the shows you're actively
-  // watching (no movies, no not-yet-started shows, no sports), slightly weighted
-  // toward your genres / favourite services / favourite actors.
+  // --- Randomizer -------------------------------------------------------------
+  // A pseudo-random pick from everything you're watching OR have on your
+  // watchlist — shows (their next unwatched episode) and movies alike — slightly
+  // weighted toward your genres / favourite services / favourite actors.
   const favPeople = useFavoritePeople()
-  const watchingShows = (libraryItems ?? []).filter(
-    (i) => i.status === 'watching' && i.mediaType === 'show',
+  const randomPool = (libraryItems ?? []).filter(
+    (i) =>
+      (i.status === 'watching' || i.status === 'watchlist') &&
+      (i.mediaType === 'show' || i.mediaType === 'movie'),
   )
-  const watchingShowIds = watchingShows.map((i) => i.id)
+  const poolShows = randomPool.filter((i) => i.mediaType === 'show')
+  const watchingShowIds = poolShows.map((i) => i.id)
   const watchNextKey = watchingShowIds.join('|')
   const wnEpisodes = useLiveQuery<CachedEpisode[]>(
     () =>
@@ -383,7 +386,7 @@ export default function Search() {
     wnEpsByItem.set(e.itemId, arr)
   }
   const watchNextCandidates: WatchNextCandidate[] = []
-  for (const it of watchingShows) {
+  for (const it of poolShows) {
     const eps = (wnEpsByItem.get(it.id) ?? [])
       .slice()
       .sort((a, b) => a.season - b.season || a.episode - b.episode)
@@ -394,10 +397,17 @@ export default function Search() {
     )
     if (next) {
       watchNextCandidates.push({ item: it, season: next.season, episode: next.episode, epName: next.name })
+    } else if (eps.length === 0) {
+      // Not indexed yet (typically a watchlist show) — start it at S1E1.
+      watchNextCandidates.push({ item: it, season: 1, episode: 1 })
     }
   }
+  // Movies are whole-title picks (no episode).
+  for (const it of randomPool) {
+    if (it.mediaType === 'movie') watchNextCandidates.push({ item: it })
+  }
   const watchNextGenreFreq = new Map<string, number>()
-  for (const it of watchingShows) {
+  for (const it of randomPool) {
     for (const g of it.genres ?? []) {
       const k = g.toLowerCase()
       watchNextGenreFreq.set(k, (watchNextGenreFreq.get(k) ?? 0) + 1)
@@ -872,7 +882,11 @@ export default function Search() {
             </div>
           ) : (
             <Link
-              to={`/item/${encodeURIComponent(watchNext.item.id)}/episode/${watchNext.season}/${watchNext.episode}`}
+              to={
+                watchNext.season != null && watchNext.episode != null
+                  ? `/item/${encodeURIComponent(watchNext.item.id)}/episode/${watchNext.season}/${watchNext.episode}`
+                  : `/item/${encodeURIComponent(watchNext.item.id)}`
+              }
               className="watch-next__card"
             >
               {imageUrl(watchNext.item.posterPath, 'w154') ? (
@@ -883,15 +897,21 @@ export default function Search() {
                   loading="lazy"
                 />
               ) : (
-                <div className="watch-next__poster watch-next__poster--ph">📺</div>
+                <div className="watch-next__poster watch-next__poster--ph">
+                  {watchNext.item.mediaType === 'movie' ? '🎬' : '📺'}
+                </div>
               )}
               <div className="watch-next__body">
                 <span className="watch-next__label">▶ Watch next</span>
                 <span className="watch-next__show">{watchNext.item.title}</span>
                 <span className="muted">
-                  S{String(watchNext.season).padStart(2, '0')}E
-                  {String(watchNext.episode).padStart(2, '0')}
-                  {watchNext.epName ? ` · ${watchNext.epName}` : ''}
+                  {watchNext.season != null && watchNext.episode != null
+                    ? `S${String(watchNext.season).padStart(2, '0')}E${String(
+                        watchNext.episode,
+                      ).padStart(2, '0')}${watchNext.epName ? ` · ${watchNext.epName}` : ''}`
+                    : watchNext.item.year
+                      ? `Movie · ${watchNext.item.year}`
+                      : 'Movie'}
                 </span>
                 <span className="muted watch-next__hint">Shuffle again with the ⤭ button.</span>
               </div>
@@ -909,7 +929,7 @@ export default function Search() {
                   title: WATCH_NEXT_TITLE,
                 })
               }
-              title="Add the Watch Next shortcut to this list"
+              title="Add the Randomize shortcut to this list"
             >
               {listContains(addTarget, WATCH_NEXT_ID) ? '✓ In list' : '＋ Add to list'}
             </button>
@@ -918,9 +938,9 @@ export default function Search() {
               type="button"
               className={`watch-next__fav${watchNextFav ? ' watch-next__fav--on' : ''}`}
               onClick={() => setWatchNextFav(!watchNextFav)}
-              title={watchNextFav ? 'Remove Watch Next from Favorites' : 'Add Watch Next to Favorites'}
+              title={watchNextFav ? 'Remove Randomize from Favorites' : 'Add Randomize to Favorites'}
               aria-label={
-                watchNextFav ? 'Remove Watch Next from Favorites' : 'Add Watch Next to Favorites'
+                watchNextFav ? 'Remove Randomize from Favorites' : 'Add Randomize to Favorites'
               }
               aria-pressed={watchNextFav}
             >

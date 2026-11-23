@@ -1,6 +1,6 @@
 import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from '../data/db'
-import { markMovieWatched, setMovieWatchedDate } from '../data/library'
+import { clearMovieWatched, markMovieWatched, setMovieWatchedDate } from '../data/library'
 import type { TrackedItem } from '../data/types'
 import WatchedDateField from './WatchedDateField'
 import { formatWatched } from '../utils/watchedDate'
@@ -32,6 +32,7 @@ export default function MovieWatch({ item }: { item: TrackedItem }) {
             watchedAt={item.movieWatchedAt}
             precision={precision}
             onChange={(ms, p) => void setMovieWatchedDate(item.id, ms, p)}
+            onRemove={() => void clearMovieWatched(item.id)}
             label="Watched on"
             className="movie-watch__date"
           />

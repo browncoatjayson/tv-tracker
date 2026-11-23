@@ -7,9 +7,17 @@ import { hasAired, imageUrl, languageKind } from '../api/tmdb'
 import { leagueByKey } from '../api/espn'
 import { sportAirState } from '../data/sports'
 import { getTvmazeEpisodesByImdb } from '../api/tvmaze'
-import { airsToday, compactAirTime, hasAiredByTime } from '../utils/airTime'
-import { markEpisode, seenState, toggleFavorite } from '../data/library'
-import type { CachedEpisode, CustomList, EpisodeState, TrackedItem, WatchStatus } from '../data/types'
+import { airsToday, compactAirTime, earlierDate, hasAiredByTime } from '../utils/airTime'
+import { markEpisode, markMovieWatched, seenState, toggleFavorite } from '../data/library'
+import { fetchMovieMusic } from '../data/titleMeta'
+import type {
+  CachedEpisode,
+  CustomList,
+  EpisodeState,
+  TitleMeta,
+  TrackedItem,
+  WatchStatus,
+} from '../data/types'
 import { matchesFilter, parseQuery } from '../utils/filter'
 import { WATCH_NEXT_LINK, useWatchNextFav } from '../data/watchNext'
 import ListCollage from '../components/ListCollage'
@@ -46,12 +54,6 @@ interface Section {
   key: string
   label: string
   items: TrackedItem[]
-  /** Watching shows get the "next episode" strip (full view only). */
-  watching?: boolean
-  /** For a mixed section (Favorites), only items this returns true for get the
-   *  next-episode strip — so a favorited show/team you're Watching shows its next
-   *  episode while favorited movies / finished shows stay plain. Omitted = all. */
-  showNextCard?: (item: TrackedItem) => boolean
   /** Gets a "Hide" toggle in the full view so you can tuck it away (In Hiatus,
    *  Completed, Dropped). */
   collapsible?: boolean
@@ -243,6 +245,59 @@ export default function Library() {
     return db.episodeCache.filter((e) => e.name.toLowerCase().includes(qq)).toArray()
   }, [query])
 
+  // Cached soundtracks for the library's movies, so the `song:` filter can match a
+  // movie by a track or artist on its soundtrack. Keyed by item id; coverage grows
+  // as soundtracks are looked up (on a detail view, or the background fill below).
+  const movieIds = (items ?? []).filter((i) => i.mediaType === 'movie').map((i) => i.id)
+  const movieIdsKey = movieIds.join('|')
+  const musicMeta = useLiveQuery<TitleMeta[]>(
+    () =>
+      movieIds.length
+        ? db.titleMeta.where('id').anyOf(movieIds).toArray()
+        : Promise.resolve([] as TitleMeta[]),
+    [movieIdsKey],
+  )
+  // id -> search terms (each song's title + artist) for the matcher.
+  const songsByItem = new Map<string, string[]>()
+  for (const m of musicMeta ?? []) {
+    if (!m.music?.length) continue
+    const terms: string[] = []
+    for (const t of m.music) {
+      if (t.title) terms.push(t.title)
+      if (t.artist) terms.push(t.artist)
+    }
+    if (terms.length) songsByItem.set(m.id, terms)
+  }
+  // When a song: filter is active, progressively fetch soundtracks for library
+  // movies that haven't been looked up yet, so the filter reaches titles the user
+  // never opened. The MusicBrainz client serializes + paces these (and caches even
+  // empty results), so this quietly fills in and then settles. Results appear live
+  // as each lands (musicMeta is a live query). Scoped to movies only — show/episode
+  // music isn't wired yet.
+  const songActive = parseQuery(query).songs.length > 0
+  // Movies whose soundtrack has actually been looked up (musicFetchedAt is set even
+  // for an empty result, so "nothing found" isn't re-queried). A titleMeta record
+  // may exist from an editions fetch with no music yet, so the timestamp — not the
+  // record's presence — is the signal.
+  const musicFetchedIds = new Set(
+    (musicMeta ?? []).filter((m) => m.musicFetchedAt !== undefined).map((m) => m.id),
+  )
+  const moviesNeedingMusic =
+    songActive && musicMeta !== undefined
+      ? (items ?? []).filter((i) => i.mediaType === 'movie' && !musicFetchedIds.has(i.id))
+      : []
+  const needMusicKey = moviesNeedingMusic.map((i) => i.id).join('|')
+  useEffect(() => {
+    if (!songActive) return
+    // Kick off a bounded batch, not the whole list — the MusicBrainz client paces
+    // its calls, but the preceding TMDB + Wikidata lookups aren't, so firing every
+    // missing movie at once would burst those. Each success shrinks the list and
+    // re-runs this effect (musicMeta is live), so the fill self-continues; a
+    // transient failure leaves the movie uncached and it's retried on a later pass.
+    for (const i of moviesNeedingMusic.slice(0, 8)) void fetchMovieMusic(i.id, i.tmdbId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [songActive, needMusicKey])
+
   // For the Watching section's "next episode" card: cached episodes + watched
   // state for the shows currently being watched (scoped, so it stays light).
   const watchingIds = (items ?? [])
@@ -286,18 +341,27 @@ export default function Library() {
     })),
   })
   const airstampByItem = new Map<string, Map<string, string>>()
+  // TVmaze release DATES (the streaming/primary date, often earlier than TMDB's).
+  const airdateByItem = new Map<string, Map<string, string>>()
   watchingImdb.forEach((s, i) => {
     const eps = tvmazeResults[i]?.data
     if (!eps) return
     const m = new Map<string, string>()
-    for (const e of eps) if (e.airstamp) m.set(`${e.season}:${e.number}`, e.airstamp)
+    const dm = new Map<string, string>()
+    for (const e of eps) {
+      if (e.airstamp) m.set(`${e.season}:${e.number}`, e.airstamp)
+      if (e.airdate) dm.set(`${e.season}:${e.number}`, e.airdate)
+    }
     airstampByItem.set(s.id, m)
+    airdateByItem.set(s.id, dm)
   })
   // Prefer precise Trakt times cached on the episode rows over TVmaze (which
   // fills a noon-UTC placeholder for streaming shows).
   const cachedStamp = useCachedAirstamps(watchingImdb.map((s) => s.id))
   const airstampOf = (itemId: string, season: number, episode: number): string | undefined =>
     cachedStamp(itemId, season, episode) ?? airstampByItem.get(itemId)?.get(`${season}:${episode}`)
+  const airdateOf = (itemId: string, season: number, episode: number): string | undefined =>
+    airdateByItem.get(itemId)?.get(`${season}:${episode}`)
 
   const watchedEpKeys = new Set(
     (watchingStates ?? []).filter((s) => s.watched).map((s) => `${s.itemId}:${s.season}:${s.episode}`),
@@ -405,9 +469,13 @@ export default function Library() {
         matchesFilter(
           {
             title: i.title,
+            // Edition labels (e.g. "Once Upon a Deadpool") so searching an
+            // alternate version's name surfaces the base movie.
+            extraText: i.aliases?.join(' · '),
             genres: i.genres,
             providers: i.providers,
             cast: i.cast,
+            songs: songsByItem.get(i.id),
             mediaType: i.mediaType,
             ended: i.ended,
             seen: seenState(i.status),
@@ -439,14 +507,24 @@ export default function Library() {
   if (!searching) {
     if (watchNextFav) {
       specialFavCards.push(
-        <li key="__wn" className="poster-cell">
+        <li key="__wn" className="poster-cell watching-cell">
           <Link
             to={WATCH_NEXT_LINK}
-            className="poster-card"
-            title="Watch Next — shuffle a suggestion"
+            className="watching-art"
+            title="Watch Next — a random pick from your library"
+            aria-label="Watch Next"
           >
             <WatchNextPoster className="poster-card__img" />
-            <span className="poster-card__title">Watch Next</span>
+          </Link>
+          <div className="next-ep next-ep--empty">
+            <span className="next-ep__label">Randomize</span>
+          </div>
+          <Link
+            to={WATCH_NEXT_LINK}
+            className="poster-card__title watching-title"
+            title="Watch Next"
+          >
+            Watch Next
           </Link>
         </li>,
       )
@@ -472,11 +550,6 @@ export default function Library() {
         key: 'fav',
         label: '★ Favorites',
         items: favs,
-        // Favorites is a mixed section; render it like Watching but show the
-        // next-episode strip only for a favorited show/team you're Watching.
-        watching: true,
-        showNextCard: (i) =>
-          (i.mediaType === 'show' || i.mediaType === 'sport') && i.status === 'watching',
         leadingCards: specialFavCards,
         leadingChips: specialFavChips,
         leadingCount: specialFavCount,
@@ -491,14 +564,13 @@ export default function Library() {
       const active = group.filter((i) => !hiatusIds.has(i.id))
       const paused = group.filter((i) => hiatusIds.has(i.id))
       if (active.length > 0) {
-        sections.push({ key: 'watching', label: 'Watching', items: active, watching: true })
+        sections.push({ key: 'watching', label: 'Watching', items: active })
       }
       if (paused.length > 0) {
         sections.push({
           key: 'hiatus',
           label: 'In Hiatus',
           items: paused,
-          watching: true,
           collapsible: true,
         })
       }
@@ -545,10 +617,22 @@ export default function Library() {
 
   return (
     <div className="library">
-      <FilterBar value={query} onChange={setQuery} placeholder="Search for a title" hiatusFilter>
+      <FilterBar
+        value={query}
+        onChange={setQuery}
+        placeholder="Search for a title"
+        hiatusFilter
+        songFilter
+      >
         <ViewToggle collapsed={collapsed} onChange={setCollapsed} />
         <SortMenu sort={sort} onChange={setSort} />
       </FilterBar>
+
+      {songActive && moviesNeedingMusic.length > 0 && (
+        <p className="muted lib-song-indexing">
+          Looking up soundtracks… {moviesNeedingMusic.length} to check. Matches appear as they load.
+        </p>
+      )}
 
       {noMatches && <p className="muted">No matches for “{query}”.</p>}
 
@@ -565,6 +649,7 @@ export default function Library() {
               pickNextEp={pickNextEp}
               scheduledAir={scheduledAir}
               airstampOf={airstampOf}
+              airdateOf={airdateOf}
             />
           ))
         ))}
@@ -623,6 +708,7 @@ function FullSection({
   pickNextEp,
   scheduledAir,
   airstampOf,
+  airdateOf,
 }: {
   sec: Section
   hidden: boolean
@@ -630,6 +716,7 @@ function FullSection({
   pickNextEp: (id: string) => CachedEpisode | null
   scheduledAir: (i: TrackedItem) => string | undefined
   airstampOf: (itemId: string, season: number, episode: number) => string | undefined
+  airdateOf: (itemId: string, season: number, episode: number) => string | undefined
 }) {
   // In the full view, collapsible sections (In Hiatus, Completed, Dropped) can be
   // hidden behind a "Hide" toggle.
@@ -652,17 +739,15 @@ function FullSection({
       </h2>
       {isHidden ? (
         <p className="muted lib-hidden-note">{total} hidden</p>
-      ) : sec.watching ? (
+      ) : (
         <WatchingGrid
           items={sec.items}
           pickNextEp={pickNextEp}
           scheduledAir={scheduledAir}
           airstampOf={airstampOf}
-          showNextCard={sec.showNextCard}
+          airdateOf={airdateOf}
           leading={sec.leadingCards}
         />
-      ) : (
-        <PosterGrid items={sec.items} leading={sec.leadingCards} />
       )}
     </section>
   )
@@ -723,17 +808,24 @@ function LibChip({ item }: { item: TrackedItem }) {
   )
 }
 
-/** A favorited custom list as a full-view poster card (links to the list page). */
+/** A favorited custom list as a full-view card — poster, a "N titles" strip (so it
+ *  lines up with the other cards), then the list name. Links to the list page. */
 function FavListCard({ list }: { list: CustomList }) {
+  const count = `${list.items.length} ${list.items.length === 1 ? 'title' : 'titles'}`
   return (
-    <li className="poster-cell">
-      <Link to={`/list/${list.id}`} className="poster-card" title={list.name}>
+    <li className="poster-cell watching-cell">
+      <Link to={`/list/${list.id}`} className="watching-art" title={list.name} aria-label={list.name}>
         {list.poster ? (
           <img className="poster-card__img" src={list.poster} alt="" loading="lazy" />
         ) : (
           <ListCollage items={list.items} className="poster-card__img" />
         )}
-        <span className="poster-card__title">{list.name}</span>
+      </Link>
+      <div className="next-ep next-ep--empty">
+        <span className="next-ep__label">{count}</span>
+      </div>
+      <Link to={`/list/${list.id}`} className="poster-card__title watching-title" title={list.name}>
+        {list.name}
       </Link>
     </li>
   )
@@ -856,69 +948,35 @@ function SortMenu({ sort, onChange }: { sort: SortKey; onChange: (s: SortKey) =>
   )
 }
 
-function PosterGrid({ items, leading }: { items: TrackedItem[]; leading?: ReactNode }) {
-  return (
-    <ul className="poster-grid">
-      {leading}
-      {items.map((item) => (
-        <li key={item.id} className="poster-cell">
-          <Link
-            to={`/item/${encodeURIComponent(item.id)}`}
-            className="poster-card"
-            title={item.title}
-          >
-            <CardArt item={item} />
-            <span className="poster-card__title">{item.title}</span>
-            {item.userRating !== undefined && (
-              <span className="poster-card__rating">★ {item.userRating}</span>
-            )}
-          </Link>
-          <button
-            className={`fav-star${item.favorite ? ' fav-star--on' : ''}`}
-            title={item.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
-            aria-label={item.favorite ? 'Remove from Favorites' : 'Add to Favorites'}
-            onClick={() => void toggleFavorite(item.id, !item.favorite)}
-          >
-            {item.favorite ? '★' : '☆'}
-          </button>
-        </li>
-      ))}
-    </ul>
-  )
-}
-
-/** Watching section: each show card gets a "next unwatched episode" strip. */
+/**
+ * The Library card grid, used by every section. Each card has a poster, a favorite
+ * star, an info/action strip, and the title — so all cards are the same height and
+ * anything can be marked watched without opening its detail page:
+ *   • show/team  → next unwatched episode (or game) with a ✓, else its schedule
+ *   • watchlist show not yet started → "S1E1" with a ✓ (marking it starts it →
+ *     Watching)
+ *   • movie → its year with a ✓ (marking it → Completed), or "Watched" once seen
+ */
 function WatchingGrid({
   items,
   pickNextEp,
   scheduledAir,
   airstampOf,
-  showNextCard,
+  airdateOf,
   leading,
 }: {
   items: TrackedItem[]
   pickNextEp: (id: string) => CachedEpisode | null
   scheduledAir: (i: TrackedItem) => string | undefined
   airstampOf: (itemId: string, season: number, episode: number) => string | undefined
-  /** Which items get the next-episode strip. Omitted = every item (the Watching
-   *  and Hiatus sections); Favorites passes a predicate so only watching shows/
-   *  teams show it. */
-  showNextCard?: (item: TrackedItem) => boolean
-  /** Extra cards rendered before the items (Favorites' lists + Watch Next). */
+  airdateOf: (itemId: string, season: number, episode: number) => string | undefined
+  /** Extra cards rendered before the items (Favorites' lists + Randomize). */
   leading?: ReactNode
 }) {
   return (
     <ul className="poster-grid">
       {leading}
       {items.map((item) => {
-        const wantsCard = showNextCard ? showNextCard(item) : true
-        const next =
-          wantsCard && (item.mediaType === 'show' || item.mediaType === 'sport')
-            ? pickNextEp(item.id)
-            : null
-        // No cached next episode? Fall back to a known upcoming air date (a show
-        // kept active by nextAirDate) rather than "Nothing scheduled".
-        const scheduled = next ? undefined : scheduledAir(item)
         const to = `/item/${encodeURIComponent(item.id)}`
         return (
           <li key={item.id} className="poster-cell watching-cell">
@@ -933,28 +991,13 @@ function WatchingGrid({
             >
               {item.favorite ? '★' : '☆'}
             </button>
-            {/* Next-episode card tucked behind the poster, then the title. In the
-                Watching/Hiatus sections every item gets it (even "Nothing
-                scheduled") so cards stay the same height; Favorites shows it only
-                for a watching show/team, so other favorites render just the
-                poster. */}
-            {wantsCard &&
-              (next ? (
-                <NextEpCard
-                  item={item}
-                  ep={next}
-                  airstamp={airstampOf(item.id, next.season, next.episode)}
-                />
-              ) : scheduled ? (
-                <div className="next-ep">
-                  <span className="next-ep__label">Next episode</span>
-                  <span className="next-ep__date">{formatNextAir(scheduled)}</span>
-                </div>
-              ) : (
-                <div className="next-ep next-ep--empty">
-                  <span className="next-ep__label">Nothing scheduled</span>
-                </div>
-              ))}
+            <ItemStrip
+              item={item}
+              pickNextEp={pickNextEp}
+              scheduledAir={scheduledAir}
+              airstampOf={airstampOf}
+              airdateOf={airdateOf}
+            />
             <Link to={to} className="poster-card__title watching-title" title={item.title}>
               {item.title}
             </Link>
@@ -965,20 +1008,116 @@ function WatchingGrid({
   )
 }
 
+/** The per-card info/action strip — the bit that varies by media type and state. */
+function ItemStrip({
+  item,
+  pickNextEp,
+  scheduledAir,
+  airstampOf,
+  airdateOf,
+}: {
+  item: TrackedItem
+  pickNextEp: (id: string) => CachedEpisode | null
+  scheduledAir: (i: TrackedItem) => string | undefined
+  airstampOf: (itemId: string, season: number, episode: number) => string | undefined
+  airdateOf: (itemId: string, season: number, episode: number) => string | undefined
+}) {
+  if (item.mediaType === 'movie') {
+    const watched = item.status === 'completed' || item.movieWatchedAt != null
+    return (
+      <div className="next-ep">
+        <span className="next-ep__label">{item.year ?? 'Movie'}</span>
+        {watched ? (
+          <span className="next-ep__done" title="Watched">
+            ✓
+          </span>
+        ) : (
+          <button
+            className="next-ep__check"
+            title="Mark watched"
+            aria-label={`Mark ${item.title} watched`}
+            onClick={() => void markMovieWatched(item.id)}
+          >
+            ✓
+          </button>
+        )}
+      </div>
+    )
+  }
+
+  // Shows and teams: the next unwatched episode/game with a ✓ to mark it.
+  const next = pickNextEp(item.id)
+  if (next) {
+    return (
+      <NextEpCard
+        item={item}
+        ep={next}
+        airstamp={airstampOf(item.id, next.season, next.episode)}
+        airdate={airdateOf(item.id, next.season, next.episode)}
+      />
+    )
+  }
+  // No cached next episode — fall back to a known upcoming air date…
+  const scheduled = scheduledAir(item)
+  if (scheduled) {
+    return (
+      <div className="next-ep">
+        <span className="next-ep__label">Next episode</span>
+        <span className="next-ep__date">{formatNextAir(scheduled)}</span>
+      </div>
+    )
+  }
+  // …a finished show says so…
+  if (item.mediaType === 'show' && item.status === 'completed') {
+    return (
+      <div className="next-ep next-ep--empty">
+        <span className="next-ep__label">Completed</span>
+      </div>
+    )
+  }
+  // …a watchlist show that isn't indexed yet offers S1E1 so you can start it
+  // (marking it moves the show to Watching).
+  if (item.mediaType === 'show' && item.status === 'watchlist') {
+    return (
+      <div className="next-ep">
+        <span className="next-ep__label">S1E1</span>
+        <button
+          className="next-ep__check"
+          title="Mark watched"
+          aria-label={`Mark ${item.title} S1E1 watched`}
+          onClick={() => void markEpisode(item.id, 1, 1, true)}
+        >
+          ✓
+        </button>
+      </div>
+    )
+  }
+  return (
+    <div className="next-ep next-ep--empty">
+      <span className="next-ep__label">Nothing scheduled</span>
+    </div>
+  )
+}
+
 function NextEpCard({
   item,
   ep,
   airstamp,
+  airdate,
 }: {
   item: TrackedItem
   ep: CachedEpisode
   airstamp?: string
+  /** TVmaze release date (often an earlier streaming date than TMDB's). */
+  airdate?: string
 }) {
   // For a sport, use ESPN's completed flag (a past-dated game ESPN never finished
   // is "unaired", not watchable); for a show, prefer the precise air time.
   const isSport = item.mediaType === 'sport'
   const sportState = isSport ? sportAirState(ep.airDate, ep.completed) : null
   const aired = isSport ? sportState === 'aired' : hasAiredByTime(ep.airDate, airstamp)
+  // Show the earliest known date (a streaming drop can precede TMDB's linear date).
+  const shownDate = isSport ? ep.airDate : earlierDate(ep.airDate, airdate) ?? ep.airDate
   const label =
     isSport
       ? ep.name || 'Next game'
@@ -1002,7 +1141,7 @@ function NextEpCard({
           Unaired · {ep.airDate}
         </span>
       ) : (
-        <span className="next-ep__date">{formatNextAir(ep.airDate, airstamp)}</span>
+        <span className="next-ep__date">{formatNextAir(shownDate, airstamp)}</span>
       )}
     </div>
   )

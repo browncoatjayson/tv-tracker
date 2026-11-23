@@ -82,6 +82,8 @@ export async function setItemMeta(
     series?: string
     /** Wikidata shared-universe name (cross-media series: matching). */
     universe?: string
+    /** Alternate titles for free-text search (movie edition labels). */
+    aliases?: string[]
   },
 ): Promise<void> {
   await db.trackedItems.update(id, meta)
@@ -366,6 +368,38 @@ export async function markMovieWatched(itemId: string, isRewatch = false): Promi
       status: 'completed',
       movieWatchedAt: now,
       movieWatchedPrecision: 'day',
+    })
+  })
+  scheduleAutoSync()
+}
+
+/** Remove an episode's watched mark — e.g. clearing a mistaken one from the
+ *  "Watched on" date picker. Unwatches the episode, and if the show had been
+ *  marked Completed it returns to Watching (it's no longer fully caught up). */
+export async function clearEpisodeWatched(
+  itemId: string,
+  season: number,
+  episode: number,
+): Promise<void> {
+  await setEpisodeWatchCount(itemId, season, episode, 0)
+  const item = await db.trackedItems.get(itemId)
+  if (item?.status === 'completed') await setStatus(itemId, 'watching')
+}
+
+/** Undo a movie's watched state — remove its watch events and return it to the
+ *  watchlist. Used by the Theatrical edition checkbox when you un-mark "seen". */
+export async function clearMovieWatched(itemId: string): Promise<void> {
+  await db.transaction('rw', db.watchEvents, db.trackedItems, async () => {
+    await db.watchEvents
+      .where('itemId')
+      .equals(itemId)
+      .and((e) => e.episodeId === null)
+      .delete()
+    await db.trackedItems.update(itemId, {
+      updatedAt: Date.now(),
+      status: 'watchlist',
+      movieWatchedAt: undefined,
+      movieWatchedPrecision: undefined,
     })
   })
   scheduleAutoSync()

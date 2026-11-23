@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import ToastOverlay from './ToastOverlay'
+import { db } from '../data/db'
 import { hasGoogleClientId, recordSynced, syncNow } from '../data/driveSync'
 import { importBackup } from '../data/exportImport'
 import { awardBadges, badgeById } from '../data/badges'
@@ -25,9 +26,13 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
     onClose()
   }
 
-  function celebrateRestore(restored: number) {
+  // "Welcome Back!" is a one-time badge now: award + celebrate only the first time.
+  // The restore has already merged the backup (which includes the badge once
+  // earned), so a returning user who earned it before stays quiet.
+  async function celebrateRestore(restored: number) {
     if (restored <= 0) return
-    void awardBadges(['welcome-back'])
+    if (await db.badges.get('welcome-back')) return
+    await awardBadges(['welcome-back'])
     const b = badgeById('welcome-back')
     if (b) showBadgeToast(b)
   }
@@ -40,7 +45,7 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
     try {
       const r = await syncNow(true)
       recordSynced(r.syncedAt)
-      celebrateRestore(r.items)
+      await celebrateRestore(r.items)
       close()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed.')
@@ -57,7 +62,7 @@ export default function WelcomeScreen({ onClose }: { onClose: () => void }) {
     beginBadgeSuppression()
     try {
       const counts = await importBackup(await file.text(), 'merge')
-      celebrateRestore(counts.items)
+      await celebrateRestore(counts.items)
       close()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Import failed.')

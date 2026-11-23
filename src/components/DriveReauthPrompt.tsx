@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import ToastOverlay from './ToastOverlay'
+import { db } from '../data/db'
 import { connectDrive, recordSynced, syncNow } from '../data/driveSync'
 import { awardBadges, badgeById } from '../data/badges'
 import { showBadgeToast } from '../utils/badgeToast'
@@ -29,14 +30,6 @@ export default function DriveReauthPrompt({ onDone }: { onDone: () => void }) {
       // the moment we're authorized the user is "signed in and ready" — celebrate
       // and dismiss now instead of waiting on the full Drive round-trip.
       await connectDrive() // user gesture → popup allowed, not blocked
-      // "Welcome Back!" doubles as a "signed in and ready" notification each time
-      // you log in for the day. Show it the instant we're authorized — that's the
-      // snappy feedback — but PERSIST the badge only after the background sync
-      // (below) finishes: its replace-apply clears the badges table, so awarding
-      // before it ran would just get wiped. (It's deleted at launch when a new
-      // session has no token — see Layout — and never synced to the backup.)
-      const b = badgeById('welcome-back')
-      if (b) showBadgeToast(b)
       onDone()
       // Pull / merge / apply / upload (+ episode cache) in the background. It
       // reuses the token just cached by connectDrive(), so no second popup; the
@@ -45,7 +38,17 @@ export default function DriveReauthPrompt({ onDone }: { onDone: () => void }) {
       void syncNow(false)
         .then((r) => recordSynced(r.syncedAt))
         .catch(() => {})
-        .finally(() => void awardBadges(['welcome-back']))
+        .finally(async () => {
+          // "Welcome Back!" is a one-time badge. We check AFTER the sync so a badge
+          // earned on another device (now merged in from the backup) counts — then
+          // the very first sign-in ever awards + celebrates it once, and every later
+          // sign-in finds it already earned and stays silent.
+          const already = await db.badges.get('welcome-back')
+          if (already) return
+          await awardBadges(['welcome-back'])
+          const b = badgeById('welcome-back')
+          if (b) showBadgeToast(b)
+        })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sign-in failed.')
       setBusy(false)

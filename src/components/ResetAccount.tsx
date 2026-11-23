@@ -61,6 +61,7 @@ export default function ResetAccount() {
           db.badges,
           db.lists,
           db.listTombstones,
+          db.titleMeta,
         ],
         async () => {
           await Promise.all([
@@ -74,6 +75,7 @@ export default function ResetAccount() {
             db.badges.clear(),
             db.lists.clear(),
             db.listTombstones.clear(),
+            db.titleMeta.clear(),
           ])
         },
       )

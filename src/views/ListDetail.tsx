@@ -243,7 +243,7 @@ export default function ListDetail() {
                 <Link
                   to={watchNext ? WATCH_NEXT_LINK : `/item/${encodeURIComponent(it.id)}`}
                   className="poster-card"
-                  title={watchNext ? 'Watch Next — shuffle a suggestion' : it.title}
+                  title={watchNext ? 'Randomize — a random pick from your library' : it.title}
                 >
                   {watchNext ? (
                     <WatchNextPoster className="poster-card__img" />
@@ -259,7 +259,7 @@ export default function ListDetail() {
                       {itemEmoji(it)}
                     </div>
                   )}
-                  <span className="poster-card__title">{watchNext ? 'Watch Next' : it.title}</span>
+                  <span className="poster-card__title">{watchNext ? 'Randomize' : it.title}</span>
                 </Link>
                 {editing && (
                   <button

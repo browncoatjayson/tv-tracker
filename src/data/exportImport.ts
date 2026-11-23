@@ -8,14 +8,15 @@ import type {
   FavoritePerson,
   FavoriteService,
   ProfileData,
+  TitleMeta,
   TrackedItem,
   Tombstone,
   WatchEvent,
 } from './types'
 
-// Not synced: a "Welcome Back!" is an in-the-moment thing earned on each restore,
-// not a permanent achievement to carry across devices / cache wipes.
-const UNSYNCED_BADGES = new Set(['welcome-back'])
+// Every earned badge syncs in backups now — including the one-time "Welcome
+// Back!", so once earned it carries across devices and signing in stays silent.
+const UNSYNCED_BADGES = new Set<string>()
 
 // ---------------------------------------------------------------------------
 // JSON backup / restore. This is the always-available safety net (and the same
@@ -57,6 +58,8 @@ export interface BackupData {
   listTombstones?: Tombstone[]
   /** Profile customization — avatar + backdrop (absent in pre-v7 backups). */
   profile?: ProfileData
+  /** Cached title metadata — movie editions + music (absent in older backups). */
+  titleMeta?: TitleMeta[]
 }
 
 /**
@@ -101,7 +104,12 @@ export async function buildBackup(includeCache = true): Promise<BackupData> {
     badges: badges.filter((b) => !UNSYNCED_BADGES.has(b.id)),
     episodeCache,
     ...(extras
-      ? { lists: extras.lists, listTombstones: extras.listTombstones, profile: extras.profile }
+      ? {
+          lists: extras.lists,
+          listTombstones: extras.listTombstones,
+          profile: extras.profile,
+          titleMeta: extras.titleMeta,
+        }
       : {}),
   }
 }
@@ -233,6 +241,7 @@ export async function applyBackup(data: BackupData, mode: ImportMode): Promise<v
         lists: data.lists,
         listTombstones: data.listTombstones ?? [],
         profile: data.profile ?? { updatedAt: 0 },
+        titleMeta: data.titleMeta ?? [],
       },
       mode,
     )

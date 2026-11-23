@@ -46,6 +46,22 @@ export function clockTime(airstamp: string | undefined): string | undefined {
   return mins === 0 ? `${h}${ap}` : `${h}:${String(mins).padStart(2, '0')}${ap}`
 }
 
+/**
+ * The earlier of two plain release dates ("YYYY-MM-DD"), ignoring any that are
+ * absent. Used to show the earliest known release across sources — e.g. a
+ * streaming drop (from TVmaze) that precedes the later linear-network date (TMDB).
+ * Both are bare date strings, so the comparison has no timezone ambiguity.
+ */
+export function earlierDate(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): string | undefined {
+  const x = a || undefined
+  const y = b || undefined
+  if (x && y) return x < y ? x : y
+  return x ?? y
+}
+
 /** When an upcoming episode airs: "today at 7:00p" (precise time) or the date. */
 export function airTimeOrDate(airDate: string | null | undefined, airstamp?: string): string {
   if (airsToday(airstamp)) {

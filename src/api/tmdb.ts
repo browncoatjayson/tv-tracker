@@ -406,6 +406,18 @@ export async function getImdbId(
   return data.imdb_id ?? undefined
 }
 
+/** Fetch a title's Wikidata entity id (e.g. "Q190050"), if TMDB has it. The exact
+ *  entity lets us query Wikidata for editions without guessing via the TMDB-id
+ *  property (P4947), which isn't always present. */
+export async function getWikidataId(
+  mediaType: 'movie' | 'tv',
+  tmdbId: number,
+): Promise<string | undefined> {
+  const path = `/${mediaType}/${tmdbId}/external_ids`
+  const data = await tmdbGet<{ wikidata_id?: string | null }>(path)
+  return data.wikidata_id ?? undefined
+}
+
 // --- External-id lookup (for importing from other trackers) ------------------
 
 export interface TmdbFindResult {

@@ -27,6 +27,8 @@ import Reviews from '../components/Reviews'
 import Gallery from '../components/Gallery'
 import Recommendations from '../components/Recommendations'
 import Related from '../components/Related'
+import MovieEditions from '../components/MovieEditions'
+import MovieMusic from '../components/MovieMusic'
 import { appConfirm } from '../utils/confirm'
 
 const HOUR = 1000 * 60 * 60
@@ -213,6 +215,9 @@ export default function MovieDetail({ itemId, tmdbId }: { itemId: string; tmdbId
             </dl>
           </details>
         )}
+
+        {item && <MovieEditions item={item} tmdbId={tmdbId} />}
+        {item && <MovieMusic item={item} tmdbId={tmdbId} />}
       </section>
 
       <Related

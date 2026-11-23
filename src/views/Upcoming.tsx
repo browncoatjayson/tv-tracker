@@ -15,7 +15,7 @@ import {
   type TmdbEpisodePointer,
 } from '../api/tmdb'
 import { formatAirTime, getTvmazeEpisodesByImdb } from '../api/tvmaze'
-import { hasAiredByTime } from '../utils/airTime'
+import { earlierDate, hasAiredByTime } from '../utils/airTime'
 import { localDateValue, todayLocal } from '../utils/watchedDate'
 import { useCachedAirstamps } from '../hooks/useShowAirstamps'
 import { leagueByKey } from '../api/espn'
@@ -169,12 +169,19 @@ export default function Upcoming() {
     })),
   })
   const airstampByImdb = new Map<string, Map<string, string>>()
+  // TVmaze release DATES (the streaming/primary date, often earlier than TMDB's).
+  const airdateByImdb = new Map<string, Map<string, string>>()
   tvShows.forEach((s, i) => {
     const eps = tvmazeResults[i]?.data
     if (!eps) return
     const m = new Map<string, string>()
-    for (const e of eps) if (e.airstamp) m.set(`${e.season}x${e.number}`, e.airstamp)
+    const dm = new Map<string, string>()
+    for (const e of eps) {
+      if (e.airstamp) m.set(`${e.season}x${e.number}`, e.airstamp)
+      if (e.airdate) dm.set(`${e.season}x${e.number}`, e.airdate)
+    }
     airstampByImdb.set(s.imdbId as string, m)
+    airdateByImdb.set(s.imdbId as string, dm)
   })
   // Prefer precise Trakt times cached on the episode rows over TVmaze.
   const cachedStamp = useCachedAirstamps(showsToFetch.map((s) => s.id))
@@ -187,6 +194,9 @@ export default function Upcoming() {
   ): string | undefined =>
     cachedStamp(itemId, season, episode) ??
     (imdbId ? airstampByImdb.get(imdbId)?.get(`${season}x${episode}`) : undefined)
+  // TVmaze's release date for an episode, if known (used to show the earliest date).
+  const tvDate = (imdbId: string | undefined, season: number, episode: number): string | undefined =>
+    imdbId ? airdateByImdb.get(imdbId)?.get(`${season}x${episode}`) : undefined
 
   // Watched lookups. Skipped episodes are also "seen" — they drop out of the feed.
   const seenEpisodes = new Set(
@@ -222,7 +232,7 @@ export default function Upcoming() {
         itemId: s.id,
         title: s.title,
         mediaType: 'show',
-        date: ep.air_date,
+        date: earlierDate(ep.air_date, tvDate(s.imdbId, ep.season_number, ep.episode_number)) ?? ep.air_date,
         detail: `S${ep.season_number}E${ep.episode_number}${ep.name ? ` · ${ep.name}` : ''}`,
         posterPath: s.posterPath,
         where,
@@ -252,7 +262,7 @@ export default function Upcoming() {
         itemId: s.id,
         title: s.title,
         mediaType: 'show',
-        date: next.air_date,
+        date: earlierDate(next.air_date, tvDate(s.imdbId, next.season_number ?? 0, next.episode_number ?? 0)) ?? next.air_date,
         detail: `S${next.season_number}E${next.episode_number}${next.name ? ` · ${next.name}` : ''}`,
         posterPath: s.posterPath,
         where,

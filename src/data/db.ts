@@ -6,6 +6,7 @@ import type {
   EpisodeState,
   FavoritePerson,
   FavoriteService,
+  TitleMeta,
   TrackedItem,
   Tombstone,
   WatchEvent,
@@ -33,6 +34,7 @@ export class TvTrackerDB extends Dexie {
   badges!: Table<EarnedBadge, string>
   lists!: Table<CustomList, string>
   listTombstones!: Table<Tombstone, string>
+  titleMeta!: Table<TitleMeta, string>
 
   constructor() {
     super('tvtracker')
@@ -89,6 +91,12 @@ export class TvTrackerDB extends Dexie {
     // resurrect it from another device's stale copy (mirrors `tombstones`).
     this.version(8).stores({
       listTombstones: 'id, deletedAt',
+    })
+    // v9: cached title metadata — movie editions + featured music, fetched from
+    // Wikidata/MusicBrainz once and reused. Regenerable, but synced inside the
+    // extras file so a title is queried once across all devices, not once each.
+    this.version(9).stores({
+      titleMeta: 'id, editionsFetchedAt, musicFetchedAt',
     })
   }
 }

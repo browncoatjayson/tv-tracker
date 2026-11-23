@@ -1,10 +1,11 @@
 import type { TrackedItem } from '../data/types'
 
-/** A "watch next" suggestion: the next unwatched aired episode of a show. */
+/** A randomizer suggestion: the next unwatched aired episode of a show, or — when
+ *  `season`/`episode` are absent — a movie (watch the whole thing). */
 export interface WatchNextCandidate {
   item: TrackedItem
-  season: number
-  episode: number
+  season?: number
+  episode?: number
   epName?: string
 }
 

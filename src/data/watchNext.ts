@@ -12,7 +12,7 @@ import { getWatchNextFav } from './profileImages'
 
 /** Reserved id for the Watch Next shortcut (real ids are `<type>:<tmdbId>`). */
 export const WATCH_NEXT_ID = 'watchnext'
-export const WATCH_NEXT_TITLE = 'Watch Next'
+export const WATCH_NEXT_TITLE = 'Randomize'
 /** Link target that opens Search, clears the filter, and rolls a suggestion. */
 export const WATCH_NEXT_LINK = '/search?shuffle=1'
 

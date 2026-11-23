@@ -51,6 +51,30 @@ export function useShowAirstamps(
 }
 
 /**
+ * Precise episode release DATES for a single show from TVmaze (matched by IMDb id),
+ * which tracks the streaming/primary release — for some shows an earlier date than
+ * TMDB's linear-network air date. Plain "YYYY-MM-DD" strings (no timezone). Reuses
+ * the same cached TVmaze query as {@link useShowAirstamps}, so no extra fetch.
+ * Returns a lookup `(season, episode) => airdate | undefined`.
+ */
+export function useShowAirdates(
+  imdbId: string | undefined,
+): (season: number, episode: number) => string | undefined {
+  const { data } = useQuery({
+    queryKey: ['tvmaze', imdbId],
+    queryFn: () => getTvmazeEpisodesByImdb(imdbId as string),
+    enabled: !!imdbId,
+    staleTime: DAY,
+  })
+  const map = useMemo(() => {
+    const m = new Map<string, string>()
+    for (const e of data ?? []) if (e.airdate) m.set(`${e.season}:${e.number}`, e.airdate)
+    return m
+  }, [data])
+  return (season, episode) => map.get(`${season}:${episode}`)
+}
+
+/**
  * Cached Trakt airstamps for many shows at once (Upcoming, notifications), keyed
  * by item. Reads only the episode cache — no network — so it just augments the
  * TVmaze times those views already fetch. Returns `(itemId, season, episode) =>

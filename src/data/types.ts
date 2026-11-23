@@ -70,6 +70,10 @@ export interface TrackedItem {
    *  movies and shows. Backfilled from the detail page; broadens the series:
    *  filter across media. */
   universe?: string
+  /** Alternate titles also matched by free-text Library search — currently a
+   *  movie's edition labels (e.g. "Once Upon a Deadpool") so searching an edition
+   *  name surfaces the base movie. Backfilled when editions are fetched. */
+  aliases?: string[]
   /** Set when indexing couldn't fetch TMDB data for this title, so the stats
    *  "needs indexing" prompt stops flagging it. A full rebuild retries it. */
   indexFailed?: boolean
@@ -253,6 +257,59 @@ export interface CustomList {
   items: ListItem[]
   createdAt: number
   updatedAt: number
+}
+
+// --- Cached title metadata (editions + music) --------------------------------
+// Extra info fetched from slow/limited sources (Wikidata, MusicBrainz, …) and
+// cached locally so a title isn't re-queried on every view. Derived sections each
+// carry their own `fetchedAt` (including an empty result, so "nothing found"
+// isn't re-fetched); the user's per-edition "seen" set carries its own timestamp.
+// Synced inside the extras payload with a field-aware merge.
+
+/** One alternate edition/cut of a movie (a named version like "Super Duper Cut",
+ *  "Redux", or a theatrical re-release). The base/theatrical edition is NOT stored
+ *  here — it's represented by the movie's own watched state. */
+export interface MovieEdition {
+  /** Stable id: the edition's Wikidata Q-id, or `tmdb:<id>`, or `manual:<n>`. */
+  id: string
+  label: string
+  kind?: 'extended' | 'directors_cut' | 'rerelease' | 'alt' | 'other'
+  year?: number
+  runtimeMin?: number
+  /** The edition's own TMDB movie id, if it has a separate TMDB entry (for dedup
+   *  against the library and linking). */
+  tmdbId?: number
+  wikidataId?: string
+  source: 'wikidata' | 'tmdb' | 'manual'
+}
+
+/** One song featured in a movie/episode. Links are built as search URLs rather
+ *  than via a music API (see the music lookup design). */
+export interface MusicTrack {
+  title: string
+  artist?: string
+  /** Scene/placement note, when the source provides it (Tunefind/WhatSong). */
+  scene?: string
+  source: 'musicbrainz' | 'tunefind' | 'whatsong'
+}
+
+/**
+ * Cached extra metadata for one title or episode, keyed by `movie:<tmdbId>` /
+ * `show:<tmdbId>` / `episode:<itemId>:<season>:<episode>`. Every section is
+ * optional and independently fetched + timestamped.
+ */
+export interface TitleMeta {
+  id: string
+  /** Alternate editions of a movie (empty array = looked up, none found). */
+  editions?: MovieEdition[]
+  editionsFetchedAt?: number
+  /** Ids of alternate editions the user has marked seen (theatrical = movie
+   *  watched, tracked separately on the item). */
+  editionsSeen?: string[]
+  seenUpdatedAt?: number
+  /** Songs featured (empty array = looked up, none found). */
+  music?: MusicTrack[]
+  musicFetchedAt?: number
 }
 
 /** A gamification badge the user has earned. Append-only — a badge is never

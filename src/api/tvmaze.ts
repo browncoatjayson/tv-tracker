@@ -32,6 +32,11 @@ export interface TvmazeEpisode {
   season: number
   number: number
   name?: string
+  /** Plain release date, "2026-11-20". TVmaze tracks the streaming/primary release,
+   *  which for some shows is EARLIER than TMDB's linear-network date — and unlike
+   *  `airstamp` it's a bare date with no timezone, so comparing it to TMDB's date is
+   *  unambiguous. Reliable even when the exact time is unknown. */
+  airdate?: string
   /** Full ISO datetime with timezone offset, e.g. "2026-10-04T21:00:00-04:00". */
   airstamp?: string
   /** Local air time, e.g. "21:00". Empty ("") when TVmaze doesn't know the time
@@ -61,6 +66,8 @@ export async function getTvmazeEpisodesByImdb(imdbId: string): Promise<TvmazeEpi
     season: e.season,
     number: e.number,
     name: e.name,
+    // The reliable release date (kept even for timeless streaming drops).
+    airdate: e.airdate || undefined,
     // When TVmaze has no release time (airtime empty), its airstamp is a noon-UTC
     // placeholder — drop it so callers fall back to Trakt or a date-only check
     // instead of showing/comparing a bogus time (e.g. a streaming drop at "6am").

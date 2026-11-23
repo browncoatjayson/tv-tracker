@@ -1,6 +1,6 @@
 import { db } from './db'
 import { applyProfileData, getProfileData } from './profileImages'
-import type { CustomList, ProfileData, Tombstone } from './types'
+import type { CustomList, ProfileData, TitleMeta, Tombstone } from './types'
 
 // ---------------------------------------------------------------------------
 // "Extras" = the data kept OUT of the core backup: custom lists (with their
@@ -20,15 +20,58 @@ export interface ExtrasPayload {
   lists: CustomList[]
   listTombstones: Tombstone[]
   profile: ProfileData
+  /** Cached title metadata (editions/music). Optional for back-compat with
+   *  pre-v7 extras files. */
+  titleMeta?: TitleMeta[]
 }
 
 /** Read the current extras out of the local DB + profile storage. */
 export async function buildExtrasPayload(): Promise<ExtrasPayload> {
-  const [lists, listTombstones] = await Promise.all([
+  const [lists, listTombstones, titleMeta] = await Promise.all([
     db.lists.toArray(),
     db.listTombstones.toArray(),
+    db.titleMeta.toArray(),
   ])
-  return { lists, listTombstones, profile: getProfileData() }
+  return { lists, listTombstones, profile: getProfileData(), titleMeta }
+}
+
+// Pick the fresher of two timestamped sections (editions/music/seen). Equal or
+// absent timestamps keep side A, preferring whichever side actually has a value.
+function pickNewer<T>(
+  av: T | undefined,
+  ats: number | undefined,
+  bv: T | undefined,
+  bts: number | undefined,
+): { v: T | undefined; ts: number | undefined } {
+  if ((bts ?? 0) > (ats ?? 0)) return { v: bv, ts: bts }
+  if ((ats ?? 0) > (bts ?? 0)) return { v: av, ts: ats }
+  return { v: av ?? bv, ts: ats ?? bts }
+}
+
+/** Merge two cached-meta records field by field — each section (editions, music,
+ *  the user's seen set) independently takes its fresher side. */
+function mergeTitleMetaRecord(a: TitleMeta, b: TitleMeta): TitleMeta {
+  const ed = pickNewer(a.editions, a.editionsFetchedAt, b.editions, b.editionsFetchedAt)
+  const mu = pickNewer(a.music, a.musicFetchedAt, b.music, b.musicFetchedAt)
+  const seen = pickNewer(a.editionsSeen, a.seenUpdatedAt, b.editionsSeen, b.seenUpdatedAt)
+  return {
+    id: a.id,
+    editions: ed.v,
+    editionsFetchedAt: ed.ts,
+    music: mu.v,
+    musicFetchedAt: mu.ts,
+    editionsSeen: seen.v,
+    seenUpdatedAt: seen.ts,
+  }
+}
+
+function mergeTitleMetaArrays(a: TitleMeta[], b: TitleMeta[]): TitleMeta[] {
+  const map = new Map<string, TitleMeta>()
+  for (const rec of [...a, ...b]) {
+    const prev = map.get(rec.id)
+    map.set(rec.id, prev ? mergeTitleMetaRecord(prev, rec) : rec)
+  }
+  return [...map.values()]
 }
 
 /**
@@ -39,9 +82,10 @@ export async function buildExtrasPayload(): Promise<ExtrasPayload> {
  * (replace).
  */
 export async function applyExtrasPayload(p: ExtrasPayload, mode: Mode): Promise<void> {
-  await db.transaction('rw', db.lists, db.listTombstones, async () => {
+  const titleMeta = p.titleMeta ?? []
+  await db.transaction('rw', db.lists, db.listTombstones, db.titleMeta, async () => {
     if (mode === 'replace') {
-      await Promise.all([db.lists.clear(), db.listTombstones.clear()])
+      await Promise.all([db.lists.clear(), db.listTombstones.clear(), db.titleMeta.clear()])
     }
     if (p.lists.length) await db.lists.bulkPut(p.lists)
     if (p.listTombstones.length) await db.listTombstones.bulkPut(p.listTombstones)
@@ -49,6 +93,18 @@ export async function applyExtrasPayload(p: ExtrasPayload, mode: Mode): Promise<
     for (const t of p.listTombstones) {
       const l = await db.lists.get(t.id)
       if (l && l.updatedAt <= t.deletedAt) await db.lists.delete(t.id)
+    }
+    // Cached meta: replace writes the (already-merged) set wholesale; merge folds
+    // each incoming record into the local one section by section.
+    if (titleMeta.length) {
+      if (mode === 'replace') {
+        await db.titleMeta.bulkPut(titleMeta)
+      } else {
+        for (const rec of titleMeta) {
+          const local = await db.titleMeta.get(rec.id)
+          await db.titleMeta.put(local ? mergeTitleMetaRecord(local, rec) : rec)
+        }
+      }
     }
   })
   if (mode === 'replace' || p.profile.updatedAt > getProfileData().updatedAt) {
@@ -84,6 +140,7 @@ export function mergeExtrasPayload(a: ExtrasPayload, b: ExtrasPayload): ExtrasPa
     lists: [...lists.values()],
     listTombstones: [...tomb.entries()].map(([id, deletedAt]) => ({ id, deletedAt })),
     profile,
+    titleMeta: mergeTitleMetaArrays(a.titleMeta ?? [], b.titleMeta ?? []),
   }
 }
 

@@ -167,6 +167,89 @@ export async function getUniverse(
   return null
 }
 
+// --- Movie editions / alternate versions -------------------------------------
+// A film's alternate cuts (extended, director's cut, re-release, "…Version").
+// Wikidata tags these inconsistently, so we gather candidates from BOTH
+// directions: forward via "has edition" (P747) / "derivative work" (P4969), and
+// reverse via "edition or translation of" (P629) / "modified version of" (P5059).
+// Seeded by the film's exact Wikidata entity (from TMDB external_ids), so we don't
+// depend on the TMDB-id property (P4947) being present on the base film.
+
+export interface WikidataEdition {
+  wikidataId: string
+  label: string
+  /** The edition's own TMDB movie id, if it has a separate TMDB entry. */
+  tmdbId?: number
+  runtimeMin?: number
+  year?: number
+}
+
+function qidFromUri(uri: string | undefined): string | undefined {
+  const m = uri?.match(/\/(Q\d+)$/)
+  return m ? m[1] : undefined
+}
+
+/**
+ * Alternate editions/versions of a film, by its Wikidata entity id. One query,
+ * both link directions. Errors propagate (so a failed lookup isn't cached as
+ * "no editions" — the caller retries); a successful query with nothing returns [].
+ */
+export async function getMovieEditions(wikidataId: string): Promise<WikidataEdition[]> {
+  const qid = wikidataId.trim()
+  if (!/^Q\d+$/.test(qid)) return []
+  const query = `SELECT ?edition ?editionLabel ?tmdb ?runtime ?date WHERE {
+    { wd:${qid} (wdt:P747|wdt:P4969) ?edition. }
+    UNION
+    { ?edition (wdt:P629|wdt:P5059) wd:${qid}. }
+    OPTIONAL { ?edition wdt:P4947 ?tmdb. }
+    OPTIONAL { ?edition wdt:P2047 ?runtime. }
+    OPTIONAL { ?edition wdt:P577 ?date. }
+    SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+  } LIMIT 50`
+  const rows = await runSparql(query, 10000)
+  const byId = new Map<string, WikidataEdition>()
+  for (const row of rows) {
+    const id = qidFromUri(row.edition?.value)
+    if (!id || id === qid) continue // never list the film as its own edition
+    const label = row.editionLabel?.value ?? ''
+    // Skip rows whose label fell back to the bare Q-id (no English label).
+    if (!label || /^Q\d+$/.test(label)) continue
+    const existing = byId.get(id)
+    const runtime = row.runtime?.value ? Math.round(Number(row.runtime.value)) : undefined
+    const year = row.date?.value ? Number(row.date.value.slice(0, 4)) || undefined : undefined
+    const tmdbId = row.tmdb?.value ? Number(row.tmdb.value) : undefined
+    byId.set(id, {
+      wikidataId: id,
+      label: existing?.label || label,
+      tmdbId: tmdbId ?? existing?.tmdbId,
+      runtimeMin: runtime ?? existing?.runtimeMin,
+      year: year ?? existing?.year,
+    })
+  }
+  return [...byId.values()]
+}
+
+/**
+ * MusicBrainz release-group id(s) for a film's soundtrack, by the film's Wikidata
+ * entity: "soundtrack release" (P406) → the album entity → its "MusicBrainz
+ * release group ID" (P436). Usually zero or one; errors propagate.
+ */
+export async function getMovieSoundtrackMbids(wikidataId: string): Promise<string[]> {
+  const qid = wikidataId.trim()
+  if (!/^Q\d+$/.test(qid)) return []
+  const query = `SELECT DISTINCT ?mbid WHERE {
+    wd:${qid} wdt:P406 ?album.
+    ?album wdt:P436 ?mbid.
+  } LIMIT 5`
+  const rows = await runSparql(query, 8000)
+  const ids: string[] = []
+  for (const row of rows) {
+    const v = row.mbid?.value
+    if (v && !ids.includes(v)) ids.push(v)
+  }
+  return ids
+}
+
 /** Members of a franchise looked up by its name (used to broaden a series:
  *  search to cross-media siblings). Resolves the name to entity ids via the
  *  search API first — a label scan in SPARQL is unindexed and times out. */

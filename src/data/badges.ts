@@ -81,10 +81,10 @@ export interface BadgeDef {
 // appear in the order their first badge does).
 export const BADGES: BadgeDef[] = [
   // --- App ---------------------------------------------------------------
-  // Awarded explicitly when a restore repopulates an empty library (see
-  // WelcomeScreen), not from a context snapshot — so it celebrates every
-  // restore, even right after a cache wipe when the badge watcher primes silently.
-  { id: 'welcome-back', name: 'Welcome Back!', description: 'Restore your library by syncing or importing into an empty app.', emoji: '👋', group: 'App', earned: () => false },
+  // A one-time badge earned the first time you sign in / restore, awarded
+  // explicitly from the sign-in + Welcome flows (not from a context snapshot).
+  // It now syncs in backups, so once earned it stays and later sign-ins are silent.
+  { id: 'welcome-back', name: 'Welcome Back!', description: 'Sign in to Drive to restore and sync your library.', emoji: '👋', group: 'App', earned: () => false },
   { id: 'app-welcomed', name: 'Are You New Here?', description: 'Open the app for the first time, or favorite any title.', emoji: '🆕', group: 'App', earned: (c) => c.welcomed || c.favoriteTitles >= 1 },
   { id: 'notify-on', name: 'In The Know', description: 'Turn on airing-soon notifications.', emoji: '🔔', group: 'App', earned: (c) => c.notificationsEnabled },
   { id: 'stats-open', name: "It's Full of Stars", description: 'Open your Stats page.', emoji: '✨', group: 'App', earned: (c) => c.openedStats },

@@ -70,6 +70,7 @@ interface Editor {
   services: Set<string>
   servicesEx: Set<string>
   actor: string
+  song: string
   series: string
   team: string
   /** Sport league keys to filter to (game: tokens). */
@@ -84,7 +85,7 @@ interface Editor {
 }
 
 const TOKEN_RE =
-  /^(genre|service|actor|series|team|game|type|status|released|seen|language|lang|length|year|rating):/i
+  /^(genre|service|actor|song|series|team|game|type|status|released|seen|language|lang|length|year|rating):/i
 
 /** Split a raw query string into the dropdown's structured working state. When
  *  `sportsOptIn` is set (Search), an untyped query defaults to Movies + TV Shows
@@ -115,6 +116,7 @@ function parseForEditor(raw: string, sportsOptIn = false): Editor {
     services: new Set(p.services),
     servicesEx: new Set(p.servicesExclude),
     actor: p.actors[0] ?? '',
+    song: p.songs[0] ?? '',
     series: p.series[0] ?? '',
     team: p.teams[0] ?? '',
     games: new Set(p.games),
@@ -144,6 +146,7 @@ function buildQuery(e: Editor): string {
   for (const s of e.services) parts.push(`service:${s}`)
   for (const s of e.servicesEx) parts.push(`service:-${s}`)
   if (e.actor.trim()) parts.push(`actor:${e.actor.trim()}`)
+  if (e.song.trim()) parts.push(`song:${e.song.trim()}`)
   if (e.series.trim()) parts.push(`series:${e.series.trim()}`)
   if (e.team.trim()) parts.push(`team:${e.team.trim()}`)
   for (const g of e.games) parts.push(`game:${g}`)
@@ -175,6 +178,7 @@ function activeCount(raw: string): number {
     p.services.length +
     p.servicesExclude.length +
     p.actors.length +
+    p.songs.length +
     p.series.length +
     p.teams.length +
     p.games.length +
@@ -202,6 +206,7 @@ export default function FilterBar({
   onSubmit,
   sportsOptIn,
   hiatusFilter,
+  songFilter,
   children,
 }: {
   value: string
@@ -215,6 +220,9 @@ export default function FilterBar({
   sportsOptIn?: boolean
   /** Library only: show the Hiatus filter (needs per-item watch progress). */
   hiatusFilter?: boolean
+  /** Library only: show the Song filter (matches a title's cached soundtrack —
+   *  data that only the Library joins, so it's hidden elsewhere). */
+  songFilter?: boolean
   children?: ReactNode
 }) {
   const [open, setOpen] = useState(false)
@@ -452,6 +460,22 @@ export default function FilterBar({
               onChange={(e) => setEd({ ...ed, actor: e.target.value })}
             />
           </div>
+
+          {songFilter && (
+            <div className="filter-pop__group">
+              <label className="filter-pop__label" htmlFor="filter-song">
+                Features song <span className="muted">(soundtrack)</span>
+              </label>
+              <input
+                id="filter-song"
+                className="filter-pop__input"
+                type="text"
+                placeholder="e.g. Africa, or Toto"
+                value={ed.song}
+                onChange={(e) => setEd({ ...ed, song: e.target.value })}
+              />
+            </div>
+          )}
 
           <div className="filter-pop__group">
             <span className="filter-pop__label">Service</span>

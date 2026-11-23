@@ -31,9 +31,8 @@ export default function WatchNextPoster({ className }: { className?: string }) {
   return (
     <div className={`wn-poster${className ? ` ${className}` : ''}`} aria-hidden="true">
       <span className="wn-poster__icon">
-        <ShuffleIcon size={34} />
+        <ShuffleIcon size={40} />
       </span>
-      <span className="wn-poster__label">Watch Next</span>
     </div>
   )
 }
